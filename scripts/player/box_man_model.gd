@@ -24,11 +24,13 @@ var left_leg_pivot: Node3D
 var right_leg_pivot: Node3D
 var torch_mesh: Node3D
 var axe_mesh: Node3D
+var carried_log_node: Node3D
 
 var walk_cycle: float = 0.0
 var chop_timer: float = 0.0
 var is_chopping: bool = false
 var has_torch: bool = false
+var is_carrying_log: bool = false
 
 func _ready() -> void:
 	_build_box_man()
@@ -81,6 +83,41 @@ func _build_box_man() -> void:
 	belt_mesh.position = Vector3(0, -0.22, 0)
 	belt_mesh.material_override = mat_belt
 	torso_node.add_child(belt_mesh)
+
+	# Carried Wooden Log (held horizontally in front of torso with both arms wrapped around it)
+	carried_log_node = Node3D.new()
+	carried_log_node.name = "CarriedLog"
+	carried_log_node.position = Vector3(0, -0.04, -0.32)
+	carried_log_node.visible = false
+	torso_node.add_child(carried_log_node)
+
+	var log_mesh := MeshInstance3D.new()
+	var cyl_log := CylinderMesh.new()
+	cyl_log.top_radius = 0.13
+	cyl_log.bottom_radius = 0.13
+	cyl_log.height = 1.45
+	cyl_log.radial_segments = 12
+	log_mesh.mesh = cyl_log
+	log_mesh.rotation_degrees = Vector3(0, 0, 90)
+	log_mesh.material_override = mat_wood
+	carried_log_node.add_child(log_mesh)
+
+	# End grain circles
+	var mat_endgrain := StandardMaterial3D.new()
+	mat_endgrain.albedo_color = Color(0.70, 0.55, 0.35)
+	mat_endgrain.roughness = 0.9
+
+	for end_sign in [-1.0, 1.0]:
+		var end_cap := MeshInstance3D.new()
+		var cap_cyl := CylinderMesh.new()
+		cap_cyl.top_radius = 0.125
+		cap_cyl.bottom_radius = 0.125
+		cap_cyl.height = 0.02
+		end_cap.mesh = cap_cyl
+		end_cap.material_override = mat_endgrain
+		end_cap.rotation_degrees = Vector3(0, 0, 90)
+		end_cap.position = Vector3(end_sign * 0.725, 0, 0)
+		carried_log_node.add_child(end_cap)
 
 	# 2. Head (attached to torso or separate)
 	head_node = Node3D.new()
@@ -252,17 +289,27 @@ func _build_box_man() -> void:
 ## Updates procedural animation every physics frame
 func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: bool, holding_torch: bool) -> void:
 	has_torch = holding_torch
+
+	if carried_log_node:
+		carried_log_node.visible = is_carrying_log
+
+	if axe_mesh:
+		axe_mesh.visible = not is_carrying_log
+
 	if torch_mesh:
-		torch_mesh.visible = holding_torch
+		torch_mesh.visible = holding_torch and not is_carrying_log
 
 	var horiz_speed := horizontal_velocity.length()
 
 	# Handle chop/attack swing timer
-	if is_chopping:
+	if is_chopping and not is_carrying_log:
 		chop_timer += delta * 6.0
 		if chop_timer >= PI:
 			is_chopping = false
 			chop_timer = 0.0
+	else:
+		is_chopping = false
+		chop_timer = 0.0
 
 	if is_grounded and horiz_speed > 0.15:
 		# Walking / Sprinting stride cycle
@@ -275,19 +322,34 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		left_leg_pivot.rotation.x = leg_swing
 		right_leg_pivot.rotation.x = -leg_swing
 
-		# Right arm swings opposite to right leg unless chopping
-		if not is_chopping:
-			right_arm_pivot.rotation.x = -arm_swing
-		else:
-			right_arm_pivot.rotation.x = -deg_to_rad(65) + sin(chop_timer) * deg_to_rad(95)
+		if is_carrying_log:
+			# Both arms wrapped horizontally around the wooden log
+			var carry_bob := sin(walk_cycle * 2.0) * deg_to_rad(3.0)
+			left_arm_pivot.rotation.x = deg_to_rad(-62) + carry_bob
+			left_arm_pivot.rotation.y = deg_to_rad(28)
+			left_arm_pivot.rotation.z = deg_to_rad(22)
 
-		# Left arm swings unless holding torch
-		if holding_torch:
-			left_arm_pivot.rotation.x = deg_to_rad(-60)
-			left_arm_pivot.rotation.z = deg_to_rad(15)
+			right_arm_pivot.rotation.x = deg_to_rad(-62) + carry_bob
+			right_arm_pivot.rotation.y = deg_to_rad(-28)
+			right_arm_pivot.rotation.z = deg_to_rad(-22)
 		else:
-			left_arm_pivot.rotation.x = arm_swing
-			left_arm_pivot.rotation.z = 0.0
+			left_arm_pivot.rotation.y = 0.0
+			right_arm_pivot.rotation.y = 0.0
+			right_arm_pivot.rotation.z = 0.0
+
+			# Right arm swings opposite to right leg unless chopping
+			if not is_chopping:
+				right_arm_pivot.rotation.x = -arm_swing
+			else:
+				right_arm_pivot.rotation.x = -deg_to_rad(65) + sin(chop_timer) * deg_to_rad(95)
+
+			# Left arm swings unless holding torch
+			if holding_torch:
+				left_arm_pivot.rotation.x = deg_to_rad(-60)
+				left_arm_pivot.rotation.z = deg_to_rad(15)
+			else:
+				left_arm_pivot.rotation.x = arm_swing
+				left_arm_pivot.rotation.z = 0.0
 
 		# Torso subtle vertical bob
 		torso_node.position.y = 1.05 + absf(sin(walk_cycle * 2.0)) * 0.035
@@ -297,12 +359,28 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		walk_cycle = 0.0
 		left_leg_pivot.rotation.x = lerpf(left_leg_pivot.rotation.x, deg_to_rad(25), delta * 8.0)
 		right_leg_pivot.rotation.x = lerpf(right_leg_pivot.rotation.x, deg_to_rad(-15), delta * 8.0)
-		if not is_chopping:
-			right_arm_pivot.rotation.x = lerpf(right_arm_pivot.rotation.x, deg_to_rad(-40), delta * 8.0)
-		if holding_torch:
-			left_arm_pivot.rotation.x = deg_to_rad(-60)
+
+		if is_carrying_log:
+			left_arm_pivot.rotation.x = deg_to_rad(-62)
+			left_arm_pivot.rotation.y = deg_to_rad(28)
+			left_arm_pivot.rotation.z = deg_to_rad(22)
+
+			right_arm_pivot.rotation.x = deg_to_rad(-62)
+			right_arm_pivot.rotation.y = deg_to_rad(-28)
+			right_arm_pivot.rotation.z = deg_to_rad(-22)
 		else:
-			left_arm_pivot.rotation.x = lerpf(left_arm_pivot.rotation.x, deg_to_rad(-40), delta * 8.0)
+			left_arm_pivot.rotation.y = 0.0
+			right_arm_pivot.rotation.y = 0.0
+			right_arm_pivot.rotation.z = 0.0
+
+			if not is_chopping:
+				right_arm_pivot.rotation.x = lerpf(right_arm_pivot.rotation.x, deg_to_rad(-40), delta * 8.0)
+			if holding_torch:
+				left_arm_pivot.rotation.x = deg_to_rad(-60)
+				left_arm_pivot.rotation.z = deg_to_rad(15)
+			else:
+				left_arm_pivot.rotation.x = lerpf(left_arm_pivot.rotation.x, deg_to_rad(-40), delta * 8.0)
+
 		torso_node.position.y = lerpf(torso_node.position.y, 1.05, delta * 8.0)
 		head_node.position.y = lerpf(head_node.position.y, 1.52, delta * 8.0)
 	else:
@@ -314,22 +392,46 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		left_leg_pivot.rotation.x = lerpf(left_leg_pivot.rotation.x, 0.0, delta * 8.0)
 		right_leg_pivot.rotation.x = lerpf(right_leg_pivot.rotation.x, 0.0, delta * 8.0)
 
-		if not is_chopping:
-			right_arm_pivot.rotation.x = lerpf(right_arm_pivot.rotation.x, deg_to_rad(10) + breath * 2.0, delta * 6.0)
-		else:
-			right_arm_pivot.rotation.x = -deg_to_rad(65) + sin(chop_timer) * deg_to_rad(95)
+		if is_carrying_log:
+			left_arm_pivot.rotation.x = deg_to_rad(-62) + breath * 1.5
+			left_arm_pivot.rotation.y = deg_to_rad(28)
+			left_arm_pivot.rotation.z = deg_to_rad(22)
 
-		if holding_torch:
-			left_arm_pivot.rotation.x = deg_to_rad(-60)
-			left_arm_pivot.rotation.z = deg_to_rad(15)
+			right_arm_pivot.rotation.x = deg_to_rad(-62) + breath * 1.5
+			right_arm_pivot.rotation.y = deg_to_rad(-28)
+			right_arm_pivot.rotation.z = deg_to_rad(-22)
 		else:
-			left_arm_pivot.rotation.x = lerpf(left_arm_pivot.rotation.x, deg_to_rad(10) - breath * 2.0, delta * 6.0)
-			left_arm_pivot.rotation.z = lerpf(left_arm_pivot.rotation.z, 0.0, delta * 8.0)
+			left_arm_pivot.rotation.y = lerpf(left_arm_pivot.rotation.y, 0.0, delta * 8.0)
+			right_arm_pivot.rotation.y = lerpf(right_arm_pivot.rotation.y, 0.0, delta * 8.0)
+
+			if not is_chopping:
+				right_arm_pivot.rotation.x = lerpf(right_arm_pivot.rotation.x, deg_to_rad(10) + breath * 2.0, delta * 6.0)
+				right_arm_pivot.rotation.z = lerpf(right_arm_pivot.rotation.z, 0.0, delta * 8.0)
+			else:
+				right_arm_pivot.rotation.x = -deg_to_rad(65) + sin(chop_timer) * deg_to_rad(95)
+
+			if holding_torch:
+				left_arm_pivot.rotation.x = deg_to_rad(-60)
+				left_arm_pivot.rotation.z = deg_to_rad(15)
+			else:
+				left_arm_pivot.rotation.x = lerpf(left_arm_pivot.rotation.x, deg_to_rad(10) - breath * 2.0, delta * 6.0)
+				left_arm_pivot.rotation.z = lerpf(left_arm_pivot.rotation.z, 0.0, delta * 8.0)
 
 		torso_node.position.y = 1.05 + breath
 		head_node.position.y = 1.52 + breath * 0.7
 
+## Sets whether the settler is carrying a physical log in arms
+func set_carrying_log(carrying: bool) -> void:
+	is_carrying_log = carrying
+	if carried_log_node:
+		carried_log_node.visible = carrying
+	if axe_mesh:
+		axe_mesh.visible = not carrying
+	if torch_mesh and has_torch:
+		torch_mesh.visible = not carrying
+
 ## Triggers an axe chopping animation
 func trigger_chop() -> void:
-	is_chopping = true
-	chop_timer = 0.0
+	if not is_carrying_log:
+		is_chopping = true
+		chop_timer = 0.0

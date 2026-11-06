@@ -38,6 +38,16 @@ extends Node3D
 			generate_terrain()
 			regenerate = false
 
+@export_group("Atmospheric Terrain Textures")
+@export var terrain_shader: Shader = preload("res://shaders/bergen_terrain.gdshader")
+@export var grass_texture: Texture2D = preload("res://assets/terrain/grass_albedo.png")
+@export var grass_normal_map: Texture2D = preload("res://assets/terrain/grass_normal.png")
+@export var rock_texture: Texture2D = preload("res://assets/terrain/rock_albedo.png")
+@export var rock_normal_map: Texture2D = preload("res://assets/terrain/rock_normal.png")
+@export var scree_texture: Texture2D = preload("res://assets/terrain/scree_albedo.png")
+@export var scree_normal_map: Texture2D = preload("res://assets/terrain/scree_normal.png")
+@export var macro_noise_map: Texture2D = preload("res://assets/terrain/macro_noise.png")
+
 var _base_noise: FastNoiseLite
 var _ridge_noise: FastNoiseLite
 var _detail_noise: FastNoiseLite
@@ -208,7 +218,6 @@ func generate_terrain() -> void:
 		terrain_mesh_instance = get_node_or_null("TerrainMesh") as MeshInstance3D
 		if terrain_mesh_instance == null:
 			terrain_mesh_instance = MeshInstance3D.new()
-			terrain_mesh_instance.mesh = ArrayMesh.new()
 			terrain_mesh_instance.name = "TerrainMesh"
 			add_child(terrain_mesh_instance)
 			terrain_mesh_instance.owner = self
@@ -242,28 +251,9 @@ func generate_terrain() -> void:
 
 			vertices[vert_index] = Vector3(x, y, z)
 			uvs[vert_index] = Vector2(float(ix) / float(mesh_resolution), float(iz) / float(mesh_resolution))
-
-			# Biome vertex coloring:
-			# Water / shoreline: Blue-grey / sand
-			# Lowland / wharf: Earth / timber brown
-			# Grassy hillside: Bergen lush green
-			# Cliff / Mountain peaks: Cold granite slate / lichen
-			var color: Color
-			if y <= 0.2:
-				color = Color(0.22, 0.25, 0.23) # Muddy fjord seabed / shoreline
-			elif y <= 4.0:
-				color = Color(0.42, 0.38, 0.31) # Wharf gravel, timber foundation level
-			elif y <= 85.0:
-				color = Color(0.28, 0.44, 0.22) # Grass, meadows, birch forests
-			elif y <= 210.0:
-				color = Color(0.36, 0.40, 0.33) # Steep highland pine & moss
-			else:
-				color = Color(0.48, 0.49, 0.48) # Rocky summit crag (Fløyen / Sandviksfjellet)
-
-			colors[vert_index] = color
 			vert_index += 1
 
-	# Compute vertex normals
+	# Compute vertex normals and slope-aware vertex colors
 	vert_index = 0
 	for iz in range(mesh_resolution + 1):
 		for ix in range(mesh_resolution + 1):
@@ -282,6 +272,35 @@ func generate_terrain() -> void:
 			if normal.y < 0.0:
 				normal = -normal
 			normals[idx] = normal
+
+			# Slope & elevation-aware biome coloring
+			var y := current.y
+			var slope := 1.0 - clampf(normal.y, 0.0, 1.0)
+			var color: Color
+			if y <= 0.2:
+				color = Color(0.20, 0.23, 0.22) # Muddy fjord seabed / shoreline
+			elif y <= 4.0 and absf(current.x - 85.0) < 55.0 and current.z > -100.0 and current.z < 650.0:
+				color = Color(0.42, 0.38, 0.31) # Wharf gravel, timber foundation level
+			else:
+				var base_grass := Color(0.26, 0.46, 0.18) # Lush Bergen meadow green
+				var highland_moss := Color(0.35, 0.44, 0.28) # Sub-alpine moss and pine
+				var mountain_stone := Color(0.44, 0.46, 0.48) # Cold granite slate / crag
+
+				if y < 85.0:
+					color = base_grass
+				elif y < 200.0:
+					var t := (y - 85.0) / 115.0
+					color = base_grass.lerp(highland_moss, t)
+				else:
+					var t := clampf((y - 200.0) / 100.0, 0.0, 1.0)
+					color = highland_moss.lerp(mountain_stone, t)
+
+				# Steep slopes expose rock cliffs (Mount Fløyen & Sandviksfjellet)
+				if slope > 0.36:
+					var cliff_factor := clampf((slope - 0.36) / 0.25, 0.0, 1.0)
+					color = color.lerp(mountain_stone, cliff_factor)
+
+			colors[idx] = color
 
 	# Build triangle faces with Counter-Clockwise (CCW) winding order for upward-facing triangles
 	for iz in range(mesh_resolution):
@@ -329,12 +348,8 @@ func generate_terrain() -> void:
 	var mesh := st.commit()
 	terrain_mesh_instance.mesh = mesh
 
-	# Create simple vertex-color standard material with double-sided rendering
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 0.85
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	terrain_mesh_instance.material_override = mat
+	# Assign high-fidelity atmospheric shader material with procedural grass & rock textures
+	terrain_mesh_instance.material_override = _create_terrain_material()
 
 	# Generate physical StaticBody3D collision shape from terrain mesh
 	_ensure_terrain_collision(mesh)
@@ -347,6 +362,33 @@ func generate_terrain() -> void:
 
 	# Scatter wildlife (Red Deer & Wolves)
 	_scatter_wildlife()
+
+func _create_terrain_material() -> Material:
+	if terrain_shader != null:
+		var mat := ShaderMaterial.new()
+		mat.shader = terrain_shader
+		if grass_texture != null:
+			mat.set_shader_parameter("grass_albedo", grass_texture)
+		if grass_normal_map != null:
+			mat.set_shader_parameter("grass_normal", grass_normal_map)
+		if rock_texture != null:
+			mat.set_shader_parameter("rock_albedo", rock_texture)
+		if rock_normal_map != null:
+			mat.set_shader_parameter("rock_normal", rock_normal_map)
+		if scree_texture != null:
+			mat.set_shader_parameter("scree_albedo", scree_texture)
+		if scree_normal_map != null:
+			mat.set_shader_parameter("scree_normal", scree_normal_map)
+		if macro_noise_map != null:
+			mat.set_shader_parameter("macro_noise", macro_noise_map)
+		return mat
+
+	# Fallback if shader is missing
+	var fallback := StandardMaterial3D.new()
+	fallback.vertex_color_use_as_albedo = true
+	fallback.roughness = 0.85
+	fallback.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return fallback
 
 func _ensure_water_plane() -> void:
 	if water_plane_instance == null:

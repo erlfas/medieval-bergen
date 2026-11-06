@@ -33,7 +33,17 @@ func _ready() -> void:
 	_create_ghost_instance()
 
 func _init_catalog() -> void:
-	# 1. Farmhouse Stone Footing
+	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
+	var r_cabin := BuildingPieceRecipe.new()
+	r_cabin.piece_id = "cabin_laftehytte"
+	r_cabin.piece_name = "Norwegian Log Cabin (Laftehytte)"
+	r_cabin.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_cabin.resource_costs = { "timber_log": 6, "stone": 4, "birch_bark": 4, "turf": 4 }
+	r_cabin.dimensions = Vector3(5.0, 3.6, 5.0)
+	r_cabin.provides_shelter = true
+	catalog.append(r_cabin)
+
+	# 2. Farmhouse Stone Footing
 	var r_stone_footing := BuildingPieceRecipe.new()
 	r_stone_footing.piece_id = "farm_stone_footing"
 	r_stone_footing.piece_name = "Farmhouse Stone Sill (Grunnmur)"
@@ -178,18 +188,26 @@ func _update_ghost_position_and_validity() -> void:
 	var hit_pos: Vector3 = result.position
 	var normal: Vector3 = result.normal
 
-	# Snap to nearest 0.5m grid or hit normal
+	# Snap to nearest 0.5m grid
 	var snapped_x := snappedf(hit_pos.x, 0.5)
 	var snapped_y := hit_pos.y
 	var snapped_z := snappedf(hit_pos.z, 0.5)
 
-	ghost_mesh_instance.global_position = Vector3(snapped_x, snapped_y, snapped_z)
+	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
+	var y_center := snapped_y + current_recipe.dimensions.y * 0.5
+	ghost_mesh_instance.global_position = Vector3(snapped_x, y_center, snapped_z)
 	ghost_mesh_instance.rotation = Vector3(0, current_rotation_y, 0)
 
-	# Check resource sufficiency
-	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
-	var can_afford := inventory.has_resources(current_recipe.resource_costs) if inventory else true
+	# Check resource sufficiency (taking carried log into account)
+	var settler: Node = get_parent()
+	var is_carrying: bool = settler != null and settler.get("is_carrying_log") == true
+	var needed_costs: Dictionary = current_recipe.resource_costs.duplicate()
+	if is_carrying and needed_costs.get("timber_log", 0) > 0:
+		needed_costs["timber_log"] -= 1
+		if needed_costs["timber_log"] <= 0:
+			needed_costs.erase("timber_log")
 
+	var can_afford := inventory.has_resources(needed_costs) if inventory else true
 	ghost_mesh_instance.material_override = ghost_mat_valid if can_afford else ghost_mat_invalid
 
 func _try_place_current_piece() -> void:
@@ -198,27 +216,52 @@ func _try_place_current_piece() -> void:
 
 	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
 
-	# Check and consume resources
+	# Check and consume resources (consume carried log if available)
+	var settler: Node = get_parent()
+	var is_carrying: bool = settler != null and settler.get("is_carrying_log") == true
+	var needed_costs: Dictionary = current_recipe.resource_costs.duplicate()
+	var used_carried_log: bool = false
+
+	if is_carrying and needed_costs.get("timber_log", 0) > 0:
+		needed_costs["timber_log"] -= 1
+		if needed_costs["timber_log"] <= 0:
+			needed_costs.erase("timber_log")
+		used_carried_log = true
+
 	if inventory:
-		if not inventory.consume_resources(current_recipe.resource_costs):
+		if not inventory.consume_resources(needed_costs):
 			return # Insufficient timber logs / stone
+
+	if used_carried_log and settler != null and settler.has_method("consume_carried_log"):
+		settler.consume_carried_log()
 
 	# Instantiate physical building piece in the world
 	var placed_piece := _spawn_piece_instance(current_recipe)
 	get_parent().get_parent().add_child(placed_piece)
-	placed_piece.global_transform = ghost_mesh_instance.global_transform
+
+	if current_recipe.piece_id == "cabin_laftehytte":
+		# Cabin origin is at floor level (Y=0)
+		var base_y := ghost_mesh_instance.global_position.y - current_recipe.dimensions.y * 0.5
+		placed_piece.global_position = Vector3(ghost_mesh_instance.global_position.x, base_y, ghost_mesh_instance.global_position.z)
+		placed_piece.rotation.y = current_rotation_y
+	else:
+		placed_piece.global_transform = ghost_mesh_instance.global_transform
 
 	piece_placed.emit(current_recipe, placed_piece.global_position)
 
 func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
-	# 1. If user provided a 3D model (.gltf, .obj, .tscn), instantiate it directly!
+	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
+	if recipe.piece_id == "cabin_laftehytte":
+		return BuildingAssembler.assemble_log_cabin(recipe.dimensions.x, recipe.dimensions.z)
+
+	# 2. If user provided a 3D model (.gltf, .obj, .tscn), instantiate it directly!
 	if recipe.custom_scene != null:
 		var custom_instance := recipe.custom_scene.instantiate() as Node3D
 		if custom_instance:
 			custom_instance.name = "%s_%d" % [recipe.piece_id, randi() % 9999]
 			return custom_instance
 
-	# 2. Otherwise fallback to procedural geometric placeholder
+	# 3. Procedural geometric piece
 	var piece_node := StaticBody3D.new()
 	piece_node.name = "%s_%d" % [recipe.piece_id, randi() % 9999]
 
@@ -241,7 +284,6 @@ func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
 	var box := BoxShape3D.new()
 	box.size = recipe.dimensions
 	cs.shape = box
-	cs.position.y = recipe.dimensions.y * 0.5
 	piece_node.add_child(cs)
 
 	return piece_node

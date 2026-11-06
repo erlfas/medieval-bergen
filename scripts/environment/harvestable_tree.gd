@@ -1,47 +1,617 @@
 class_name HarvestableTree
 extends StaticBody3D
 
-## Harvestable tree (Birch or Spruce) for Medieval Bergen:
-## - Birch yields: Birch Bark (for roof waterproofing) + Firewood
-## - Spruce yields: Structural Timber Logs (for Lafteverk walls) + Resin
+## Harvestable tree (Birch or Spruce) for Medieval Bergen 1360:
+## - Requires exactly 10 chops to fell (`chop_hits_required = 10`)
+## - Displays 3D floating progress bar & counter ("Chop 3/10") above trunk notch
+## - Displays predicted fall direction (away from settler) & ground trajectory / landing zone
+## - Animates realistic topple physics rotation upon 10th chop
+## - Spawns physical CarryableLog instances on ground impact
 
 enum TreeType { BIRCH, SPRUCE }
 
 @export var tree_type: TreeType = TreeType.SPRUCE
-@export var chop_hits_required: int = 5
+@export var chop_hits_required: int = 10
 @export var timber_logs_yield: int = 4
 @export var birch_bark_yield: int = 6
 @export var firewood_yield: int = 3
+@export var tree_height: float = 8.5
 
 var current_hits: int = 0
 var is_felled: bool = false
+var is_falling: bool = false
 
-func on_interact(actor: Node) -> void:
-	if is_felled:
+# Topple Physics
+var fall_direction: Vector3 = Vector3.FORWARD
+var fall_rotation_axis: Vector3 = Vector3.RIGHT
+var fall_angle: float = 0.0
+var fall_angular_velocity: float = 0.0
+var natural_lean: Vector3 = Vector3.ZERO
+
+# Interaction & UI Focus
+var focused_settler: Node3D = null
+var focus_timer: float = 0.0
+var trunk_shake_timer: float = 0.0
+var trunk_shake_intensity: float = 0.0
+
+# Hierarchy nodes
+var model_pivot: Node3D
+var col_shape: CollisionShape3D
+var progress_tracker: Node3D
+var tracker_label: Label3D
+var bar_fill: MeshInstance3D
+var bar_bg: MeshInstance3D
+var trajectory_indicator: Node3D
+var arrow_markers: Array[MeshInstance3D] = []
+var arc_beads: Array[MeshInstance3D] = []
+var landing_zone_marker: Node3D
+var landing_label: Label3D
+var notch_mesh: MeshInstance3D
+var terrain_generator: Node = null
+
+func _ready() -> void:
+	_ensure_setup()
+
+	# Start hidden until settler looks at or chops tree
+	if progress_tracker:
+		progress_tracker.visible = false
+	if trajectory_indicator:
+		trajectory_indicator.visible = false
+
+func _ensure_setup() -> void:
+	if progress_tracker != null:
 		return
 
-	# Actor swings axe / chops tree
+	add_to_group("harvestable_trees")
+	add_to_group("interactable")
+
+	if is_inside_tree():
+		terrain_generator = get_tree().get_first_node_in_group("terrain_generator")
+
+	var current_pos := _get_pos(self)
+	var lean_seed := fmod(absf(current_pos.x * 12.9898 + current_pos.z * 78.233), TAU)
+	natural_lean = Vector3(sin(lean_seed), 0.0, cos(lean_seed)).normalized()
+	if fall_direction == Vector3.FORWARD:
+		fall_direction = natural_lean
+
+	_setup_model_pivot()
+	_setup_progress_tracker()
+	_setup_trajectory_indicator()
+	_setup_notch()
+
+	_update_progress_display()
+	_update_fall_direction_display()
+
+func _get_pos(n: Node3D) -> Vector3:
+	return n.global_position if n.is_inside_tree() else n.position
+
+func _setup_model_pivot() -> void:
+	model_pivot = Node3D.new()
+	model_pivot.name = "ModelPivot"
+	add_child(model_pivot)
+
+	# Reparent existing visual meshes into model_pivot so whole tree can topple around origin
+	var meshes_to_move: Array[Node] = []
+	for child in get_children():
+		if child is MeshInstance3D and child != model_pivot:
+			meshes_to_move.append(child)
+		elif child is CollisionShape3D:
+			col_shape = child
+
+	for m in meshes_to_move:
+		m.reparent(model_pivot)
+
+	# If tree created standalone without procedural generator, construct default meshes
+	if model_pivot.get_child_count() == 0:
+		_build_default_meshes()
+
+func _build_default_meshes() -> void:
+	var trunk_mesh := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.18
+	cyl.bottom_radius = 0.25
+	cyl.height = 4.0
+	trunk_mesh.mesh = cyl
+	trunk_mesh.position.y = 2.0
+	var trunk_mat := StandardMaterial3D.new()
+	trunk_mat.albedo_color = Color(0.32, 0.22, 0.14) if tree_type == TreeType.SPRUCE else Color(0.9, 0.9, 0.85)
+	trunk_mesh.material_override = trunk_mat
+	model_pivot.add_child(trunk_mesh)
+
+	var canopy_mesh := MeshInstance3D.new()
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.05
+	cone.bottom_radius = 1.6 if tree_type == TreeType.SPRUCE else 1.9
+	cone.height = 5.0 if tree_type == TreeType.SPRUCE else 3.5
+	canopy_mesh.mesh = cone
+	canopy_mesh.position.y = 5.2 if tree_type == TreeType.SPRUCE else 4.0
+	var canopy_mat := StandardMaterial3D.new()
+	canopy_mat.albedo_color = Color(0.14, 0.28, 0.12) if tree_type == TreeType.SPRUCE else Color(0.35, 0.52, 0.18)
+	canopy_mesh.material_override = canopy_mat
+	model_pivot.add_child(canopy_mesh)
+
+	if not col_shape:
+		col_shape = CollisionShape3D.new()
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = 0.4
+		capsule.height = 4.0
+		col_shape.shape = capsule
+		col_shape.position.y = 2.0
+		add_child(col_shape)
+
+func _setup_progress_tracker() -> void:
+	progress_tracker = Node3D.new()
+	progress_tracker.name = "ProgressTracker"
+	progress_tracker.position = Vector3(0.0, 2.1, 0.0)
+	add_child(progress_tracker)
+
+	# 3D Billboard Chop Counter ("Chop 3/10")
+	tracker_label = Label3D.new()
+	tracker_label.name = "ChopCounterLabel"
+	tracker_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	tracker_label.no_depth_test = true
+	tracker_label.font_size = 28
+	tracker_label.outline_size = 7
+	tracker_label.modulate = Color(1.0, 0.90, 0.40) # Golden amber
+	tracker_label.outline_modulate = Color(0.06, 0.05, 0.04, 0.95)
+	tracker_label.position = Vector3(0.0, 0.24, 0.0)
+	progress_tracker.add_child(tracker_label)
+
+	# 3D Floating Progress Bar Background Frame
+	bar_bg = MeshInstance3D.new()
+	bar_bg.name = "ProgressBarBG"
+	var quad_bg := QuadMesh.new()
+	quad_bg.size = Vector2(1.2, 0.13)
+	bar_bg.mesh = quad_bg
+	var bg_mat := StandardMaterial3D.new()
+	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bg_mat.albedo_color = Color(0.12, 0.12, 0.15, 0.92)
+	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bar_bg.material_override = bg_mat
+	bar_bg.position = Vector3(0.0, 0.02, 0.0)
+	progress_tracker.add_child(bar_bg)
+
+	# 3D Floating Progress Bar Fill (Green/Gold fill)
+	bar_fill = MeshInstance3D.new()
+	bar_fill.name = "ProgressBarFill"
+	var quad_fill := QuadMesh.new()
+	quad_fill.size = Vector2(1.14, 0.08)
+	bar_fill.mesh = quad_fill
+	var fill_mat := StandardMaterial3D.new()
+	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fill_mat.albedo_color = Color(0.96, 0.78, 0.22, 0.98) # Warm gold
+	fill_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bar_fill.material_override = fill_mat
+	bar_fill.position = Vector3(0.0, 0.02, 0.01)
+	progress_tracker.add_child(bar_fill)
+
+func _setup_trajectory_indicator() -> void:
+	trajectory_indicator = Node3D.new()
+	trajectory_indicator.name = "TrajectoryIndicator"
+	add_child(trajectory_indicator)
+
+	# Ground Directional Fall Arrow / Corridor markers
+	var arrow_mat := StandardMaterial3D.new()
+	arrow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	arrow_mat.albedo_color = Color(1.0, 0.76, 0.18, 0.85) # Amber warning glow
+	arrow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+
+	var segment_distances := [1.2, 2.2, 3.2, 4.2, 5.2, 6.2]
+	for d in segment_distances:
+		var marker := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.35, 0.05, 0.6)
+		marker.mesh = box
+		marker.material_override = arrow_mat
+		trajectory_indicator.add_child(marker)
+		arrow_markers.append(marker)
+
+	# Arrowhead marker at 6.8m
+	var tip := MeshInstance3D.new()
+	var prism := BoxMesh.new()
+	prism.size = Vector3(0.7, 0.05, 0.5)
+	tip.mesh = prism
+	tip.material_override = arrow_mat
+	trajectory_indicator.add_child(tip)
+	arrow_markers.append(tip)
+
+	# Landing Zone Target Marker
+	landing_zone_marker = Node3D.new()
+	landing_zone_marker.name = "LandingZoneMarker"
+	trajectory_indicator.add_child(landing_zone_marker)
+
+	# Circular Target Ring
+	var ring_mesh := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 1.15
+	torus.outer_radius = 1.35
+	ring_mesh.mesh = torus
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring_mat.albedo_color = Color(1.0, 0.70, 0.15, 0.90)
+	ring_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	ring_mesh.material_override = ring_mat
+	landing_zone_marker.add_child(ring_mesh)
+
+	# Target Crosshair
+	var cross1 := MeshInstance3D.new()
+	var cbox1 := BoxMesh.new()
+	cbox1.size = Vector3(0.12, 0.04, 2.2)
+	cross1.mesh = cbox1
+	cross1.material_override = ring_mat
+	landing_zone_marker.add_child(cross1)
+
+	var cross2 := MeshInstance3D.new()
+	var cbox2 := BoxMesh.new()
+	cbox2.size = Vector3(2.2, 0.04, 0.12)
+	cross2.mesh = cbox2
+	cross2.material_override = ring_mat
+	landing_zone_marker.add_child(cross2)
+
+	# 3D Billboard Landing Zone Title
+	landing_label = Label3D.new()
+	landing_label.name = "LandingLabel"
+	landing_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	landing_label.no_depth_test = true
+	landing_label.font_size = 24
+	landing_label.outline_size = 6
+	landing_label.modulate = Color(1.0, 0.85, 0.25)
+	landing_label.outline_modulate = Color(0.05, 0.04, 0.03, 0.95)
+	landing_label.text = "🎯 PREDICTED LANDING ZONE (Fallretning)"
+	landing_label.position = Vector3(0.0, 0.6, 0.0)
+	landing_zone_marker.add_child(landing_label)
+
+	# Projected Dotted Trajectory Arc
+	var arc_mat := StandardMaterial3D.new()
+	arc_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	arc_mat.albedo_color = Color(0.35, 0.95, 0.45, 0.90) # Radiant arc green
+	arc_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+
+	var arc_bead_count := 10
+	for i in range(arc_bead_count):
+		var bead := MeshInstance3D.new()
+		var sphere := SphereMesh.new()
+		sphere.radius = 0.09
+		sphere.height = 0.18
+		bead.mesh = sphere
+		bead.material_override = arc_mat
+		trajectory_indicator.add_child(bead)
+		arc_beads.append(bead)
+
+func _setup_notch() -> void:
+	notch_mesh = MeshInstance3D.new()
+	notch_mesh.name = "TrunkNotch"
+	var wedge := BoxMesh.new()
+	wedge.size = Vector3(0.32, 0.18, 0.24)
+	notch_mesh.mesh = wedge
+	var notch_mat := StandardMaterial3D.new()
+	notch_mat.albedo_color = Color(0.85, 0.72, 0.48) # Freshly cut inner wood grain
+	notch_mesh.material_override = notch_mat
+	notch_mesh.position = Vector3(0.0, 1.1, 0.2)
+	notch_mesh.visible = false
+	if model_pivot:
+		model_pivot.add_child(notch_mesh)
+	else:
+		add_child(notch_mesh)
+
+func _process(delta: float) -> void:
+	if is_falling or is_felled:
+		return
+
+	# Handle focus timeout & smooth fall direction calculation
+	if focus_timer > 0.0:
+		focus_timer -= delta
+		if progress_tracker:
+			progress_tracker.visible = true
+		if trajectory_indicator:
+			trajectory_indicator.visible = true
+
+		if focused_settler and is_instance_valid(focused_settler):
+			# Tree falls away from settler
+			var away_dir: Vector3 = global_position - focused_settler.global_position
+			away_dir.y = 0.0
+			if away_dir.length_squared() > 0.01:
+				var target_dir := away_dir.normalized()
+				fall_direction = fall_direction.slerp(target_dir, delta * 8.0).normalized()
+
+		_update_fall_direction_display()
+		_update_tracker_orientation()
+
+		if focus_timer <= 0.0:
+			if progress_tracker:
+				progress_tracker.visible = false
+			if trajectory_indicator:
+				trajectory_indicator.visible = false
+			focused_settler = null
+
+	# Visual trunk tremor / shake reaction on axe chop
+	if trunk_shake_timer > 0.0:
+		trunk_shake_timer -= delta
+		if model_pivot:
+			var damp := trunk_shake_timer / 0.25
+			var shake_offset := Vector3(randf_range(-1.0, 1.0), 0.0, randf_range(-1.0, 1.0)) * (trunk_shake_intensity * damp)
+			model_pivot.position = shake_offset
+		if trunk_shake_timer <= 0.0 and model_pivot:
+			model_pivot.position = Vector3.ZERO
+
+func _physics_process(delta: float) -> void:
+	if not is_falling:
+		return
+
+	# Realistic gravity torque acceleration: tau = M * g * (L/2) * sin(theta)
+	var torque: float = 4.8 * sin(maxf(fall_angle, 0.08))
+	fall_angular_velocity += torque * delta
+	fall_angle += fall_angular_velocity * delta
+
+	if model_pivot:
+		model_pivot.transform.basis = Basis(fall_rotation_axis, fall_angle)
+
+	# When tree tilts past 88 degrees, it impacts ground
+	if fall_angle >= deg_to_rad(88.0):
+		_on_hit_ground()
+
+func _update_tracker_orientation() -> void:
+	if not progress_tracker or not progress_tracker.visible:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam:
+		var cam_pos := cam.global_position
+		var target := Vector3(cam_pos.x, progress_tracker.global_position.y, cam_pos.z)
+		progress_tracker.look_at(target, Vector3.UP)
+		progress_tracker.rotate_object_local(Vector3.UP, PI)
+
+func _update_progress_display() -> void:
+	if not progress_tracker:
+		return
+
+	var type_name := "🌲 Gran (Spruce)" if tree_type == TreeType.SPRUCE else "🪵 Bjørk (Birch)"
+	if tracker_label:
+		tracker_label.text = "%s\nChop %d / %d" % [type_name, current_hits, chop_hits_required]
+
+	if bar_fill:
+		var ratio := clampf(float(current_hits) / float(chop_hits_required), 0.0, 1.0)
+		bar_fill.scale.x = maxf(0.01, ratio)
+		# Left-align the fill bar within the 1.14 width frame
+		bar_fill.position.x = -0.57 * (1.0 - ratio)
+
+		# Color transition: Warm gold -> Vibrant Emerald Green as chopping finishes
+		var mat := bar_fill.material_override as StandardMaterial3D
+		if mat:
+			if ratio < 0.6:
+				mat.albedo_color = Color(0.96, 0.78, 0.22, 0.98) # Gold
+			else:
+				mat.albedo_color = Color(0.28, 0.88, 0.36, 0.98) # Green
+
+func _update_fall_direction_display() -> void:
+	if not trajectory_indicator or not trajectory_indicator.visible:
+		return
+
+	var horiz_dir := Vector3(fall_direction.x, 0.0, fall_direction.z).normalized()
+	if horiz_dir.length_squared() < 0.01:
+		horiz_dir = Vector3.FORWARD
+
+	var target_dist := 7.5
+	var segment_distances := [1.2, 2.2, 3.2, 4.2, 5.2, 6.2, 6.8]
+	var rot_y := atan2(horiz_dir.x, horiz_dir.z)
+
+	# Update Ground Directional Arrow Markers
+	for i in range(min(arrow_markers.size(), segment_distances.size())):
+		var d: float = segment_distances[i]
+		var marker := arrow_markers[i]
+		var world_pos := global_position + horiz_dir * d
+		var ground_y := _sample_ground_height(world_pos.x, world_pos.z)
+		marker.global_position = Vector3(world_pos.x, ground_y + 0.08, world_pos.z)
+		marker.rotation.y = rot_y
+
+	# Update Landing Zone Target Marker
+	if landing_zone_marker:
+		var landing_world := global_position + horiz_dir * target_dist
+		var landing_ground_y := _sample_ground_height(landing_world.x, landing_world.z)
+		landing_zone_marker.global_position = Vector3(landing_world.x, landing_ground_y + 0.06, landing_world.z)
+		landing_zone_marker.rotation.y = rot_y
+
+	# Update Projected Trajectory Arc beads (quarter circle from top down to ground impact)
+	var arc_count := arc_beads.size()
+	for i in range(arc_count):
+		var frac := float(i) / float(arc_count - 1)
+		var angle := frac * (PI * 0.5)
+		var r_y := tree_height * cos(angle)
+		var r_d := target_dist * sin(angle)
+
+		var bead := arc_beads[i]
+		var bead_pos := global_position + horiz_dir * r_d + Vector3(0.0, r_y, 0.0)
+		bead.global_position = bead_pos
+
+func _update_notch_display() -> void:
+	if notch_mesh:
+		if current_hits > 0:
+			notch_mesh.visible = true
+			var ratio := float(current_hits) / float(chop_hits_required)
+			notch_mesh.scale = Vector3(1.0 + ratio * 0.5, 1.0 + ratio * 0.4, 0.4 + ratio * 1.6)
+			notch_mesh.position = fall_direction * 0.18 + Vector3(0.0, 1.1, 0.0)
+		else:
+			notch_mesh.visible = false
+
+func _sample_ground_height(x: float, z: float) -> float:
+	if terrain_generator and terrain_generator.has_method("sample_height"):
+		return terrain_generator.sample_height(x, z)
+	return global_position.y
+
+func set_settler_focus(settler: Node) -> void:
+	if is_felled or is_falling:
+		return
+
+	_ensure_setup()
+
+	if settler != null and settler is Node3D:
+		focused_settler = settler as Node3D
+		focus_timer = 2.5
+		if progress_tracker:
+			progress_tracker.visible = true
+		if trajectory_indicator:
+			trajectory_indicator.visible = true
+
+		var away_dir: Vector3 = _get_pos(self) - _get_pos(focused_settler)
+		away_dir.y = 0.0
+		if away_dir.length_squared() > 0.01:
+			fall_direction = away_dir.normalized()
+
+		_update_progress_display()
+		_update_fall_direction_display()
+		_update_notch_display()
+	else:
+		if focus_timer > 1.2:
+			focus_timer = 1.2
+
+func on_interact(actor: Node) -> void:
+	chop(actor)
+
+func take_damage(_amount: float = 0.0, actor: Node = null) -> void:
+	chop(actor)
+
+func chop(actor: Node) -> void:
+	if is_felled or is_falling:
+		return
+
+	_ensure_setup()
+	set_settler_focus(actor)
+	focus_timer = 4.0 # Keep displayed for 4 seconds after chopping
+
+	if actor and actor is Node3D:
+		var away_dir: Vector3 = _get_pos(self) - _get_pos(actor as Node3D)
+		away_dir.y = 0.0
+		if away_dir.length_squared() > 0.01:
+			fall_direction = away_dir.normalized()
+
 	current_hits += 1
-	if actor.has_node("SurvivalStats"):
+
+	if actor and actor.has_node("SurvivalStats"):
 		var stats: SurvivalStats = actor.get_node("SurvivalStats")
-		stats.consume_stamina(8.0)
+		if stats.stamina > 0.0:
+			stats.consume_stamina(6.0)
+
+	trunk_shake_intensity = 0.08
+	trunk_shake_timer = 0.25
+
+	_update_progress_display()
+	_update_fall_direction_display()
+	_update_notch_display()
 
 	if current_hits >= chop_hits_required:
 		fell_tree(actor)
 
-func fell_tree(harvester: Node) -> void:
+func fell_tree(_harvester: Node) -> void:
+	is_falling = true
+
+	# Hide tracker and ground indicator during falling animation
+	if progress_tracker:
+		progress_tracker.visible = false
+	if trajectory_indicator:
+		trajectory_indicator.visible = false
+
+	# Disable collision shape so settler does not snag on trunk during topple
+	if col_shape:
+		col_shape.disabled = true
+	collision_layer = 0
+	collision_mask = 0
+
+	# Lock in final fall direction
+	var horiz_dir := Vector3(fall_direction.x, 0.0, fall_direction.z).normalized()
+	if horiz_dir.length_squared() < 0.01:
+		horiz_dir = Vector3.FORWARD
+	fall_direction = horiz_dir
+
+	# Fall rotation axis is perpendicular to fall direction and UP
+	fall_rotation_axis = Vector3.UP.cross(fall_direction).normalized()
+	if fall_rotation_axis.length_squared() < 0.01:
+		fall_rotation_axis = Vector3.RIGHT
+
+	fall_angle = 0.03
+	fall_angular_velocity = 0.0
+
+func _on_hit_ground() -> void:
+	is_falling = false
 	is_felled = true
 
-	# Transfer resources to harvester inventory
-	if harvester and harvester.has_node("InventoryManager"):
-		var inv: InventoryManager = harvester.get_node("InventoryManager")
-		if tree_type == TreeType.SPRUCE:
-			inv.add_resource("timber_log", timber_logs_yield)
-			inv.add_resource("firewood", firewood_yield)
-		elif tree_type == TreeType.BIRCH:
-			inv.add_resource("birch_bark", birch_bark_yield)
-			inv.add_resource("timber_log", int(timber_logs_yield * 0.5))
-			inv.add_resource("firewood", firewood_yield * 2)
+	# Spawn physical CarryableLog instances along the fallen tree path
+	_spawn_carryable_logs()
+
+	# Spawn cut tree stump at original position
+	_spawn_tree_stump()
 
 	queue_free()
 
+func _spawn_carryable_logs() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+
+	var log_script = load("res://scripts/environment/carryable_log.gd")
+	var distances := [2.0, 3.8, 5.6]
+	var log_type_val = (CarryableLog.LogType.SPRUCE if tree_type == TreeType.SPRUCE else CarryableLog.LogType.BIRCH)
+
+	for i in range(distances.size()):
+		var d: float = distances[i]
+		var log_pos := global_position + fall_direction * d
+		var ground_y := _sample_ground_height(log_pos.x, log_pos.z)
+		log_pos.y = ground_y + 0.35
+
+		var log_inst := RigidBody3D.new()
+		log_inst.name = "CarryableLog_%d" % [Time.get_ticks_msec() + i]
+		log_inst.set_script(log_script)
+		log_inst.set("log_type", log_type_val)
+
+		# Timber yields per log (total ~4 logs per spruce tree)
+		if i == 0:
+			log_inst.set("timber_logs_yield", 2)
+		else:
+			log_inst.set("timber_logs_yield", 1)
+
+		parent.add_child(log_inst)
+		log_inst.global_position = log_pos
+
+		# Orient log horizontally perpendicular to fall direction
+		var log_facing := fall_direction.rotated(Vector3.UP, deg_to_rad(90.0)).normalized()
+		var log_up := Vector3.UP
+		var log_right := log_facing.cross(log_up).normalized()
+		log_inst.basis = Basis(log_right, log_up, -log_facing)
+
+		# Natural slight physical scatter impulse
+		var rand_x := randf_range(-0.4, 0.4)
+		var rand_z := randf_range(-0.4, 0.4)
+		log_inst.apply_impulse(Vector3(rand_x, 0.8, rand_z))
+
+func _spawn_tree_stump() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+
+	var stump := StaticBody3D.new()
+	stump.name = "TreeStump_%d" % Time.get_ticks_msec()
+
+	var mesh_inst := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.24
+	cyl.bottom_radius = 0.28
+	cyl.height = 0.45
+	mesh_inst.mesh = cyl
+	mesh_inst.position.y = 0.225
+
+	var mat := StandardMaterial3D.new()
+	if tree_type == TreeType.SPRUCE:
+		mat.albedo_color = Color(0.32, 0.22, 0.14)
+	else:
+		mat.albedo_color = Color(0.88, 0.86, 0.82)
+	mesh_inst.material_override = mat
+	stump.add_child(mesh_inst)
+
+	var col := CollisionShape3D.new()
+	var col_cyl := CylinderShape3D.new()
+	col_cyl.radius = 0.26
+	col_cyl.height = 0.45
+	col.shape = col_cyl
+	col.position.y = 0.225
+	stump.add_child(col)
+
+	parent.add_child(stump)
+	stump.global_position = global_position
