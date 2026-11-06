@@ -1,17 +1,22 @@
 class_name SettlerController
 extends CharacterBody3D
 
-## First-person settler controller with survival interactions:
-## - Chopping trees
-## - Drinking from freshwater mountain streams
-## - Brandishing pine-tar torch [F] (emits light, warms player, repels wolves)
-## - Hunting deer and defending against wolves
-## - Piece-by-piece building placement
+## Settler controller for Medieval Bergen 1360:
+## - Controllable gray box man with head, torso, animated arms/hands, and legs/boots
+## - Third-person / First-person camera toggle [V] and mouse wheel zoom
+## - Survival interactions: tree chopping, freshwater drinking, wolf defense, hunting
+## - Pine-tar torch [F] with warm light and wolf deterrence
+## - Piece-by-piece modular construction system [B]
 
 @export var walk_speed: float = 4.2
 @export var sprint_speed: float = 7.0
 @export var jump_velocity: float = 4.5
 @export var mouse_sensitivity: float = 0.0025
+
+@export_group("Camera View")
+@export var is_third_person: bool = true
+@export var target_cam_distance: float = 3.2
+@export var cam_height_offset: float = 0.35
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -20,20 +25,38 @@ extends CharacterBody3D
 @onready var inventory: InventoryManager = $InventoryManager
 @onready var player_builder: PlayerBuilder = $PlayerBuilder
 
+var box_man_model: BoxManModel
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var is_sprinting: bool = false
 var is_holding_torch: bool = false
 var torch_light: OmniLight3D
 var terrain_generator: BergenTerrainGenerator
+var current_cam_distance: float = 3.2
 
 func _ready() -> void:
 	add_to_group("settler")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	terrain_generator = get_tree().get_first_node_in_group("terrain_generator") as BergenTerrainGenerator
+
+	_ensure_box_man_model()
 	_create_torch_light()
+
+	# Snap settler vertically to terrain surface
 	if terrain_generator:
 		var ground_h := terrain_generator.sample_height(global_position.x, global_position.z)
 		global_position.y = maxf(global_position.y, ground_h + 0.1)
+
+	current_cam_distance = target_cam_distance if is_third_person else 0.0
+	_update_camera(0.0)
+
+func _ensure_box_man_model() -> void:
+	box_man_model = get_node_or_null("BoxManModel") as BoxManModel
+	if box_man_model == null:
+		var script_model = load("res://scripts/player/box_man_model.gd")
+		box_man_model = Node3D.new()
+		box_man_model.name = "BoxManModel"
+		box_man_model.set_script(script_model)
+		add_child(box_man_model)
 
 func _create_torch_light() -> void:
 	torch_light = OmniLight3D.new()
@@ -49,13 +72,27 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-event.relative.x * mouse_sensitivity)
 		head.rotate_x(-event.relative.y * mouse_sensitivity)
-		head.rotation.x = clampf(head.rotation.x, -deg_to_rad(85), deg_to_rad(85))
+		head.rotation.x = clampf(head.rotation.x, -deg_to_rad(80), deg_to_rad(80))
 
 	if event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		else:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# Toggle Camera View [V]
+	if event.is_action_pressed("toggle_camera_view"):
+		is_third_person = not is_third_person
+		target_cam_distance = 3.2 if is_third_person else 0.0
+
+	# Mouse wheel zoom in / out
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			target_cam_distance = clampf(target_cam_distance - 0.4, 0.0, 6.0)
+			is_third_person = target_cam_distance > 0.35
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			target_cam_distance = clampf(target_cam_distance + 0.4, 0.0, 6.0)
+			is_third_person = target_cam_distance > 0.35
 
 	# Interaction Key (E)
 	if event.is_action_pressed("interact"):
@@ -115,11 +152,54 @@ func _physics_process(delta: float) -> void:
 			if velocity.y < 0.0:
 				velocity.y = 0.0
 
+	# Procedural box man animations (swing limbs, breathing, chopping)
+	if box_man_model:
+		var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+		box_man_model.update_animation(delta, horiz_vel, is_on_floor(), is_holding_torch)
+
+	# Smooth camera positioning
+	current_cam_distance = lerpf(current_cam_distance, target_cam_distance, delta * 10.0)
+	_update_camera(delta)
+
 	# Check terrain freshwater stream drinking zone
 	if terrain_generator:
 		var near_stream := terrain_generator.is_freshwater_stream(global_position)
 		if near_stream and Input.is_action_just_pressed("interact"):
 			survival_stats.drink_water(true)
+
+func _update_camera(_delta: float) -> void:
+	if not camera or not head:
+		return
+
+	if current_cam_distance < 0.3:
+		# First-person view
+		camera.position = Vector3.ZERO
+		camera.rotation = Vector3.ZERO
+		if box_man_model:
+			box_man_model.visible = false
+	else:
+		# Third-person view: position camera behind the settler
+		if box_man_model:
+			box_man_model.visible = true
+
+		var desired_pos := Vector3(0.0, cam_height_offset, current_cam_distance)
+		var from_pos := head.global_position
+		var to_pos := head.to_global(desired_pos)
+
+		# Raycast check to prevent camera from clipping inside mountains/obstacles
+		var space_state := get_world_3d().direct_space_state
+		var query := PhysicsRayQueryParameters3D.create(from_pos, to_pos)
+		query.exclude = [self.get_rid()]
+		var hit := space_state.intersect_ray(query)
+
+		if not hit.is_empty():
+			var hit_local := head.to_local(hit.position)
+			var safe_dist := maxf(0.4, hit_local.length() - 0.25)
+			camera.position = Vector3(0.0, cam_height_offset * (safe_dist / current_cam_distance), safe_dist)
+		else:
+			camera.position = desired_pos
+
+		camera.rotation = Vector3(deg_to_rad(-5.0), 0.0, 0.0)
 
 func _perform_interaction() -> void:
 	if interact_raycast and interact_raycast.is_colliding():
@@ -128,6 +208,9 @@ func _perform_interaction() -> void:
 			target.on_interact(self)
 
 func _perform_attack_or_chop() -> void:
+	if box_man_model:
+		box_man_model.trigger_chop()
+
 	if interact_raycast and interact_raycast.is_colliding():
 		var target := interact_raycast.get_collider()
 		if target.has_method("take_damage"):

@@ -14,7 +14,7 @@ signal piece_placed(recipe: BuildingPieceRecipe, pos: Vector3)
 
 @export var settler_camera: Camera3D
 @export var inventory: InventoryManager
-@export var max_build_distance: float = 7.0
+@export var max_build_distance: float = 12.0
 
 var is_build_mode: bool = false
 var selected_recipe_index: int = 0
@@ -165,6 +165,9 @@ func _update_ghost_position_and_validity() -> void:
 	var ray_end := ray_origin + ray_dir * max_build_distance
 
 	var query := PhysicsRayQueryParameters3D.create(ray_origin, ray_end)
+	var parent_body := get_parent() as CollisionObject3D
+	if parent_body:
+		query.exclude = [parent_body.get_rid()]
 	var result := space_state.intersect_ray(query)
 
 	if result.is_empty():

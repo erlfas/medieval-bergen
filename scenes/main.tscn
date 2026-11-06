@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3 uid="uid://dp6m5k3u5o2a4"]
+[gd_scene load_steps=15 format=3 uid="uid://dp6m5k3u5o2a4"]
 
 [ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
 [ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" uid="uid://c8nqmvt6b50p8" path="res://scenes/ui/hud_clock_calendar.tscn" id="9_hud"]
 [ext_resource type="PackedScene" uid="uid://bvy9l5tq8r7op" path="res://scenes/ui/hud_building_bar.tscn" id="10_build_hud"]
 [ext_resource type="Script" path="res://scripts/survival/shelter_detector.gd" id="11_shelter"]
+[ext_resource type="Script" path="res://scripts/player/box_man_model.gd" id="12_boxman"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.48, 0.65, 1)
@@ -77,6 +78,9 @@ world_seed = 1360
 [node name="Settler" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 150, 8, 150)
 script = ExtResource("5_settler")
+
+[node name="BoxManModel" type="Node3D" parent="Settler"]
+script = ExtResource("12_boxman")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Settler"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
