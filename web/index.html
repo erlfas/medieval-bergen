@@ -77,53 +77,62 @@
       flex: 1;
       position: relative;
       background: #000;
+      overflow: hidden;
     }
     #canvas {
       width: 100%;
       height: 100%;
       display: block;
     }
-    #loading-overlay {
+    #canvas:focus {
+      outline: none;
+    }
+    #status {
       position: absolute;
       inset: 0;
-      background: #11141b;
+      background-color: #11141b;
       display: flex;
       flex-direction: column;
-      align-items: center;
       justify-content: center;
+      align-items: center;
       z-index: 5;
       transition: opacity 0.4s ease;
     }
     .loading-title {
-      font-size: 22px;
+      font-size: 24px;
       color: #f7fafc;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       letter-spacing: 1px;
+      font-weight: 600;
     }
     .loading-sub {
       font-size: 13px;
       color: #94a3b8;
       margin-bottom: 24px;
     }
-    .progress-bar-bg {
+    #status-progress {
       width: 320px;
       height: 8px;
-      background: #1f2733;
-      border-radius: 4px;
-      overflow: hidden;
-      border: 1px solid #2d3748;
+      accent-color: #d69e2e;
     }
-    .progress-bar-fill {
-      width: 0%;
-      height: 100%;
-      background: linear-gradient(90deg, #b7791f, #d69e2e);
-      transition: width 0.15s ease;
+    #status-notice {
+      display: none;
+      background-color: #5b3943;
+      border-radius: 6px;
+      border: 1px solid #9b3943;
+      color: #e0e0e0;
+      margin-top: 16px;
+      padding: 12px 18px;
+      max-width: 450px;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.5;
     }
     #controls-hint {
       position: absolute;
       bottom: 16px;
       left: 16px;
-      background: rgba(17, 20, 27, 0.88);
+      background: rgba(17, 20, 27, 0.90);
       border: 1px solid #334155;
       padding: 10px 14px;
       border-radius: 6px;
@@ -149,14 +158,15 @@
     </div>
 
     <div id="canvas-wrap">
-      <canvas id="canvas" oncontextmenu="event.preventDefault();" tabindex="0"></canvas>
+      <canvas id="canvas" oncontextmenu="event.preventDefault();" tabindex="0">
+        Your browser does not support the canvas tag.
+      </canvas>
 
-      <div id="loading-overlay">
+      <div id="status">
         <h1 class="loading-title">Medieval Bergen (1360)</h1>
-        <p class="loading-sub">Generating fjords, mountains, and settler wilderness...</p>
-        <div class="progress-bar-bg">
-          <div id="progress-fill" class="progress-bar-fill"></div>
-        </div>
+        <p class="loading-sub">Loading settler world, fjords, and mountains...</p>
+        <progress id="status-progress"></progress>
+        <div id="status-notice"></div>
       </div>
 
       <div id="controls-hint">
@@ -166,10 +176,12 @@
     </div>
   </div>
 
+  <script src="/index.js"></script>
   <script>
     const canvas = document.getElementById('canvas');
-    const progressFill = document.getElementById('progress-fill');
-    const loadingOverlay = document.getElementById('loading-overlay');
+    const statusOverlay = document.getElementById('status');
+    const statusProgress = document.getElementById('status-progress');
+    const statusNotice = document.getElementById('status-notice');
     const btnFullscreen = document.getElementById('btn-fullscreen');
 
     // Fullscreen Toggle
@@ -182,42 +194,50 @@
       }
     });
 
-    // Handle Godot Web export loading hooks if index.js exists in public
-    if (typeof Engine !== 'undefined') {
-      const engine = new Engine({
-        args: [],
-        canvas: canvas,
-        onProgress: function (current, total) {
-          if (total > 0) {
-            const pct = Math.floor((current / total) * 100);
-            progressFill.style.width = pct + '%';
-          }
-        }
-      });
+    const GODOT_CONFIG = {
+      "args": [],
+      "canvasResizePolicy": 2,
+      "ensureCrossOriginIsolationHeaders": true,
+      "executable": "index",
+      "experimentalVK": false,
+      "fileSizes": { "index.pck": 44140256, "index.wasm": 35376909 },
+      "focusCanvas": true,
+      "gdextensionLibs": []
+    };
+    const GODOT_THREADS_ENABLED = false;
 
-      engine.startGame({
-        onSuccess: function () {
-          loadingOverlay.style.opacity = '0';
-          setTimeout(() => loadingOverlay.style.display = 'none', 400);
-        },
-        onError: function (err) {
-          console.error(err);
-        }
-      });
+    if (typeof Engine !== 'undefined') {
+      const engine = new Engine(GODOT_CONFIG);
+
+      function displayFailureNotice(err) {
+        console.error(err);
+        statusNotice.style.display = 'block';
+        statusNotice.textContent = (err instanceof Error) ? err.message : String(err);
+      }
+
+      const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+      if (missing.length !== 0) {
+        displayFailureNotice('Features required to run Godot Web are missing: ' + missing.join(', '));
+      } else {
+        engine.startGame({
+          'canvas': canvas,
+          'onProgress': function (current, total) {
+            if (current > 0 && total > 0) {
+              statusProgress.value = current;
+              statusProgress.max = total;
+            } else {
+              statusProgress.removeAttribute('value');
+              statusProgress.removeAttribute('max');
+            }
+          }
+        }).then(() => {
+          statusOverlay.style.opacity = '0';
+          setTimeout(() => statusOverlay.remove(), 400);
+        }, displayFailureNotice);
+      }
     } else {
-      // Mock progress animation until Godot web export is run into public/
-      let mockProgress = 0;
-      const interval = setInterval(() => {
-        mockProgress = Math.min(100, mockProgress + 15);
-        progressFill.style.width = mockProgress + '%';
-        if (mockProgress >= 100) {
-          clearInterval(interval);
-          setTimeout(() => {
-            loadingOverlay.style.opacity = '0';
-            setTimeout(() => loadingOverlay.style.display = 'none', 400);
-          }, 300);
-        }
-      }, 100);
+      statusNotice.style.display = 'block';
+      statusNotice.textContent = 'Engine script failed to load.';
     }
   </script>
 </body>
