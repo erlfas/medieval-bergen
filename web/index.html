@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Medieval Bergen 1360 — Settler Survival</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0e1115;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #e2e8f0;
+    }
+    #game-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    #top-nav {
+      height: 44px;
+      background: #171c24;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 10;
+      user-select: none;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 14px;
+      color: #e2d9c2;
+      letter-spacing: 0.5px;
+    }
+    .brand-badge {
+      background: #3c3022;
+      color: #e8b354;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid #6b5331;
+    }
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn {
+      background: #252d3a;
+      border: 1px solid #3d495c;
+      color: #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: #333d4e;
+      color: #fff;
+      border-color: #556680;
+    }
+    #canvas-wrap {
+      flex: 1;
+      position: relative;
+      background: #000;
+    }
+    #canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    #loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: #11141b;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+      transition: opacity 0.4s ease;
+    }
+    .loading-title {
+      font-size: 22px;
+      color: #f7fafc;
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+    .loading-sub {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 24px;
+    }
+    .progress-bar-bg {
+      width: 320px;
+      height: 8px;
+      background: #1f2733;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #2d3748;
+    }
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #b7791f, #d69e2e);
+      transition: width 0.15s ease;
+    }
+    #controls-hint {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      background: rgba(17, 20, 27, 0.88);
+      border: 1px solid #334155;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #cbd5e1;
+      line-height: 1.6;
+      pointer-events: none;
+      user-select: none;
+      z-index: 8;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="top-nav">
+      <div class="brand">
+        <span>⚔️ Medieval Bergen 1360</span>
+        <span class="brand-badge">Settler Survival</span>
+      </div>
+      <div class="actions">
+        <button id="btn-fullscreen" class="btn">⛶ Fullscreen</button>
+      </div>
+    </div>
+
+    <div id="canvas-wrap">
+      <canvas id="canvas" oncontextmenu="event.preventDefault();" tabindex="0"></canvas>
+
+      <div id="loading-overlay">
+        <h1 class="loading-title">Medieval Bergen (1360)</h1>
+        <p class="loading-sub">Generating fjords, mountains, and settler wilderness...</p>
+        <div class="progress-bar-bg">
+          <div id="progress-fill" class="progress-bar-fill"></div>
+        </div>
+      </div>
+
+      <div id="controls-hint">
+        <b>[WASD]</b> Walk &nbsp;|&nbsp; <b>[Shift]</b> Sprint &nbsp;|&nbsp; <b>[E]</b> Chop / Drink &nbsp;|&nbsp; <b>[F]</b> Torch (Repels Wolves)<br>
+        <b>[B]</b> Build Mode &nbsp;|&nbsp; <b>[Tab]</b> Next Piece &nbsp;|&nbsp; <b>[R]</b> Rotate &nbsp;|&nbsp; <b>[L-Click]</b> Build / Attack
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const progressFill = document.getElementById('progress-fill');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+
+    // Fullscreen Toggle
+    btnFullscreen.addEventListener('click', () => {
+      const container = document.getElementById('game-container');
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => alert(`Error: ${err.message}`));
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    // Handle Godot Web export loading hooks if index.js exists in public
+    if (typeof Engine !== 'undefined') {
+      const engine = new Engine({
+        args: [],
+        canvas: canvas,
+        onProgress: function (current, total) {
+          if (total > 0) {
+            const pct = Math.floor((current / total) * 100);
+            progressFill.style.width = pct + '%';
+          }
+        }
+      });
+
+      engine.startGame({
+        onSuccess: function () {
+          loadingOverlay.style.opacity = '0';
+          setTimeout(() => loadingOverlay.style.display = 'none', 400);
+        },
+        onError: function (err) {
+          console.error(err);
+        }
+      });
+    } else {
+      // Mock progress animation until Godot web export is run into public/
+      let mockProgress = 0;
+      const interval = setInterval(() => {
+        mockProgress = Math.min(100, mockProgress + 15);
+        progressFill.style.width = mockProgress + '%';
+        if (mockProgress >= 100) {
+          clearInterval(interval);
+          setTimeout(() => {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => loadingOverlay.style.display = 'none', 400);
+          }, 300);
+        }
+      }, 100);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[build]
+  base = "web"
+  publish = "dist"
+  command = "npm install && npm run build"
+
+# Crucial headers for Godot 4 WebAssembly & SharedArrayBuffer execution
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "require-corp"
+    Access-Control-Allow-Origin = "*"
+    X-Content-Type-Options = "nosniff"

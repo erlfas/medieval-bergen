@@ -1,0 +1,12 @@
+# Godot 4
+.godot/
+*.translation
+
+# Node / Vite
+web/node_modules/
+web/dist/
+package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
