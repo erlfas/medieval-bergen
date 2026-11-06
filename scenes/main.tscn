@@ -75,7 +75,7 @@ mesh_resolution = 256
 world_seed = 1360
 
 [node name="Settler" type="CharacterBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 4, 150)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 150, 8, 150)
 script = ExtResource("5_settler")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Settler"]

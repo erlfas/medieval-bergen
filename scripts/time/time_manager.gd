@@ -32,7 +32,7 @@ const DAYS_IN_MONTH := [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 @export var start_year: int = 1360
 @export var start_month: int = 3               ## 1-based (March = 3)
 @export var start_day: int = 1                 ## 1st of March
-@export var start_hour: int = 7                ## 07:00 morning
+@export var start_hour: int = 10               ## 10:00 bright daylight
 @export var start_minute: int = 0
 @export var settler_start_age: int = 30
 @export var settler_birth_month: int = 3
@@ -100,7 +100,7 @@ func _advance_day() -> void:
 	current_day += 1
 	total_days_survived += 1
 
-	var max_days := DAYS_IN_MONTH[current_month - 1]
+	var max_days: int = DAYS_IN_MONTH[current_month - 1]
 	if current_day > max_days:
 		current_day = 1
 		current_month += 1
@@ -153,11 +153,12 @@ func get_formatted_time() -> String:
 	return "%02d:%02d" % [current_hour, current_minute]
 
 func get_formatted_date() -> String:
-	var month_str := MONTH_NAMES_NORWEGIAN[current_month - 1]
+	var month_str: String = MONTH_NAMES_NORWEGIAN[current_month - 1]
 	return "%d. %s %d" % [current_day, month_str, current_year]
 
 func get_season_progress() -> float:
 	# Return 0.0 to 1.0 progress through current 3-month season
 	var month_in_season := (current_month - 1) % 3
-	var day_ratio := float(current_day) / float(DAYS_IN_MONTH[current_month - 1])
+	var days_in_cur_month: int = DAYS_IN_MONTH[current_month - 1]
+	var day_ratio := float(current_day) / float(days_in_cur_month)
 	return (float(month_in_season) + day_ratio) / 3.0

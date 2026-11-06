@@ -208,6 +208,7 @@ func generate_terrain() -> void:
 		terrain_mesh_instance = get_node_or_null("TerrainMesh") as MeshInstance3D
 		if terrain_mesh_instance == null:
 			terrain_mesh_instance = MeshInstance3D.new()
+			terrain_mesh_instance.mesh = ArrayMesh.new()
 			terrain_mesh_instance.name = "TerrainMesh"
 			add_child(terrain_mesh_instance)
 			terrain_mesh_instance.owner = self
@@ -558,26 +559,3 @@ func _scatter_forests() -> void:
 			trees_container.add_child(tree_node)
 			tree_node.global_position = Vector3(tx, ty, tz)
 
-
-func _ensure_water_plane() -> void:
-	if water_plane_instance == null:
-		water_plane_instance = get_node_or_null("FjordWater") as MeshInstance3D
-		if water_plane_instance == null:
-			water_plane_instance = MeshInstance3D.new()
-			water_plane_instance.name = "FjordWater"
-			add_child(water_plane_instance)
-			water_plane_instance.owner = self
-
-	var plane_mesh := PlaneMesh.new()
-	plane_mesh.size = world_size * 1.1
-	plane_mesh.subdivide_width = 16
-	plane_mesh.subdivide_depth = 16
-	water_plane_instance.mesh = plane_mesh
-	water_plane_instance.position.y = sea_level
-
-	var water_mat := StandardMaterial3D.new()
-	water_mat.albedo_color = Color(0.10, 0.22, 0.28, 0.82)
-	water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water_mat.roughness = 0.15
-	water_mat.metallic = 0.1
-	water_plane_instance.material_override = water_mat

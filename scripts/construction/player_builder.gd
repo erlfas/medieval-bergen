@@ -117,6 +117,7 @@ func _init_ghost_materials() -> void:
 
 func _create_ghost_instance() -> void:
 	ghost_mesh_instance = MeshInstance3D.new()
+	ghost_mesh_instance.mesh = BoxMesh.new()
 	ghost_mesh_instance.visible = false
 	add_child(ghost_mesh_instance)
 

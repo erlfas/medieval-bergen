@@ -93,13 +93,13 @@ func _update_environment_lighting(solar_altitude_deg: float) -> void:
 
 	var env := world_environment.environment
 	if solar_altitude_deg > 0.0:
-		var day_factor := clampf(solar_altitude_deg / 30.0, 0.0, 1.0)
-		env.ambient_light_energy = lerpf(0.3, 1.0, day_factor)
-		env.ambient_light_color = Color(0.4, 0.45, 0.55).lerp(Color(0.85, 0.88, 0.92), day_factor)
+		var day_factor := clampf(solar_altitude_deg / 20.0, 0.0, 1.0)
+		env.ambient_light_energy = lerpf(0.6, 1.25, day_factor)
+		env.ambient_light_color = Color(0.55, 0.62, 0.72).lerp(Color(0.88, 0.90, 0.95), day_factor)
 	else:
 		var night_factor := clampf((-solar_altitude_deg) / 12.0, 0.0, 1.0)
-		env.ambient_light_energy = lerpf(0.3, 0.08, night_factor)
-		env.ambient_light_color = Color(0.12, 0.15, 0.22)
+		env.ambient_light_energy = lerpf(0.6, 0.25, night_factor)
+		env.ambient_light_color = Color(0.22, 0.28, 0.38)
 
 func _calculate_day_of_year(month: int, day: int) -> int:
 	var total := 0
