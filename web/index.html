@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Medieval Bergen 1360 — Settler Survival</title>
+  <title>Medieval Bergen 1360 — Settler Survival & Cabin Building</title>
   <style>
     * {
       box-sizing: border-box;
@@ -56,7 +56,7 @@
     .actions {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
     .btn {
       background: #252d3a;
@@ -67,11 +67,25 @@
       font-size: 12px;
       cursor: pointer;
       transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
     .btn:hover {
       background: #333d4e;
       color: #fff;
       border-color: #556680;
+    }
+    .btn-guide {
+      background: #3c2f1f;
+      color: #f3ca65;
+      border-color: #725633;
+      font-weight: 600;
+    }
+    .btn-guide:hover {
+      background: #4e3c27;
+      color: #fff;
+      border-color: #9c7546;
     }
     #canvas-wrap {
       flex: 1;
@@ -132,7 +146,7 @@
       position: absolute;
       bottom: 16px;
       left: 16px;
-      background: rgba(17, 20, 27, 0.90);
+      background: rgba(17, 20, 27, 0.92);
       border: 1px solid #334155;
       padding: 10px 14px;
       border-radius: 6px;
@@ -142,6 +156,112 @@
       pointer-events: none;
       user-select: none;
       z-index: 8;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+
+    /* Cabin Guide Modal */
+    #guide-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 10, 14, 0.78);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 20px;
+    }
+    #guide-modal-overlay.active {
+      display: flex;
+    }
+    .modal-box {
+      background: #141820;
+      border: 2px solid #735939;
+      border-radius: 8px;
+      max-width: 720px;
+      width: 100%;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85);
+      animation: modalFadeIn 0.2s ease-out;
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1.0); }
+    }
+    .modal-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid #2d3748;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #1a202c;
+      border-top-left-radius: 6px;
+      border-top-right-radius: 6px;
+    }
+    .modal-header h2 {
+      font-size: 16px;
+      color: #f7e2a9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-close {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .btn-close:hover {
+      color: #fff;
+      background: #334155;
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #cbd5e1;
+    }
+    .guide-section {
+      background: #191f2b;
+      border: 1px solid #283344;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .guide-section h3 {
+      font-size: 14px;
+      color: #e5b869;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .guide-section p, .guide-section ul {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .guide-section ul {
+      margin-left: 20px;
+      margin-top: 4px;
+    }
+    .guide-section li {
+      margin-bottom: 4px;
+    }
+    .key-badge {
+      display: inline-block;
+      background: #2d3748;
+      border: 1px solid #4a5568;
+      color: #e2e8f0;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 11px;
     }
   </style>
 </head>
@@ -153,6 +273,7 @@
         <span class="brand-badge">Settler Survival</span>
       </div>
       <div class="actions">
+        <button id="btn-cabin-guide" class="btn btn-guide">📖 How to Build a Cabin</button>
         <button id="btn-fullscreen" class="btn">⛶ Fullscreen</button>
       </div>
     </div>
@@ -171,7 +292,65 @@
 
       <div id="controls-hint">
         <b>[WASD]</b> Walk &nbsp;|&nbsp; <b>[Shift]</b> Sprint &nbsp;|&nbsp; <b>[E]</b> Chop / Pick Up / Drink &nbsp;|&nbsp; <b>[G]</b> Drop Log &nbsp;|&nbsp; <b>[F]</b> Torch<br>
-        <b>[B]</b> Build Cabin / Pieces &nbsp;|&nbsp; <b>[Tab]</b> Next Piece &nbsp;|&nbsp; <b>[R]</b> Rotate &nbsp;|&nbsp; <b>[V]</b> Camera &nbsp;|&nbsp; <b>[L-Click]</b> Action
+        <b>[B]</b> Build Mode &nbsp;|&nbsp; <b>[Tab]</b> Next Piece &nbsp;|&nbsp; <b>[R]</b> Rotate Door &nbsp;|&nbsp; <b>[C]</b> In-Game Guide &nbsp;|&nbsp; <b>[V]</b> Camera &nbsp;|&nbsp; <b>[L-Click]</b> Action
+      </div>
+    </div>
+  </div>
+
+  <!-- How to Build a Cabin Modal -->
+  <div id="guide-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>📖 Slik bygger du en Laftehytte (How to Build a Norwegian Cabin)</h2>
+        <button id="btn-modal-close" class="btn-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="guide-section">
+          <h3>🌲 1. Felling Timber (10-Chop Spruce Physics)</h3>
+          <p>Approach tall spruce trees on the Bergen hillsides and strike with your axe (<span class="key-badge">Left-Click</span> or <span class="key-badge">E</span>).</p>
+          <ul>
+            <li>Spruce trees take <b>10 axe chops</b>. Dynamic notch cuts carve into the trunk.</li>
+            <li>The tree tilts and crashes down using rigid body physics based on cut orientation.</li>
+            <li>Upon hitting the earth, branches shatter off and the trunk splits into carryable timber logs!</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🪵 2. Hauling Timber & Carried Log Integration</h3>
+          <p>Approach any fallen log and press <span class="key-badge">E</span> to pick it up and carry it in your settler's arms.</p>
+          <ul>
+            <li>Carry logs directly to your building plot. Drop them anytime with <span class="key-badge">E</span> or <span class="key-badge">G</span>.</li>
+            <li><b>Direct Construction:</b> When you hold a log in your arms and press <span class="key-badge">B</span> to build, that carried log is <b>automatically consumed</b> into the cabin foundation (-1 log cost)!</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🪨 3. Harvesting Foundation Stones, Birch Bark & Turf</h3>
+          <ul>
+            <li><b>Slate & Field Stones (Grunnmur):</b> Gather 4 stones from scree slopes to raise the bottom logs off damp soil and prevent rotting.</li>
+            <li><b>Birch Bark (Never):</b> Harvest 4 white birch bark sheets for water-tight underlayment beneath the roof turf.</li>
+            <li><b>Mountain Meadow Sod (Torv):</b> Cut 4 living green turf blocks to insulate against brutal Norwegian winters.</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🔨 4. Build Mode, Architectural Ghost & Door Alignment</h3>
+          <p>Press <span class="key-badge">B</span> to toggle Build Mode. You can build either the <b>Complete Laftehytte</b> or build stage-by-stage (Foundation → Walls → Roof → Hearth):</p>
+          <ul>
+            <li><b>Architectural Ghost:</b> See the transparent green silhouette of the cabin, including walls, roof pitch, and the open doorway!</li>
+            <li><b>Door Orientation:</b> Press <span class="key-badge">R</span> to rotate 90°. Watch the entrance threshold step to face the doorway south or west away from prevailing mountain gales.</li>
+            <li><b>Place:</b> <span class="key-badge">Left-Click</span> to place your cabin firmly on the ground.</li>
+          </ul>
+        </div>
+
+        <div class="guide-section">
+          <h3>🔥 5. Living in the Årestue (Warmth & Hearth)</h3>
+          <ul>
+            <li><b>100% Shelter:</b> Step inside! The enclosed walls and turf roof shield you completely from Bergen's rain, snow, and winter frostbite.</li>
+            <li><b>Central Hearth (Åre):</b> The stone hearth emits 360° radiant warmth and crackling firelight. Smoke vents up cleanly through the open roof smoke hole (<i>ljore</i>).</li>
+            <li><b>Cooking:</b> Press <span class="key-badge">H</span> near the hearth fire to roast venison and restore health!</li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -183,6 +362,33 @@
     const statusProgress = document.getElementById('status-progress');
     const statusNotice = document.getElementById('status-notice');
     const btnFullscreen = document.getElementById('btn-fullscreen');
+    const btnCabinGuide = document.getElementById('btn-cabin-guide');
+    const guideModal = document.getElementById('guide-modal-overlay');
+    const btnModalClose = document.getElementById('btn-modal-close');
+
+    // Cabin Guide Modal Handlers
+    function toggleGuideModal(show) {
+      if (show) {
+        guideModal.classList.add('active');
+        if (document.pointerLockElement) {
+          document.exitPointerLock();
+        }
+      } else {
+        guideModal.classList.remove('active');
+      }
+    }
+
+    btnCabinGuide.addEventListener('click', () => toggleGuideModal(true));
+    btnModalClose.addEventListener('click', () => toggleGuideModal(false));
+    guideModal.addEventListener('click', (e) => {
+      if (e.target === guideModal) toggleGuideModal(false);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && guideModal.classList.contains('active')) {
+        toggleGuideModal(false);
+      }
+    });
 
     // Fullscreen Toggle
     btnFullscreen.addEventListener('click', () => {
@@ -200,7 +406,7 @@
       "ensureCrossOriginIsolationHeaders": true,
       "executable": "index",
       "experimentalVK": false,
-      "fileSizes": { "index.pck": 44140256, "index.wasm": 35376909 },
+      "fileSizes": { "index.pck": 46020208, "index.wasm": 35376909 },
       "focusCanvas": true,
       "gdextensionLibs": []
     };

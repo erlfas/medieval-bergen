@@ -20,6 +20,8 @@ var is_build_mode: bool = false
 var selected_recipe_index: int = 0
 var current_rotation_y: float = 0.0
 
+var ghost_root: Node3D
+var ghost_custom_node: Node3D
 var ghost_mesh_instance: MeshInstance3D
 var catalog: Array[BuildingPieceRecipe] = []
 
@@ -36,14 +38,52 @@ func _init_catalog() -> void:
 	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
 	var r_cabin := BuildingPieceRecipe.new()
 	r_cabin.piece_id = "cabin_laftehytte"
-	r_cabin.piece_name = "Norwegian Log Cabin (Laftehytte)"
+	r_cabin.piece_name = "Norwegian Log Cabin (Complete Laftehytte)"
 	r_cabin.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_cabin.resource_costs = { "timber_log": 6, "stone": 4, "birch_bark": 4, "turf": 4 }
 	r_cabin.dimensions = Vector3(5.0, 3.6, 5.0)
 	r_cabin.provides_shelter = true
 	catalog.append(r_cabin)
 
-	# 2. Farmhouse Stone Footing
+	# 2. Cabin Stage 1: Stone Footings & Floor (Grunnmur)
+	var r_c_fund := BuildingPieceRecipe.new()
+	r_c_fund.piece_id = "cabin_stage_foundation"
+	r_c_fund.piece_name = "Cabin Stage 1: Stone Sill & Floor (Grunnmur)"
+	r_c_fund.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_c_fund.resource_costs = { "stone": 4, "timber_log": 2 }
+	r_c_fund.dimensions = Vector3(5.0, 0.4, 5.0)
+	catalog.append(r_c_fund)
+
+	# 3. Cabin Stage 2: Lafteverk Timber Walls (Veggløft)
+	var r_c_walls := BuildingPieceRecipe.new()
+	r_c_walls.piece_id = "cabin_stage_walls"
+	r_c_walls.piece_name = "Cabin Stage 2: Interlocking Log Walls & Door"
+	r_c_walls.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_c_walls.resource_costs = { "timber_log": 4 }
+	r_c_walls.dimensions = Vector3(5.0, 2.2, 5.0)
+	catalog.append(r_c_walls)
+
+	# 4. Cabin Stage 3: Gables, Ridge & Sod Roof (Torvtak)
+	var r_c_roof := BuildingPieceRecipe.new()
+	r_c_roof.piece_id = "cabin_stage_roof"
+	r_c_roof.piece_name = "Cabin Stage 3: Torvtak Sod Roof & Smoke Hole"
+	r_c_roof.category = BuildingPieceRecipe.BuildingCategory.ROOFING
+	r_c_roof.resource_costs = { "timber_log": 2, "birch_bark": 4, "turf": 4 }
+	r_c_roof.dimensions = Vector3(5.0, 1.4, 5.0)
+	r_c_roof.provides_shelter = true
+	catalog.append(r_c_roof)
+
+	# 5. Cabin Stage 4: Central Stone Hearth & Bench (Åre Ildsted)
+	var r_c_hearth := BuildingPieceRecipe.new()
+	r_c_hearth.piece_id = "cabin_stage_hearth"
+	r_c_hearth.piece_name = "Cabin Stage 4: Central Hearth (Åre) & Bench"
+	r_c_hearth.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_c_hearth.resource_costs = { "stone": 4, "firewood": 2 }
+	r_c_hearth.dimensions = Vector3(2.0, 0.6, 2.0)
+	r_c_hearth.is_hearth = true
+	catalog.append(r_c_hearth)
+
+	# 6. Farmhouse Stone Footing (Modular Single Piece)
 	var r_stone_footing := BuildingPieceRecipe.new()
 	r_stone_footing.piece_id = "farm_stone_footing"
 	r_stone_footing.piece_name = "Farmhouse Stone Sill (Grunnmur)"
@@ -52,7 +92,7 @@ func _init_catalog() -> void:
 	r_stone_footing.dimensions = Vector3(4.0, 0.4, 0.5)
 	catalog.append(r_stone_footing)
 
-	# 2. Farmhouse Lafteverk Log Wall Course
+	# 7. Farmhouse Lafteverk Log Wall Course
 	var r_lafte_wall := BuildingPieceRecipe.new()
 	r_lafte_wall.piece_id = "farm_lafte_wall"
 	r_lafte_wall.piece_name = "Lafteverk Timber Wall (Spruce Logs)"
@@ -61,17 +101,7 @@ func _init_catalog() -> void:
 	r_lafte_wall.dimensions = Vector3(4.0, 1.0, 0.35)
 	catalog.append(r_lafte_wall)
 
-	# 3. Farmhouse Central Stone Hearth (Åre)
-	var r_hearth := BuildingPieceRecipe.new()
-	r_hearth.piece_id = "farm_stone_hearth"
-	r_hearth.piece_name = "Central Hearth (Åre Fireplace)"
-	r_hearth.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
-	r_hearth.resource_costs = { "stone": 6, "firewood": 2 }
-	r_hearth.dimensions = Vector3(1.4, 0.35, 1.4)
-	r_hearth.is_hearth = true
-	catalog.append(r_hearth)
-
-	# 4. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
+	# 8. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
 	var r_stabbur_pillar := BuildingPieceRecipe.new()
 	r_stabbur_pillar.piece_id = "stabbur_stone_pillar"
 	r_stabbur_pillar.piece_name = "Stabbur Pillar (Raised Slate Post)"
@@ -80,16 +110,7 @@ func _init_catalog() -> void:
 	r_stabbur_pillar.dimensions = Vector3(0.5, 1.2, 0.5)
 	catalog.append(r_stabbur_pillar)
 
-	# 5. Stabbur Timber Wall & Food Drying Loft
-	var r_stabbur_wall := BuildingPieceRecipe.new()
-	r_stabbur_wall.piece_id = "stabbur_log_wall"
-	r_stabbur_wall.piece_name = "Stabbur Heavy Log Wall"
-	r_stabbur_wall.category = BuildingPieceRecipe.BuildingCategory.STOREHOUSE
-	r_stabbur_wall.resource_costs = { "timber_log": 3 }
-	r_stabbur_wall.dimensions = Vector3(3.0, 1.2, 0.4)
-	catalog.append(r_stabbur_wall)
-
-	# 6. Barn Grindverk Post-and-Beam Timber Frame
+	# 9. Barn Grindverk Post-and-Beam Timber Frame
 	var r_barn_frame := BuildingPieceRecipe.new()
 	r_barn_frame.piece_id = "barn_grindverk_post"
 	r_barn_frame.piece_name = "Barn Grindverk Timber Frame"
@@ -98,16 +119,7 @@ func _init_catalog() -> void:
 	r_barn_frame.dimensions = Vector3(0.4, 3.2, 0.4)
 	catalog.append(r_barn_frame)
 
-	# 7. Timber Roof Rafter (A-Frame)
-	var r_rafter := BuildingPieceRecipe.new()
-	r_rafter.piece_id = "roof_rafter_pair"
-	r_rafter.piece_name = "A-Frame Timber Roof Rafter"
-	r_rafter.category = BuildingPieceRecipe.BuildingCategory.ROOFING
-	r_rafter.resource_costs = { "timber_log": 2 }
-	r_rafter.dimensions = Vector3(4.0, 2.0, 0.3)
-	catalog.append(r_rafter)
-
-	# 8. Birch Bark & Sod Roof Tile (Torvtak)
+	# 10. Birch Bark & Sod Roof Tile (Torvtak)
 	var r_sod_roof := BuildingPieceRecipe.new()
 	r_sod_roof.piece_id = "roof_sod_turf"
 	r_sod_roof.piece_name = "Sod Turf Tile (Birch Bark + Turf)"
@@ -119,17 +131,23 @@ func _init_catalog() -> void:
 func _init_ghost_materials() -> void:
 	ghost_mat_valid = StandardMaterial3D.new()
 	ghost_mat_valid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	ghost_mat_valid.albedo_color = Color(0.2, 0.85, 0.3, 0.5)
+	ghost_mat_valid.albedo_color = Color(0.2, 0.88, 0.35, 0.52)
 
 	ghost_mat_invalid = StandardMaterial3D.new()
 	ghost_mat_invalid.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	ghost_mat_invalid.albedo_color = Color(0.9, 0.2, 0.2, 0.5)
+	ghost_mat_invalid.albedo_color = Color(0.92, 0.22, 0.22, 0.52)
 
 func _create_ghost_instance() -> void:
+	ghost_root = Node3D.new()
+	ghost_root.name = "GhostRoot"
+	ghost_root.visible = false
+	add_child(ghost_root)
+
 	ghost_mesh_instance = MeshInstance3D.new()
+	ghost_mesh_instance.name = "GhostMesh"
 	ghost_mesh_instance.mesh = BoxMesh.new()
-	ghost_mesh_instance.visible = false
-	add_child(ghost_mesh_instance)
+	ghost_mesh_instance.visible = true
+	ghost_root.add_child(ghost_mesh_instance)
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Toggle Build Mode with 'B'
@@ -157,7 +175,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func toggle_build_mode() -> void:
 	is_build_mode = not is_build_mode
-	ghost_mesh_instance.visible = is_build_mode
+	if ghost_root:
+		ghost_root.visible = is_build_mode
 	build_mode_toggled.emit(is_build_mode)
 	if is_build_mode:
 		_update_ghost_mesh()
@@ -181,12 +200,13 @@ func _update_ghost_position_and_validity() -> void:
 	var result := space_state.intersect_ray(query)
 
 	if result.is_empty():
-		ghost_mesh_instance.visible = false
+		if ghost_root:
+			ghost_root.visible = false
 		return
 
-	ghost_mesh_instance.visible = true
+	if ghost_root:
+		ghost_root.visible = true
 	var hit_pos: Vector3 = result.position
-	var normal: Vector3 = result.normal
 
 	# Snap to nearest 0.5m grid
 	var snapped_x := snappedf(hit_pos.x, 0.5)
@@ -194,9 +214,16 @@ func _update_ghost_position_and_validity() -> void:
 	var snapped_z := snappedf(hit_pos.z, 0.5)
 
 	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
-	var y_center := snapped_y + current_recipe.dimensions.y * 0.5
-	ghost_mesh_instance.global_position = Vector3(snapped_x, y_center, snapped_z)
-	ghost_mesh_instance.rotation = Vector3(0, current_rotation_y, 0)
+	var is_cabin_piece := current_recipe.piece_id.begins_with("cabin")
+
+	if is_cabin_piece:
+		# Cabin origin is at floor level (Y=0)
+		ghost_root.global_position = Vector3(snapped_x, snapped_y, snapped_z)
+	else:
+		var y_center := snapped_y + current_recipe.dimensions.y * 0.5
+		ghost_root.global_position = Vector3(snapped_x, y_center, snapped_z)
+
+	ghost_root.rotation = Vector3(0, current_rotation_y, 0)
 
 	# Check resource sufficiency (taking carried log into account)
 	var settler: Node = get_parent()
@@ -208,10 +235,12 @@ func _update_ghost_position_and_validity() -> void:
 			needed_costs.erase("timber_log")
 
 	var can_afford := inventory.has_resources(needed_costs) if inventory else true
-	ghost_mesh_instance.material_override = ghost_mat_valid if can_afford else ghost_mat_invalid
+	var target_mat := ghost_mat_valid if can_afford else ghost_mat_invalid
+
+	BuildingAssembler.apply_ghost_material_recursive(ghost_root, target_mat)
 
 func _try_place_current_piece() -> void:
-	if not ghost_mesh_instance.visible:
+	if not ghost_root or not ghost_root.visible:
 		return
 
 	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
@@ -230,22 +259,23 @@ func _try_place_current_piece() -> void:
 
 	if inventory:
 		if not inventory.consume_resources(needed_costs):
-			return # Insufficient timber logs / stone
+			return # Insufficient resources
 
 	if used_carried_log and settler != null and settler.has_method("consume_carried_log"):
 		settler.consume_carried_log()
 
 	# Instantiate physical building piece in the world
 	var placed_piece := _spawn_piece_instance(current_recipe)
-	get_parent().get_parent().add_child(placed_piece)
+	var scene_root: Node = get_parent().get_parent()
+	if not scene_root and get_tree():
+		scene_root = get_tree().current_scene if get_tree().current_scene else get_tree().root
+	scene_root.add_child(placed_piece)
 
-	if current_recipe.piece_id == "cabin_laftehytte":
-		# Cabin origin is at floor level (Y=0)
-		var base_y := ghost_mesh_instance.global_position.y - current_recipe.dimensions.y * 0.5
-		placed_piece.global_position = Vector3(ghost_mesh_instance.global_position.x, base_y, ghost_mesh_instance.global_position.z)
+	if current_recipe.piece_id.begins_with("cabin"):
+		placed_piece.global_position = ghost_root.global_position
 		placed_piece.rotation.y = current_rotation_y
 	else:
-		placed_piece.global_transform = ghost_mesh_instance.global_transform
+		placed_piece.global_transform = ghost_root.global_transform
 
 	piece_placed.emit(current_recipe, placed_piece.global_position)
 
@@ -253,6 +283,14 @@ func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
 	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
 	if recipe.piece_id == "cabin_laftehytte":
 		return BuildingAssembler.assemble_log_cabin(recipe.dimensions.x, recipe.dimensions.z)
+	elif recipe.piece_id == "cabin_stage_foundation":
+		return BuildingAssembler.assemble_cabin_stage_foundation(recipe.dimensions.x, recipe.dimensions.z)
+	elif recipe.piece_id == "cabin_stage_walls":
+		return BuildingAssembler.assemble_cabin_stage_walls(recipe.dimensions.x, recipe.dimensions.z)
+	elif recipe.piece_id == "cabin_stage_roof":
+		return BuildingAssembler.assemble_cabin_stage_roof(recipe.dimensions.x, recipe.dimensions.z)
+	elif recipe.piece_id == "cabin_stage_hearth":
+		return BuildingAssembler.assemble_cabin_stage_hearth(recipe.dimensions.x, recipe.dimensions.z)
 
 	# 2. If user provided a 3D model (.gltf, .obj, .tscn), instantiate it directly!
 	if recipe.custom_scene != null:
@@ -291,6 +329,18 @@ func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
 func _update_ghost_mesh() -> void:
 	var recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
 
+	# Clean up previous custom ghost node
+	if ghost_custom_node and is_instance_valid(ghost_custom_node):
+		ghost_custom_node.queue_free()
+		ghost_custom_node = null
+
+	if recipe.piece_id == "cabin_laftehytte":
+		ghost_mesh_instance.visible = false
+		ghost_custom_node = BuildingAssembler.create_cabin_ghost_preview(recipe.dimensions.x, recipe.dimensions.z, ghost_mat_valid)
+		ghost_root.add_child(ghost_custom_node)
+		selected_piece_changed.emit(recipe)
+		return
+
 	# If custom 3D model has mesh children, extract mesh for preview
 	if recipe.custom_scene != null:
 		var temp_node := recipe.custom_scene.instantiate()
@@ -305,11 +355,13 @@ func _update_ghost_mesh() -> void:
 		temp_node.queue_free()
 
 		if mesh_found:
+			ghost_mesh_instance.visible = true
 			ghost_mesh_instance.mesh = mesh_found
 			selected_piece_changed.emit(recipe)
 			return
 
 	# Fallback placeholder mesh
+	ghost_mesh_instance.visible = true
 	ghost_mesh_instance.mesh = _generate_placeholder_mesh(recipe)
 	selected_piece_changed.emit(recipe)
 

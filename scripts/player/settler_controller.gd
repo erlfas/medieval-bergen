@@ -9,6 +9,9 @@ extends CharacterBody3D
 ## - Survival interactions: tree chopping, freshwater drinking, wolf defense, hunting
 ## - Pine-tar torch [F] with warm light and wolf deterrence
 ## - Piece-by-piece modular construction system [B] and full Log Cabin assembly
+## - Cabin Builder's Guide [C] for medieval architectural instructions
+
+signal carrying_state_changed(is_carrying: bool)
 
 @export var walk_speed: float = 4.2
 @export var sprint_speed: float = 7.0
@@ -161,6 +164,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == KEY_G:
 			if is_carrying_log:
 				drop_log()
+		elif event.physical_keycode == KEY_C:
+			var hud_bar = get_tree().get_first_node_in_group("hud_building_bar")
+			if hud_bar and hud_bar.has_method("toggle_cabin_guide"):
+				hud_bar.toggle_cabin_guide()
 
 	# Interaction Key (E) - pick up or drop log, or interact with objects
 	if event.is_action_pressed("interact"):
@@ -313,6 +320,7 @@ func pick_up_log(log_node: Node) -> void:
 	if is_carrying_log:
 		return
 	is_carrying_log = true
+	carrying_state_changed.emit(true)
 	if is_holding_torch:
 		toggle_torch()
 
@@ -327,6 +335,7 @@ func drop_log() -> void:
 	if not is_carrying_log:
 		return
 	is_carrying_log = false
+	carrying_state_changed.emit(false)
 
 	if box_man_model:
 		box_man_model.set_carrying_log(false)
@@ -351,6 +360,7 @@ func consume_carried_log() -> void:
 	if not is_carrying_log:
 		return
 	is_carrying_log = false
+	carrying_state_changed.emit(false)
 	if box_man_model:
 		box_man_model.set_carrying_log(false)
 
