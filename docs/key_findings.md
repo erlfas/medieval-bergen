@@ -17,13 +17,18 @@ This document summarizes the core technical findings, architectural patterns, an
 ## 2. Procedural Topography & Collision Engineering
 
 ### Terrain Geometry & Triangle Winding Order
-In Godot 4 3D, triangle face normals directly dictate collision normals for `create_trimesh_shape()`.
-- **Finding:** A clockwise vertex order produces downward-facing normals (`-Y`), causing character bodies to drop straight through procedural terrain into the void.
-- **Solution:** Standardize on Counter-Clockwise (CCW) winding order for every quad on the X-Z grid:
-  - Triangle 1: `(v0 -> v2 -> v1)`
-  - Triangle 2: `(v1 -> v2 -> v3)`
-  - Normal validation: `tangent_x.cross(tangent_z)` with `if normal.y < 0.0: normal = -normal`.
-- **Double-Sided Rendering:** Set `mat.cull_mode = BaseMaterial3D.CULL_DISABLED` so the mesh remains visible from all angles.
+In Godot 4 3D, triangle face normals and culling are governed by clockwise (CW) front-face winding when looking down from above (+Y towards -Y) in the right-handed coordinate system (+X East, +Z South, -Z North):
+- **Root Cause of Invisible Ground:**
+  - A Counter-Clockwise (CCW) vertex ordering on screen (`v0 -> v2 -> v1` and `v1 -> v2 -> v3`) treated upward surfaces as backfaces in Godot 3D.
+  - When the terrain used `render_mode cull_back`, the entire top surface of the terrain mesh was culled (invisible), causing the settler to appear to stand directly on the sea water plane, while distant mountains displayed inverted underside geometry.
+- **Solution (Clockwise Front-Facing Winding):**
+  - Standardized on front-facing Clockwise (CW) winding order for every quad on the X-Z grid:
+    - **Triangle 1:** `(v0 -> v1 -> v2)`
+    - **Triangle 2:** `(v1 -> v3 -> v2)`
+  - True upward normal cross product:
+    `var normal := tangent_z.cross(tangent_x).normalized()`
+    Because $Z \times X = +Y$, this yields a natural $+Y$ normal pointing upward along the terrain gradient $(-dy/dx, 1, -dy/dz)$, ensuring accurate slope lighting and preventing self-shadow artifacts.
+  - **Tangent Generation:** Added `st.generate_tangents()` before committing the mesh with `SurfaceTool`. This supplies valid tangent and binormal vectors required for PBR normal mapping.
 
 ### Collision Hardening & Floor Safety Clamping
 - **Trimesh Backface Collision:** Enabled `trimesh.backface_collision = true` on `ConcavePolygonShape3D` so collision detection prevents tunneling even under steep falls or physics lag spikes.
@@ -31,12 +36,13 @@ In Godot 4 3D, triangle face normals directly dictate collision normals for `cre
   - Dynamically snaps vertical spawn position in `_ready()` to `sample_height(x, z) + 0.1`.
   - In `_physics_process()`, if `global_position.y < ground_y`, clamps position and resets downward velocity (`velocity.y = maxf(0.0, velocity.y)`).
 
-### Atmospheric Shading & Slope-Based Triplanar Mapping
-- **The Problem:** 2048x2048m terrain with steep 60°–80° mountain crags causes severe texture stretching if using standard planar UVs.
+### Atmospheric Shading & Normal Map Calibration
+- **The Problem:** 2048x2048m terrain with steep 60°–80° mountain crags caused texture stretching, while assigning PBR normal maps without mesh tangents produced blown-out, speckled white specular noise across Mount Fløyen.
 - **The Solution:** Custom GL Compatibility shader (`shaders/bergen_terrain.gdshader`):
   - **Slope-Based Triplanar Rock:** Mountain cliffs (> 40° slope) project triplanar world-space rock textures, eliminating vertical stretching on Mount Fløyen & Sandviksfjellet.
   - **Dual-Octave Rotated Grass Sampling:** Blends meadow grass at two different rotation angles and scales to break up repetitive tiling in the valley.
   - **Elevation & Slope Biomes:** Smoothly transitions between fjord shoreline pebbles, lush meadow grass, scree talus slopes, steep granite cliffs, and high fell summits.
+  - **Calibrated PBR Depth:** Calibrated `NORMAL_MAP_DEPTH` to `0.75` with generated tangents to render fine 3D micro-relief on grass turf and rock crags without specular noise or shading artifacts.
 
 ---
 
@@ -156,8 +162,10 @@ Managed by `scripts/player/equipment_manager.gd`:
 
 ---
 
-## 10. Reusable Skill Artifact
+## 10. Reusable Skills & Automation
 
-The web export and deployment procedures developed in this project have been formalized into a permanent skill:
-- **Skill Name:** `godot-web-deploy`
-- **Scope:** Headless CLI Godot 4 Web exports, Vite bundling, SharedArrayBuffer headers, and Netlify/Vercel static deployment.
+The procedures developed and refined during this project have been formalized into permanent reusable skills:
+1. **`godot-web-pipeline`**:
+   - **Scope:** Headless Godot 4 Web PCK package export, asset import & `.godot/` script class cache bootstrapping (`--editor --quit`), byte-exact PCK file size synchronization in `index.html` loader, and offscreen headless rendering validation using Xvfb with Mesa OpenGL3/llvmpipe.
+2. **`godot-web-deploy`**:
+   - **Scope:** Web export packaging, Vite bundling, Cross-Origin Isolation (`COOP`/`COEP`) headers for SharedArrayBuffer / WebAssembly threads, and static deployment configurations for Netlify, Vercel, and GitHub Pages.
