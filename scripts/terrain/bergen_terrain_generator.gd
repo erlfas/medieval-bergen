@@ -267,8 +267,8 @@ func generate_terrain() -> void:
 
 			var tangent_x := (right - left).normalized()
 			var tangent_z := (up - down).normalized()
-			# Normal pointing UP (+Y)
-			var normal := tangent_x.cross(tangent_z).normalized()
+			# Normal pointing UP (+Y): Z cross X in right-handed coordinate system
+			var normal := tangent_z.cross(tangent_x).normalized()
 			if normal.y < 0.0:
 				normal = -normal
 			normals[idx] = normal
@@ -313,23 +313,12 @@ func generate_terrain() -> void:
 			var v2 := row2 + ix
 			var v3 := row2 + (ix + 1)
 
-			# Triangle 1 (v0 -> v2 -> v1) for upward +Y normal
+			# Triangle 1 (v0 -> v1 -> v2) front-facing CCW
 			st.set_normal(normals[v0])
 			st.set_color(colors[v0])
 			st.set_uv(uvs[v0])
 			st.add_vertex(vertices[v0])
 
-			st.set_normal(normals[v2])
-			st.set_color(colors[v2])
-			st.set_uv(uvs[v2])
-			st.add_vertex(vertices[v2])
-
-			st.set_normal(normals[v1])
-			st.set_color(colors[v1])
-			st.set_uv(uvs[v1])
-			st.add_vertex(vertices[v1])
-
-			# Triangle 2 (v1 -> v2 -> v3) for upward +Y normal
 			st.set_normal(normals[v1])
 			st.set_color(colors[v1])
 			st.set_uv(uvs[v1])
@@ -339,12 +328,24 @@ func generate_terrain() -> void:
 			st.set_color(colors[v2])
 			st.set_uv(uvs[v2])
 			st.add_vertex(vertices[v2])
+
+			# Triangle 2 (v1 -> v3 -> v2) front-facing CCW
+			st.set_normal(normals[v1])
+			st.set_color(colors[v1])
+			st.set_uv(uvs[v1])
+			st.add_vertex(vertices[v1])
 
 			st.set_normal(normals[v3])
 			st.set_color(colors[v3])
 			st.set_uv(uvs[v3])
 			st.add_vertex(vertices[v3])
 
+			st.set_normal(normals[v2])
+			st.set_color(colors[v2])
+			st.set_uv(uvs[v2])
+			st.add_vertex(vertices[v2])
+
+	st.generate_tangents()
 	var mesh := st.commit()
 	terrain_mesh_instance.mesh = mesh
 

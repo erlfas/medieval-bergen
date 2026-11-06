@@ -186,7 +186,7 @@ void fragment() {
 	// 9. Output PBR Material
 	ALBEDO = surface_albedo;
 	NORMAL_MAP = (surface_normal + 1.0) * 0.5;
-	NORMAL_MAP_DEPTH = 1.15;
+	NORMAL_MAP_DEPTH = 0.75;
 	ROUGHNESS = surface_roughness;
 	SPECULAR = 0.35;
 }
