@@ -1,0 +1,114 @@
+[gd_scene load_steps=14 format=3 uid="uid://dp6m5k3u5o2a4"]
+
+[ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
+[ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
+[ext_resource type="Script" path="res://scripts/time/day_night_cycle.gd" id="3_cycle"]
+[ext_resource type="Script" path="res://scripts/terrain/bergen_terrain_generator.gd" id="4_terrain"]
+[ext_resource type="Script" path="res://scripts/player/settler_controller.gd" id="5_settler"]
+[ext_resource type="Script" path="res://scripts/survival/survival_stats.gd" id="6_stats"]
+[ext_resource type="Script" path="res://scripts/inventory/inventory_manager.gd" id="7_inv"]
+[ext_resource type="Script" path="res://scripts/construction/player_builder.gd" id="8_build"]
+[ext_resource type="PackedScene" uid="uid://c8nqmvt6b50p8" path="res://scenes/ui/hud_clock_calendar.tscn" id="9_hud"]
+[ext_resource type="PackedScene" uid="uid://bvy9l5tq8r7op" path="res://scenes/ui/hud_building_bar.tscn" id="10_build_hud"]
+[ext_resource type="Script" path="res://scripts/survival/shelter_detector.gd" id="11_shelter"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
+sky_top_color = Color(0.35, 0.48, 0.65, 1)
+sky_horizon_color = Color(0.68, 0.72, 0.78, 1)
+ground_bottom_color = Color(0.15, 0.16, 0.18, 1)
+ground_horizon_color = Color(0.55, 0.6, 0.65, 1)
+
+[sub_resource type="Sky" id="Sky_env"]
+sky_material = SubResource("ProceduralSkyMaterial_sky")
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 2
+sky = SubResource("Sky_env")
+ambient_light_source = 3
+ambient_light_color = Color(0.65, 0.7, 0.78, 1)
+tonemap_mode = 3
+glow_enabled = true
+fog_enabled = true
+fog_light_color = Color(0.62, 0.68, 0.75, 1)
+fog_density = 0.001
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
+radius = 0.4
+height = 1.8
+
+[node name="MainWorld" type="Node3D"]
+
+[node name="TimeManager" type="Node" parent="." groups=["time_manager"]]
+script = ExtResource("1_time")
+day_length_seconds = 1200.0
+start_year = 1360
+start_month = 3
+start_day = 1
+start_hour = 7
+settler_start_age = 30
+settler_birth_month = 3
+settler_birth_day = 1
+
+[node name="SeasonManager" type="Node" parent="." groups=["season_manager"] node_paths=PackedStringArray("time_manager", "player_survival_stats")]
+script = ExtResource("2_season")
+time_manager = NodePath("../TimeManager")
+player_survival_stats = NodePath("../Settler/SurvivalStats")
+
+[node name="DayNightCycle" type="Node3D" parent="." node_paths=PackedStringArray("time_manager", "sun_light", "world_environment")]
+script = ExtResource("3_cycle")
+time_manager = NodePath("../TimeManager")
+sun_light = NodePath("../SunLight")
+world_environment = NodePath("../WorldEnvironment")
+bergen_latitude_deg = 60.4
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="SunLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 150, 0)
+shadow_enabled = true
+
+[node name="BergenTerrain" type="Node3D" parent="." groups=["terrain_generator"]]
+script = ExtResource("4_terrain")
+world_size = Vector2(2048, 2048)
+mesh_resolution = 256
+world_seed = 1360
+
+[node name="Settler" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 60, 4, 150)
+script = ExtResource("5_settler")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Settler"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_player")
+
+[node name="SurvivalStats" type="Node" parent="Settler"]
+script = ExtResource("6_stats")
+
+[node name="InventoryManager" type="Node" parent="Settler" groups=["inventory"]]
+script = ExtResource("7_inv")
+
+[node name="PlayerBuilder" type="Node3D" parent="Settler" groups=["player_builder"] node_paths=PackedStringArray("settler_camera", "inventory")]
+script = ExtResource("8_build")
+settler_camera = NodePath("../Head/Camera3D")
+inventory = NodePath("../InventoryManager")
+
+[node name="ShelterDetector" type="Node3D" parent="Settler" node_paths=PackedStringArray("survival_stats")]
+script = ExtResource("11_shelter")
+survival_stats = NodePath("../SurvivalStats")
+
+[node name="Head" type="Node3D" parent="Settler"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
+
+[node name="Camera3D" type="Camera3D" parent="Settler/Head"]
+current = true
+fov = 75.0
+
+[node name="InteractRayCast" type="RayCast3D" parent="Settler/Head"]
+target_position = Vector3(0, 0, -3.5)
+
+[node name="HUDLayer" type="CanvasLayer" parent="."]
+
+[node name="HUDClockCalendar" parent="HUDLayer" instance=ExtResource("9_hud")]
+
+[node name="HUDBuildingBar" parent="HUDLayer" instance=ExtResource("10_build_hud")]
