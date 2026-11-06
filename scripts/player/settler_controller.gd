@@ -31,6 +31,9 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	terrain_generator = get_tree().get_first_node_in_group("terrain_generator") as BergenTerrainGenerator
 	_create_torch_light()
+	if terrain_generator:
+		var ground_h := terrain_generator.sample_height(global_position.x, global_position.z)
+		global_position.y = maxf(global_position.y, ground_h + 0.1)
 
 func _create_torch_light() -> void:
 	torch_light = OmniLight3D.new()
@@ -103,6 +106,14 @@ func _physics_process(delta: float) -> void:
 		velocity.z = move_toward(velocity.z, 0, speed)
 
 	move_and_slide()
+
+	# Terrain floor safety clamp to guarantee the settler never falls through the heightmap
+	if terrain_generator:
+		var ground_h := terrain_generator.sample_height(global_position.x, global_position.z)
+		if global_position.y < ground_h:
+			global_position.y = ground_h
+			if velocity.y < 0.0:
+				velocity.y = 0.0
 
 	# Check terrain freshwater stream drinking zone
 	if terrain_generator:

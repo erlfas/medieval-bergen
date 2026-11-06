@@ -277,10 +277,13 @@ func generate_terrain() -> void:
 
 			var tangent_x := (right - left).normalized()
 			var tangent_z := (up - down).normalized()
-			var normal := tangent_z.cross(tangent_x).normalized()
+			# Normal pointing UP (+Y)
+			var normal := tangent_x.cross(tangent_z).normalized()
+			if normal.y < 0.0:
+				normal = -normal
 			normals[idx] = normal
 
-	# Build triangle faces
+	# Build triangle faces with Counter-Clockwise (CCW) winding order for upward-facing triangles
 	for iz in range(mesh_resolution):
 		for ix in range(mesh_resolution):
 			var row1 := iz * (mesh_resolution + 1)
@@ -291,7 +294,7 @@ func generate_terrain() -> void:
 			var v2 := row2 + ix
 			var v3 := row2 + (ix + 1)
 
-			# Triangle 1
+			# Triangle 1 (v0 -> v2 -> v1) for upward +Y normal
 			st.set_normal(normals[v0])
 			st.set_color(colors[v0])
 			st.set_uv(uvs[v0])
@@ -307,7 +310,7 @@ func generate_terrain() -> void:
 			st.set_uv(uvs[v1])
 			st.add_vertex(vertices[v1])
 
-			# Triangle 2
+			# Triangle 2 (v1 -> v2 -> v3) for upward +Y normal
 			st.set_normal(normals[v1])
 			st.set_color(colors[v1])
 			st.set_uv(uvs[v1])
@@ -326,10 +329,11 @@ func generate_terrain() -> void:
 	var mesh := st.commit()
 	terrain_mesh_instance.mesh = mesh
 
-	# Create simple vertex-color standard material if none assigned
+	# Create simple vertex-color standard material with double-sided rendering
 	var mat := StandardMaterial3D.new()
 	mat.vertex_color_use_as_albedo = true
 	mat.roughness = 0.85
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	terrain_mesh_instance.material_override = mat
 
 	# Generate physical StaticBody3D collision shape from terrain mesh
@@ -485,7 +489,10 @@ func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
 	static_body.owner = self
 
 	var col_shape := CollisionShape3D.new()
-	col_shape.shape = mesh.create_trimesh_shape()
+	var trimesh := mesh.create_trimesh_shape()
+	if trimesh is ConcavePolygonShape3D:
+		trimesh.backface_collision = true
+	col_shape.shape = trimesh
 	static_body.add_child(col_shape)
 	col_shape.owner = self
 
