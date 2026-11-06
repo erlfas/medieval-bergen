@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://dp6m5k3u5o2a4"]
+[gd_scene load_steps=17 format=3 uid="uid://dp6m5k3u5o2a4"]
 
 [ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
 [ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
@@ -12,6 +12,8 @@
 [ext_resource type="PackedScene" uid="uid://bvy9l5tq8r7op" path="res://scenes/ui/hud_building_bar.tscn" id="10_build_hud"]
 [ext_resource type="Script" path="res://scripts/survival/shelter_detector.gd" id="11_shelter"]
 [ext_resource type="Script" path="res://scripts/player/box_man_model.gd" id="12_boxman"]
+[ext_resource type="Script" path="res://scripts/player/equipment_manager.gd" id="13_equip"]
+[ext_resource type="PackedScene" uid="uid://c6v2n4q1r7tp9" path="res://scenes/ui/hud_hotbar.tscn" id="14_hotbar"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.48, 0.65, 1)
@@ -101,6 +103,9 @@ inventory = NodePath("../InventoryManager")
 script = ExtResource("11_shelter")
 survival_stats = NodePath("../SurvivalStats")
 
+[node name="EquipmentManager" type="Node" parent="Settler" groups=["equipment_manager"]]
+script = ExtResource("13_equip")
+
 [node name="Head" type="Node3D" parent="Settler"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
 
@@ -116,3 +121,6 @@ target_position = Vector3(0, 0, -3.5)
 [node name="HUDClockCalendar" parent="HUDLayer" instance=ExtResource("9_hud")]
 
 [node name="HUDBuildingBar" parent="HUDLayer" instance=ExtResource("10_build_hud")]
+
+[node name="HUDHotbar" parent="HUDLayer" instance=ExtResource("14_hotbar")]
+

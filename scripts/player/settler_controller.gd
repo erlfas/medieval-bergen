@@ -22,8 +22,17 @@ signal carrying_state_changed(is_carrying: bool)
 @export var is_third_person: bool = true
 @export var target_cam_distance: float = 3.2
 @export var cam_height_offset: float = 0.45
-@export var cam_follow_damping: float = 2.4     ## Gentle follow damping when turning
 @export var character_turn_speed: float = 11.0   ## Smooth character body turning
+
+@export_group("Swimming & Water (Task 2)")
+@export var swim_speed: float = 2.8
+@export var swim_sprint_speed: float = 4.4
+@export var water_surface_offset: float = 0.2  ## Buoyancy surface position: y = sea_level + 0.2
+
+@export_group("Mountain Climbing & Rope (Task 7)")
+@export var climb_speed: float = 2.4
+@export var rope_climb_speed: float = 3.2
+@export var rope_rappel_speed: float = 4.8
 
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
@@ -31,6 +40,7 @@ signal carrying_state_changed(is_carrying: bool)
 @onready var survival_stats: SurvivalStats = $SurvivalStats
 @onready var inventory: InventoryManager = $InventoryManager
 @onready var player_builder: PlayerBuilder = $PlayerBuilder
+@onready var equipment: EquipmentManager = $EquipmentManager
 
 var box_man_model: Node3D
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -40,10 +50,16 @@ var is_carrying_log: bool = false
 var torch_light: OmniLight3D
 var terrain_generator: BergenTerrainGenerator
 
+# State flags for swimming and mountain climbing
+var is_swimming: bool = false
+var is_climbing: bool = false
+var climb_normal: Vector3 = Vector3.BACK
+var is_on_rope: bool = false
+var active_rope: ClimbingRope = null
+
 var cam_yaw: float = 0.0
 var cam_pitch: float = deg_to_rad(-8.0)
 var current_cam_distance: float = 3.2
-var mouse_orbit_timer: float = 0.0
 
 func _enter_tree() -> void:
 	_ensure_box_man_model()
@@ -55,6 +71,7 @@ func _ready() -> void:
 		terrain_generator = get_tree().get_first_node_in_group("terrain_generator") as BergenTerrainGenerator
 
 	_ensure_box_man_model()
+	_ensure_equipment_manager()
 	_create_torch_light()
 
 	# Snap settler vertically to terrain surface
@@ -88,6 +105,18 @@ func _ensure_box_man_model() -> void:
 		box_man_model = node
 	elif box_man_model.has_method("_build_box_man") and box_man_model.get("torso_node") == null:
 		box_man_model._build_box_man()
+
+func _ensure_equipment_manager() -> void:
+	if equipment == null:
+		equipment = get_node_or_null("EquipmentManager") as EquipmentManager
+	if equipment == null:
+		var eq_script = load("res://scripts/player/equipment_manager.gd")
+		if eq_script:
+			var node := Node.new()
+			node.name = "EquipmentManager"
+			node.set_script(eq_script)
+			add_child(node)
+			equipment = node as EquipmentManager
 
 func _create_torch_light() -> void:
 	torch_light = OmniLight3D.new()
@@ -128,12 +157,11 @@ func _spawn_starter_logs() -> void:
 		log_inst.rotation.y = randf_range(0.0, TAU)
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Mouse Look Orbit
+	# Mouse Look Orbit (Task 1: Mouse orbits camera freely at all times without snapping or fighting input)
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		cam_yaw -= event.relative.x * mouse_sensitivity
 		cam_pitch -= event.relative.y * mouse_sensitivity
 		cam_pitch = clampf(cam_pitch, deg_to_rad(-65.0), deg_to_rad(70.0))
-		mouse_orbit_timer = 0.55 # Active user orbit overrides auto-alignment
 
 		if not is_third_person:
 			rotation.y = cam_yaw
@@ -169,6 +197,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			if hud_bar and hud_bar.has_method("toggle_cabin_guide"):
 				hud_bar.toggle_cabin_guide()
 
+	# Hotbar Slot Selection [1], [2], [3], [4], [5]
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == KEY_1:
+			if equipment: equipment.select_slot(1)
+		elif event.physical_keycode == KEY_2:
+			if equipment: equipment.select_slot(2)
+		elif event.physical_keycode == KEY_3:
+			if equipment: equipment.select_slot(3)
+		elif event.physical_keycode == KEY_4:
+			if equipment: equipment.select_slot(4)
+		elif event.physical_keycode == KEY_5:
+			if equipment: equipment.select_slot(5)
+
 	# Interaction Key (E) - pick up or drop log, or interact with objects
 	if event.is_action_pressed("interact"):
 		if is_carrying_log:
@@ -180,10 +221,28 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_torch"):
 		toggle_torch()
 
-	# Attack / Chop (Left Click when NOT in build mode and NOT carrying log)
-	if event.is_action_pressed("place_build_piece") and (not player_builder or not player_builder.is_build_mode):
-		if not is_carrying_log:
-			_perform_attack_or_chop()
+	# Climbing Rope Tool [R] (when NOT building) or [T] (Task 7)
+	if (event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_R and (not player_builder or not player_builder.is_build_mode) or event.physical_keycode == KEY_T)) or event.is_action_pressed("deploy_rope"):
+		_handle_climbing_rope_tool()
+
+	# Primary Item Use / Attack / Bow Aim & Release (Left Click)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if not is_carrying_log and (not player_builder or not player_builder.is_build_mode):
+			if equipment:
+				if equipment.current_slot == EquipmentManager.Slot.BOW:
+					if event.pressed:
+						equipment.start_bow_aim()
+					else:
+						equipment.release_bow(camera)
+				elif event.pressed:
+					equipment.use_primary(interact_raycast, camera)
+			elif event.pressed:
+				_perform_attack_or_chop()
+
+	# Cancel bow aim with Right Click
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
+		if equipment and equipment.is_aiming_bow:
+			equipment.cancel_bow_aim()
 
 	# Quick Eat / Roast [H]
 	if event.is_action_pressed("eat_food"):
@@ -192,79 +251,373 @@ func _unhandled_input(event: InputEvent) -> void:
 func toggle_torch() -> void:
 	if is_carrying_log:
 		return # Cannot hold torch while carrying a log
-	is_holding_torch = not is_holding_torch
-	if torch_light:
-		torch_light.visible = is_holding_torch
+	if equipment:
+		if equipment.current_slot == EquipmentManager.Slot.TORCH:
+			equipment.select_slot(EquipmentManager.Slot.AXE)
+		else:
+			equipment.select_slot(EquipmentManager.Slot.TORCH)
+	else:
+		is_holding_torch = not is_holding_torch
+		if torch_light:
+			torch_light.visible = is_holding_torch
 
 func _physics_process(delta: float) -> void:
-	if not is_on_floor():
-		velocity.y -= gravity * delta
-
-	# Jump
-	if Input.is_action_just_pressed("jump") and is_on_floor():
-		var stamina_cost := 16.0 if is_carrying_log else 12.0
-		if survival_stats.consume_stamina(stamina_cost):
-			velocity.y = jump_velocity
-
-	# Sprinting (carrying a log prevents high-speed sprinting)
-	var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0
-	is_sprinting = Input.is_action_pressed("sprint") and is_on_floor() and can_sprint
-	var base_speed := walk_speed * (0.85 if is_carrying_log else 1.0)
-	var speed := sprint_speed if is_sprinting else base_speed
-
-	if is_sprinting:
-		survival_stats.consume_stamina(10.0 * delta)
-
-	# Movement direction relative to camera facing direction
+	# Direction relative to camera view (Task 1)
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 	var cam_forward := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
 	var cam_right := Vector3(cos(cam_yaw), 0.0, -sin(cam_yaw))
 	var direction := (cam_right * input_dir.x - cam_forward * input_dir.y).normalized()
 
-	if direction:
-		velocity.x = direction.x * speed
-		velocity.z = direction.z * speed
+	var sea_level := 0.0
+	if terrain_generator:
+		sea_level = terrain_generator.sea_level
+	var water_surface_y := sea_level + water_surface_offset
 
-		# Smooth character rotation towards movement direction in third-person
-		if is_third_person:
-			var target_heading := atan2(-direction.x, -direction.z)
-			rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+	var ground_h := sea_level - 10.0
+	if terrain_generator:
+		ground_h = terrain_generator.sample_height(global_position.x, global_position.z)
 
-			# Gentle camera damping follow: smoothly align behind the character when turning & walking
-			if mouse_orbit_timer > 0.0:
-				mouse_orbit_timer -= delta
-			else:
-				cam_yaw = lerp_angle(cam_yaw, rotation.y, delta * cam_follow_damping)
+	# -------------------------------------------------------------
+	# 1. WATER & SWIMMING STATE TRANSITION (Task 2)
+	# -------------------------------------------------------------
+	if not is_swimming:
+		# Enter water when submerged at or below water surface in water zone
+		if global_position.y <= (water_surface_y + 0.1) and ground_h < (water_surface_y - 0.05):
+			is_swimming = true
+			is_climbing = false
+			is_on_rope = false
+			active_rope = null
 	else:
-		velocity.x = move_toward(velocity.x, 0, speed)
-		velocity.z = move_toward(velocity.z, 0, speed)
-		if mouse_orbit_timer > 0.0:
-			mouse_orbit_timer -= delta
+		# Exit water when standing on solid ground above water surface
+		if ground_h >= (water_surface_y - 0.08) and is_on_floor():
+			is_swimming = false
+
+	# -------------------------------------------------------------
+	# 2. MOUNTAIN CLIFF DETECTION & ROCK CLIMBING ENGAGE (Task 7)
+	# -------------------------------------------------------------
+	if not is_climbing and not is_swimming and not is_on_rope and not is_carrying_log:
+		var cliff_info := _check_steep_cliff()
+		if not cliff_info.is_empty():
+			var moving_into_cliff := input_dir.y < -0.2
+			var jump_pressed := Input.is_action_just_pressed("jump")
+			if jump_pressed or moving_into_cliff:
+				is_climbing = true
+				climb_normal = cliff_info.normal
+				velocity = Vector3.ZERO
+
+	# -------------------------------------------------------------
+	# 3. MOVEMENT BY STATE
+	# -------------------------------------------------------------
+	if is_on_rope and active_rope and is_instance_valid(active_rope):
+		# CLIMBING ROPE TOOL / RAPPELLING (Task 7)
+		var rope_target := active_rope.get_closest_point(global_position)
+		global_position.x = lerpf(global_position.x, rope_target.x, delta * 12.0)
+		global_position.z = lerpf(global_position.z, rope_target.z, delta * 12.0)
+
+		var vert_input := -input_dir.y
+		if vert_input > 0.1:
+			# Climb UP rope
+			velocity.y = rope_climb_speed
+		elif vert_input < -0.1:
+			# Rappel DOWN rope smoothly (hold sprint for fast rappel)
+			var rappel_spd := rope_rappel_speed * (1.5 if Input.is_action_pressed("sprint") else 1.0)
+			velocity.y = -rappel_spd
+		else:
+			velocity.y = 0.0
+
+		velocity.x = 0.0
+		velocity.z = 0.0
+
+		# Disengage / jump off rope
+		if Input.is_action_just_pressed("jump"):
+			is_on_rope = false
+			velocity = -global_transform.basis.z * 3.5 + Vector3.UP * 2.5
+			active_rope = null
+
+		# Check top anchor reached -> step up onto ledge
+		elif global_position.y >= active_rope.get_top_position().y - 0.2 and vert_input > 0.1:
+			global_position = active_rope.get_top_position() + Vector3(0.0, 0.2, 0.0) - global_transform.basis.z * 0.8
+			is_on_rope = false
+			active_rope = null
+			velocity = Vector3.ZERO
+
+		# Check bottom ground reached -> step off rope
+		elif global_position.y <= active_rope.get_bottom_position().y + 0.3 and vert_input < -0.1:
+			is_on_rope = false
+			active_rope = null
+			velocity = Vector3.ZERO
+
+	elif is_climbing:
+		# FREEFORM ROCK CLIMBING (Task 7)
+		# W climbs UP, S climbs DOWN, A climbs LEFT, D climbs RIGHT
+		var cliff_right := Vector3.UP.cross(climb_normal).normalized()
+		var climb_move := Vector3.UP * (-input_dir.y) + cliff_right * input_dir.x
+
+		if climb_move != Vector3.ZERO:
+			velocity = climb_move.normalized() * climb_speed
+			survival_stats.consume_stamina(6.5 * delta)
+		else:
+			velocity = Vector3.ZERO
+			survival_stats.consume_stamina(2.0 * delta)
+
+		# Orient settler to face directly into the cliff
+		var target_facing := atan2(-climb_normal.x, -climb_normal.z)
+		rotation.y = lerp_angle(rotation.y, target_facing, delta * 12.0)
+
+		# Exhaustion slip if stamina depletes
+		if survival_stats.stamina <= 0.0:
+			is_climbing = false
+			velocity = climb_normal * 1.5 + Vector3.DOWN * 2.0
+
+		# Push off / Jump off cliff face
+		if Input.is_action_just_pressed("jump"):
+			is_climbing = false
+			velocity = climb_normal * 4.2 + Vector3.UP * 3.6
+
+		# Vault onto top ledge if reached
+		if input_dir.y < -0.2:
+			var ledge_origin := global_position + Vector3(0.0, 1.8, 0.0) - climb_normal * 0.75
+			var ledge_query := PhysicsRayQueryParameters3D.create(ledge_origin, ledge_origin + Vector3.DOWN * 1.4)
+			ledge_query.exclude = [get_rid()]
+			var space_state := get_world_3d().direct_space_state
+			if space_state:
+				var ledge_hit := space_state.intersect_ray(ledge_query)
+				if not ledge_hit.is_empty():
+					var l_norm: Vector3 = ledge_hit.normal
+					if l_norm.angle_to(Vector3.UP) < deg_to_rad(45.0):
+						global_position = ledge_hit.position + Vector3(0.0, 0.1, 0.0)
+						is_climbing = false
+						velocity = Vector3.ZERO
+
+		# Reached ground at base of cliff
+		if input_dir.y > 0.2 and is_on_floor():
+			is_climbing = false
+
+		# Continuous normal updates as settler traverses cliff
+		var track_info := _check_steep_cliff()
+		if not track_info.is_empty():
+			climb_normal = track_info.normal
+
+	elif is_swimming:
+		# SWIMMING MECHANICS (Task 2)
+		# Buoyancy keeps character afloat at water surface (y = sea_level + 0.2)
+		if global_position.y < water_surface_y:
+			var depth := water_surface_y - global_position.y
+			velocity.y = lerpf(velocity.y, depth * 7.5 + 0.5, delta * 6.0)
+			var wave_bob := sin(Time.get_ticks_msec() * 0.003) * 0.035
+			global_position.y = lerpf(global_position.y, water_surface_y + wave_bob, delta * 4.0)
+		elif global_position.y > water_surface_y + 0.4:
+			velocity.y -= gravity * delta
+		else:
+			velocity.y = lerpf(velocity.y, 0.0, delta * 8.0)
+			global_position.y = lerpf(global_position.y, water_surface_y, delta * 4.0)
+
+		# Jump: treading boost or leaping onto shallow shoreline
+		if Input.is_action_just_pressed("jump"):
+			if ground_h >= water_surface_y - 0.6:
+				velocity.y = 4.4
+				if direction != Vector3.ZERO:
+					velocity += direction * 3.2
+			else:
+				velocity.y = 2.2
+
+		# Swim speed & gentle water drag
+		var current_swim_speed := swim_speed
+		var is_swim_sprinting := Input.is_action_pressed("sprint") and survival_stats.stamina > 5.0
+		if is_swim_sprinting:
+			current_swim_speed = swim_sprint_speed
+			survival_stats.consume_stamina(6.5 * delta)
+		else:
+			survival_stats.consume_stamina(1.8 * delta)
+
+		if is_carrying_log:
+			current_swim_speed *= 0.65
+
+		if direction:
+			velocity.x = move_toward(velocity.x, direction.x * current_swim_speed, delta * 8.0)
+			velocity.z = move_toward(velocity.z, direction.z * current_swim_speed, delta * 8.0)
+			if is_third_person:
+				var target_heading := atan2(-direction.x, -direction.z)
+				rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+		else:
+			# Gentle water drag deceleration
+			velocity.x = move_toward(velocity.x, 0.0, delta * 4.5)
+			velocity.z = move_toward(velocity.z, 0.0, delta * 4.5)
+
+		# Cold Bergen water increases wetness
+		if survival_stats:
+			survival_stats.wetness = minf(100.0, survival_stats.wetness + 25.0 * delta)
+
+	else:
+		# NORMAL GROUND / AIR MOVEMENT (Task 1)
+		if not is_on_floor():
+			velocity.y -= gravity * delta
+
+		# Jump
+		if Input.is_action_just_pressed("jump") and is_on_floor():
+			var stamina_cost := 16.0 if is_carrying_log else 12.0
+			if survival_stats.consume_stamina(stamina_cost):
+				velocity.y = jump_velocity
+
+		# Sprinting
+		var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0
+		is_sprinting = Input.is_action_pressed("sprint") and is_on_floor() and can_sprint
+		var base_speed := walk_speed * (0.85 if is_carrying_log else 1.0)
+		var speed := sprint_speed if is_sprinting else base_speed
+
+		if is_sprinting:
+			survival_stats.consume_stamina(10.0 * delta)
+
+		if direction:
+			velocity.x = direction.x * speed
+			velocity.z = direction.z * speed
+
+			# Smooth character turning with WASD relative to camera view (Task 1)
+			if is_third_person:
+				var target_heading := atan2(-direction.x, -direction.z)
+				rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+		else:
+			velocity.x = move_toward(velocity.x, 0.0, speed)
+			velocity.z = move_toward(velocity.z, 0.0, speed)
 
 	move_and_slide()
 
-	# Terrain floor safety clamp to guarantee the settler never falls through the heightmap
-	if terrain_generator:
-		var ground_h := terrain_generator.sample_height(global_position.x, global_position.z)
+	# Terrain floor safety clamp (when on dry land)
+	if terrain_generator and not is_climbing and not is_on_rope and not is_swimming:
 		if global_position.y < ground_h:
 			global_position.y = ground_h
 			if velocity.y < 0.0:
 				velocity.y = 0.0
 
-	# Procedural box man animations (swing limbs, breathing, chopping, carrying log)
+	# Procedural box man animations (Task 1, 2, 7)
 	if box_man_model:
-		var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
-		box_man_model.update_animation(delta, horiz_vel, is_on_floor(), is_holding_torch and not is_carrying_log)
+		var horiz_vel := Vector3(velocity.x, velocity.y if (is_climbing or is_on_rope) else 0.0, velocity.z)
+		box_man_model.update_animation(delta, horiz_vel, is_on_floor() and not is_swimming, is_holding_torch and not is_carrying_log, is_swimming, is_climbing, is_on_rope)
 
-	# Smooth camera positioning and collision avoidance
-	current_cam_distance = lerpf(current_cam_distance, target_cam_distance, delta * 10.0)
+	# Smooth camera positioning and collision avoidance (with over-shoulder bow aiming zoom)
+	var desired_cam_dist := target_cam_distance
+	if equipment and equipment.is_aiming_bow:
+		desired_cam_dist = 1.8 if is_third_person else 0.0
+	current_cam_distance = lerpf(current_cam_distance, desired_cam_dist, delta * 12.0)
 	_update_camera(delta)
 
-	# Check terrain freshwater stream drinking zone
+	# Check terrain freshwater stream drinking zone & backpack reservoir refill
 	if terrain_generator:
 		var near_stream := terrain_generator.is_freshwater_stream(global_position)
-		if near_stream and Input.is_action_just_pressed("interact") and not is_carrying_log:
-			survival_stats.drink_water(true)
+		if near_stream and not is_carrying_log and not is_swimming:
+			if Input.is_action_just_pressed("interact"):
+				survival_stats.drink_water(true)
+				if equipment:
+					equipment.refill_reservoir(100.0)
+
+## Detects steep rocky cliff faces (> 50° slope) ahead of settler
+func _check_steep_cliff() -> Dictionary:
+	var world_3d := get_world_3d()
+	if not world_3d:
+		return {}
+	var space_state := world_3d.direct_space_state
+	if not space_state:
+		return {}
+
+	var chest_origin := global_position + Vector3(0.0, 1.05, 0.0)
+	var forward_dir := -global_transform.basis.z
+
+	# 1. Forward raycast check
+	var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + forward_dir * 1.35)
+	query.exclude = [get_rid()]
+	var hit := space_state.intersect_ray(query)
+
+	if not hit.is_empty():
+		var norm: Vector3 = hit.normal
+		var slope_angle := norm.angle_to(Vector3.UP)
+		if slope_angle >= deg_to_rad(50.0):
+			return {"hit": true, "normal": norm, "position": hit.position, "distance": (hit.position as Vector3).distance_to(chest_origin)}
+
+	# 2. Physics wall collision check
+	if is_on_wall():
+		var wall_n := get_wall_normal()
+		if wall_n.angle_to(Vector3.UP) >= deg_to_rad(50.0):
+			return {"hit": true, "normal": wall_n, "position": global_position - wall_n * 0.45, "distance": 0.45}
+
+	# 3. Direct terrain slope sampling
+	if terrain_generator:
+		var px := global_position.x
+		var pz := global_position.z
+		var h_center := terrain_generator.sample_height(px, pz)
+		var step_dist := 0.75
+		var h_fwd := terrain_generator.sample_height(px + forward_dir.x * step_dist, pz + forward_dir.z * step_dist)
+		var rise := h_fwd - h_center
+		var slope_deg := rad_to_deg(atan2(rise, step_dist))
+		if slope_deg >= 50.0:
+			var estimated_norm := Vector3(-forward_dir.x, 0.25, -forward_dir.z).normalized()
+			return {"hit": true, "normal": estimated_norm, "position": global_position + forward_dir * 0.6, "distance": 0.6}
+
+	return {}
+
+## Places or throws an anchor rope on a cliff edge or rock face (Task 7)
+func _handle_climbing_rope_tool() -> void:
+	# If currently on rope, disengage
+	if is_on_rope:
+		is_on_rope = false
+		active_rope = null
+		return
+
+	# If near an existing anchor, retrieve it
+	var ropes := get_tree().get_nodes_in_group("climbing_rope")
+	for r in ropes:
+		if is_instance_valid(r) and r.has_method("get_top_position"):
+			var top_p: Vector3 = r.get_top_position()
+			if global_position.distance_to(top_p) < 2.5:
+				r.retrieve_rope(self)
+				return
+
+	# Ensure player has rope in inventory
+	if inventory:
+		if inventory.get_count("climbing_rope") <= 0:
+			inventory.add_resource("climbing_rope", 1)
+		inventory.items["climbing_rope"] -= 1
+		inventory.inventory_changed.emit(inventory.items)
+
+	var scene_root := get_parent()
+	if not scene_root and get_tree():
+		scene_root = get_tree().current_scene if get_tree().current_scene else get_tree().root
+
+	var world_3d := get_world_3d()
+	if not world_3d:
+		return
+	var space_state := world_3d.direct_space_state
+
+	var cam_fwd := -camera.global_transform.basis.z if camera else -global_transform.basis.z
+	var anchor_pos := global_position
+	var wall_norm := global_transform.basis.z
+
+	# Raycast check forward / downward
+	var ray_query := PhysicsRayQueryParameters3D.create(camera.global_position if camera else global_position + Vector3.UP * 1.5, (camera.global_position if camera else global_position) + cam_fwd * 20.0)
+	ray_query.exclude = [get_rid()]
+	var cam_hit := space_state.intersect_ray(ray_query)
+
+	if not cam_hit.is_empty():
+		anchor_pos = cam_hit.position + Vector3(0.0, 0.2, 0.0)
+		wall_norm = cam_hit.normal
+	else:
+		# Place at edge ahead of settler
+		anchor_pos = global_position + (-global_transform.basis.z * 1.2) + Vector3(0.0, 0.1, 0.0)
+		wall_norm = global_transform.basis.z
+
+	var rope_script = load("res://scripts/environment/climbing_rope.gd")
+	if rope_script:
+		var rope_inst: ClimbingRope = rope_script.create_rope(anchor_pos, wall_norm, space_state)
+		scene_root.add_child(rope_inst)
+
+## Grabs hold of a hanging climbing rope for climbing or rappelling
+func _grab_rope(rope: ClimbingRope) -> void:
+	if is_carrying_log:
+		drop_log()
+	is_on_rope = true
+	active_rope = rope
+	is_climbing = false
+	is_swimming = false
+	velocity = Vector3.ZERO
 
 func _update_camera(_delta: float) -> void:
 	if not camera or not head:
@@ -369,6 +722,15 @@ func _perform_interaction() -> void:
 		drop_log()
 		return
 
+	# 0. Check for nearby hanging climbing rope within 2.2m (Task 7)
+	var ropes := get_tree().get_nodes_in_group("climbing_rope")
+	for r in ropes:
+		if is_instance_valid(r) and r.has_method("get_closest_point"):
+			var closest_p: Vector3 = r.get_closest_point(global_position)
+			if global_position.distance_to(closest_p) < 2.0:
+				_grab_rope(r as ClimbingRope)
+				return
+
 	# 1. Direct raycast interaction (crosshair target)
 	if interact_raycast and interact_raycast.is_colliding():
 		var target := interact_raycast.get_collider()
@@ -390,8 +752,16 @@ func _perform_interaction() -> void:
 		pick_up_log(closest_log)
 		return
 
+	# 3. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
+	if equipment and equipment.current_slot == EquipmentManager.Slot.WATER_BOTTLE:
+		equipment.drink_from_reservoir()
+
 func _perform_attack_or_chop() -> void:
 	if is_carrying_log:
+		return
+
+	if equipment:
+		equipment.use_primary(interact_raycast, camera)
 		return
 
 	if box_man_model:

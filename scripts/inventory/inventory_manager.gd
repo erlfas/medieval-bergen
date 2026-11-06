@@ -18,7 +18,8 @@ var items: Dictionary = {
 	"birch_bark": 12,
 	"firewood": 10,
 	"stone": 16,
-	"turf": 10
+	"turf": 10,
+	"climbing_rope": 2
 }
 
 func add_resource(resource_id: String, amount: int) -> bool:

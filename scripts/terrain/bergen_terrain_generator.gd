@@ -360,7 +360,10 @@ func generate_terrain() -> void:
 	# Scatter harvestable trees deterministically across the terrain
 	_scatter_forests()
 
-	# Scatter wildlife (Red Deer & Wolves)
+	# Generate authentic medieval Bergen farmsteads on fertile lower shelves
+	_generate_farmsteads()
+
+	# Scatter wildlife & livestock across distinct ecosystem zones
 	_scatter_wildlife()
 
 func _create_terrain_material() -> Material:
@@ -413,20 +416,173 @@ func _ensure_water_plane() -> void:
 	water_mat.metallic = 0.1
 	water_plane_instance.material_override = water_mat
 
+func _generate_farmsteads() -> void:
+	var farmsteads_container := get_node_or_null("Farmsteads") as Node3D
+	if farmsteads_container == null:
+		farmsteads_container = Node3D.new()
+		farmsteads_container.name = "Farmsteads"
+		add_child(farmsteads_container)
+		farmsteads_container.owner = self
+	else:
+		for child in farmsteads_container.get_children():
+			child.free()
+
+	var farm_definitions := [
+		{"name": "Sandviken Gård", "x": 160.0, "z": -200.0},
+		{"name": "Bryggen Hinterland Gård", "x": 160.0, "z": 150.0},
+		{"name": "Southern Valley Gård", "x": 160.0, "z": 580.0}
+	]
+
+	for i in range(farm_definitions.size()):
+		var farm_def: Dictionary = farm_definitions[i]
+		var fx: float = farm_def["x"]
+		var fz: float = farm_def["z"]
+		var fy: float = sample_height(fx, fz)
+
+		var farm_node := FarmsteadGenerator.create_farmstead(i + 1, Vector3(fx, fy, fz), farm_def["name"], self)
+		farmsteads_container.add_child(farm_node)
+
 func _scatter_wildlife() -> void:
 	var wildlife_container := get_node_or_null("Wildlife") as Node3D
-	if wildlife_container:
-		wildlife_container.queue_free()
-
-	wildlife_container = Node3D.new()
-	wildlife_container.name = "Wildlife"
-	add_child(wildlife_container)
-	wildlife_container.owner = self
+	if wildlife_container == null:
+		wildlife_container = Node3D.new()
+		wildlife_container.name = "Wildlife"
+		add_child(wildlife_container)
+		wildlife_container.owner = self
+	else:
+		for child in wildlife_container.get_children():
+			child.free()
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = world_seed + 777
 
-	# 1. Spawn Red Deer (~12 deer)
+	var farm_centers := [
+		Vector3(160.0, sample_height(160.0, -200.0), -200.0),
+		Vector3(160.0, sample_height(160.0, 150.0), 150.0),
+		Vector3(160.0, sample_height(160.0, 580.0), 580.0)
+	]
+
+	# -------------------------------------------------------------------------
+	# 1. Mountain Wolves (Confined strictly to crags above 80m altitude)
+	# -------------------------------------------------------------------------
+	# Packs lurking among the rocky ledges and pines of Fløyen & Sandviksfjellet
+	var wolf_pack_centers: Array[Vector3] = [
+		Vector3(330.0, 0.0, 40.0),   # Sandviksfjellet Upper Crags
+		Vector3(340.0, 0.0, 200.0),  # Fløyen Mountain Plateau Ledges
+		Vector3(360.0, 0.0, 360.0)   # South Fløyen Granite Bluffs
+	]
+
+	var wolf_total := 0
+	for p_idx in range(wolf_pack_centers.size()):
+		var p_center: Vector3 = wolf_pack_centers[p_idx]
+		var pack_size: int = 3 + (p_idx % 2) # 3-4 wolves per pack
+		for w_i in range(pack_size):
+			var wx: float = p_center.x + rng.randf_range(-22.0, 22.0)
+			var wz: float = p_center.z + rng.randf_range(-22.0, 22.0)
+			var wy: float = sample_height(wx, wz)
+
+			# Strict altitude requirement: must be >= 80m
+			if wy >= 80.0:
+				var wolf := CharacterBody3D.new()
+				wolf.name = "Wolf_%d" % wolf_total
+				wolf.set_script(load("res://scripts/fauna/wolf_ai.gd"))
+				wolf.set("mountain_home", Vector3(p_center.x, sample_height(p_center.x, p_center.z), p_center.z))
+				wolf.set("min_mountain_altitude", 80.0)
+
+				wildlife_container.add_child(wolf)
+				wolf.add_to_group("wolf")
+				wolf.add_to_group("fauna")
+				wolf.global_position = Vector3(wx, wy, wz)
+				wolf_total += 1
+
+	# -------------------------------------------------------------------------
+	# 2. Docile Norwegian Cattle (Cows grazing inside/adjacent to farm pastures)
+	# -------------------------------------------------------------------------
+	var cow_total := 0
+	for farm_idx in range(farm_centers.size()):
+		var fc: Vector3 = farm_centers[farm_idx]
+		for c_i in range(2):
+			var cow := CharacterBody3D.new()
+			cow.name = "Cow_%d" % cow_total
+			cow.set_script(load("res://scripts/fauna/cow_ai.gd"))
+
+			var cx := fc.x + rng.randf_range(-8.0, 8.0)
+			var cz := fc.z + rng.randf_range(-8.0, 8.0)
+			var cy := sample_height(cx, cz)
+			cow.set("home_position", fc)
+			cow.set("pasture_radius", 18.0)
+
+			wildlife_container.add_child(cow)
+			cow.add_to_group("cow")
+			cow.add_to_group("fauna")
+			cow.add_to_group("livestock")
+			cow.global_position = Vector3(cx, cy, cz)
+			cow_total += 1
+
+	# -------------------------------------------------------------------------
+	# 3. Old Norwegian Short-Tail Sheep (Villsau grazing on hillside meadows near farms)
+	# -------------------------------------------------------------------------
+	var sheep_total := 0
+	for farm_idx in range(farm_centers.size()):
+		var fc: Vector3 = farm_centers[farm_idx]
+		var meadow_center := fc + Vector3(18.0, 0, rng.randf_range(-6.0, 6.0))
+		for s_i in range(4):
+			var sheep := CharacterBody3D.new()
+			sheep.name = "Sheep_%d" % sheep_total
+			sheep.set_script(load("res://scripts/fauna/sheep_ai.gd"))
+
+			# Grazing up along the hillside meadow above the farm
+			var sx := meadow_center.x + rng.randf_range(-7.0, 7.0)
+			var sz := meadow_center.z + rng.randf_range(-7.0, 7.0)
+			var sy := sample_height(sx, sz)
+			sheep.set("home_position", meadow_center)
+			sheep.set("pasture_radius", 22.0)
+
+			# Fleece variations (natural off-white, heather grey, black)
+			var fleece_variations := [
+				Color(0.88, 0.86, 0.82), # Oatmeal white
+				Color(0.55, 0.53, 0.50), # Heather grey
+				Color(0.25, 0.23, 0.22)  # Charcoal black
+			]
+			sheep.set("fleece_color", fleece_variations[(farm_idx * 2 + s_i) % fleece_variations.size()])
+
+			wildlife_container.add_child(sheep)
+			sheep.add_to_group("sheep")
+			sheep.add_to_group("fauna")
+			sheep.add_to_group("livestock")
+			sheep.global_position = Vector3(sx, sy, sz)
+			sheep_total += 1
+
+	# -------------------------------------------------------------------------
+	# 4. Norwegian Mountain Hares (Rabbits hopping in brush & perimeter outside farms)
+	# -------------------------------------------------------------------------
+	var rabbit_total := 0
+	for farm_idx in range(farm_centers.size()):
+		var fc: Vector3 = farm_centers[farm_idx]
+		for r_i in range(5):
+			var rabbit := CharacterBody3D.new()
+			rabbit.name = "Rabbit_%d" % rabbit_total
+			rabbit.set_script(load("res://scripts/fauna/rabbit_ai.gd"))
+
+			# Hopping in perimeter brush 16m to 35m outside farm fences
+			var angle := rng.randf() * 2.0 * PI
+			var dist := rng.randf_range(16.0, 34.0)
+			var rx := fc.x + cos(angle) * dist
+			var rz := fc.z + sin(angle) * dist
+			var ry := sample_height(rx, rz)
+
+			rabbit.set("home_position", Vector3(rx, ry, rz))
+			rabbit.set("roam_radius", 30.0)
+
+			wildlife_container.add_child(rabbit)
+			rabbit.add_to_group("rabbit")
+			rabbit.add_to_group("fauna")
+			rabbit.global_position = Vector3(rx, ry, rz)
+			rabbit_total += 1
+
+	# -------------------------------------------------------------------------
+	# 5. Red Deer (Peaceful herbivores grazing in lower valley & woods)
+	# -------------------------------------------------------------------------
 	for i in range(12):
 		var dx := rng.randf_range(40.0, 180.0)
 		var dz := rng.randf_range(50.0, 420.0)
@@ -437,7 +593,6 @@ func _scatter_wildlife() -> void:
 			deer.name = "Deer_%d" % i
 			deer.set_script(load("res://scripts/fauna/deer_ai.gd"))
 
-			# Deer Torso
 			var mi_body := MeshInstance3D.new()
 			var cap := CapsuleMesh.new()
 			cap.radius = 0.35
@@ -447,11 +602,10 @@ func _scatter_wildlife() -> void:
 			mi_body.position.y = 0.9
 
 			var mat_deer := StandardMaterial3D.new()
-			mat_deer.albedo_color = Color(0.58, 0.38, 0.22) # Red deer tawny brown
+			mat_deer.albedo_color = Color(0.58, 0.38, 0.22)
 			mi_body.material_override = mat_deer
 			deer.add_child(mi_body)
 
-			# Deer Head & Antlers
 			var mi_head := MeshInstance3D.new()
 			var box_head := BoxMesh.new()
 			box_head.size = Vector3(0.25, 0.35, 0.45)
@@ -460,7 +614,6 @@ func _scatter_wildlife() -> void:
 			mi_head.material_override = mat_deer
 			deer.add_child(mi_head)
 
-			# Collision
 			var col := CollisionShape3D.new()
 			var cap_col := CapsuleShape3D.new()
 			cap_col.radius = 0.45
@@ -471,52 +624,6 @@ func _scatter_wildlife() -> void:
 
 			wildlife_container.add_child(deer)
 			deer.global_position = Vector3(dx, dy, dz)
-
-	# 2. Spawn Wolves (~6 wolves)
-	for i in range(6):
-		var wx := rng.randf_range(60.0, 240.0)
-		var wz := rng.randf_range(100.0, 480.0)
-		var wy := sample_height(wx, wz)
-
-		if wy > 2.0 and wy < 90.0:
-			var wolf := CharacterBody3D.new()
-			wolf.name = "Wolf_%d" % i
-			wolf.set_script(load("res://scripts/fauna/wolf_ai.gd"))
-
-			# Wolf Torso
-			var mi_body := MeshInstance3D.new()
-			var cap := CapsuleMesh.new()
-			cap.radius = 0.3
-			cap.height = 1.2
-			mi_body.mesh = cap
-			mi_body.rotation.x = deg_to_rad(90.0)
-			mi_body.position.y = 0.65
-
-			var mat_wolf := StandardMaterial3D.new()
-			mat_wolf.albedo_color = Color(0.32, 0.33, 0.35) # Scandinavian timber wolf grey
-			mi_body.material_override = mat_wolf
-			wolf.add_child(mi_body)
-
-			# Wolf Head with yellow eyes
-			var mi_head := MeshInstance3D.new()
-			var box_head := BoxMesh.new()
-			box_head.size = Vector3(0.24, 0.28, 0.4)
-			mi_head.mesh = box_head
-			mi_head.position = Vector3(0, 0.9, -0.6)
-			mi_head.material_override = mat_wolf
-			wolf.add_child(mi_head)
-
-			# Collision
-			var col := CollisionShape3D.new()
-			var cap_col := CapsuleShape3D.new()
-			cap_col.radius = 0.4
-			cap_col.height = 1.2
-			col.shape = cap_col
-			col.position.y = 0.65
-			wolf.add_child(col)
-
-			wildlife_container.add_child(wolf)
-			wolf.global_position = Vector3(wx, wy, wz)
 
 func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
 	# Clear existing collision children if any
@@ -558,6 +665,15 @@ func _scatter_forests() -> void:
 		var tx := rng.randf_range(30.0, 200.0)
 		var tz := rng.randf_range(-60.0, 480.0)
 		var ty := sample_height(tx, tz)
+
+		# Keep farmstead yards clear of trees
+		var near_farm := false
+		for f_pos in [Vector3(160.0, 0, -200.0), Vector3(160.0, 0, 150.0), Vector3(160.0, 0, 580.0)]:
+			if Vector2(tx - f_pos.x, tz - f_pos.z).length() < 18.0:
+				near_farm = true
+				break
+		if near_farm:
+			continue
 
 		# Only plant on solid land above sea level and below rocky crags
 		if ty > 1.2 and ty < 90.0:

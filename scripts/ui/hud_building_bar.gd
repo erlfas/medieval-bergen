@@ -22,6 +22,7 @@ extends Control
 @onready var label_bark: Label = $PanelResources/HBoxRes/LabelBark
 @onready var label_stone: Label = $PanelResources/HBoxRes/LabelStone
 @onready var label_turf: Label = $PanelResources/HBoxRes/LabelTurf
+@onready var label_rope: Label = $PanelResources/HBoxRes/LabelRope
 
 @onready var panel_carried_log: PanelContainer = get_node_or_null("PanelCarriedLog")
 @onready var label_carried_log: Label = get_node_or_null("PanelCarriedLog/LabelCarried")
@@ -141,6 +142,8 @@ func _update_resource_labels(items: Dictionary) -> void:
 	label_bark.text = "Never (Bark): %d" % items.get("birch_bark", 0)
 	label_stone.text = "Stein (Stone): %d" % items.get("stone", 0)
 	label_turf.text = "Torv (Turf): %d" % items.get("turf", 0)
+	if label_rope:
+		label_rope.text = "Klatretau (Rope): %d" % items.get("climbing_rope", 0)
 
 func _update_quest_tracker() -> void:
 	if not label_quest_status:

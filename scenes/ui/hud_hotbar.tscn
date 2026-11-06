@@ -1,0 +1,219 @@
+[gd_scene load_steps=4 format=3 uid="uid://c6v2n4q1r7tp9"]
+
+[ext_resource type="Script" path="res://scripts/ui/hud_hotbar.gd" id="1_hotbar"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_main"]
+bg_color = Color(0.08, 0.09, 0.11, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.36, 0.26, 0.85)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+expand_margin_left = 6.0
+expand_margin_top = 4.0
+expand_margin_right = 6.0
+expand_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_slot_init"]
+bg_color = Color(0.12, 0.13, 0.16, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.32, 0.28, 0.75)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="HUDHotbar" type="Control"]
+layout_mode = 3
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -120.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("1_hotbar")
+
+[node name="PanelCenter" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -275.0
+offset_top = -106.0
+offset_right = 275.0
+offset_bottom = -46.0
+grow_horizontal = 2
+grow_vertical = 0
+theme_override_styles/panel = SubResource("StyleBoxFlat_main")
+
+[node name="HBoxSlots" type="HBoxContainer" parent="PanelCenter"]
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="Slot1" type="PanelContainer" parent="PanelCenter/HBoxSlots"]
+custom_minimum_size = Vector2(98, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_slot_init")
+
+[node name="VBox" type="VBoxContainer" parent="PanelCenter/HBoxSlots/Slot1"]
+layout_mode = 2
+alignment = 1
+
+[node name="LabelKey" type="Label" parent="PanelCenter/HBoxSlots/Slot1/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 10
+text = "[1]"
+horizontal_alignment = 1
+
+[node name="LabelTitle" type="Label" parent="PanelCenter/HBoxSlots/Slot1/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Øks (Axe)"
+horizontal_alignment = 1
+
+[node name="LabelSub" type="Label" parent="PanelCenter/HBoxSlots/Slot1/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.65, 0.65, 1)
+theme_override_font_sizes/font_size = 9
+text = "Hogst / Slag"
+horizontal_alignment = 1
+
+[node name="Slot2" type="PanelContainer" parent="PanelCenter/HBoxSlots"]
+custom_minimum_size = Vector2(98, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_slot_init")
+
+[node name="VBox" type="VBoxContainer" parent="PanelCenter/HBoxSlots/Slot2"]
+layout_mode = 2
+alignment = 1
+
+[node name="LabelKey" type="Label" parent="PanelCenter/HBoxSlots/Slot2/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 10
+text = "[2]"
+horizontal_alignment = 1
+
+[node name="LabelTitle" type="Label" parent="PanelCenter/HBoxSlots/Slot2/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Flaske (Horn)"
+horizontal_alignment = 1
+
+[node name="LabelSub" type="Label" parent="PanelCenter/HBoxSlots/Slot2/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.4, 0.8, 1, 1)
+theme_override_font_sizes/font_size = 9
+text = "100% Sekk"
+horizontal_alignment = 1
+
+[node name="Slot3" type="PanelContainer" parent="PanelCenter/HBoxSlots"]
+custom_minimum_size = Vector2(98, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_slot_init")
+
+[node name="VBox" type="VBoxContainer" parent="PanelCenter/HBoxSlots/Slot3"]
+layout_mode = 2
+alignment = 1
+
+[node name="LabelKey" type="Label" parent="PanelCenter/HBoxSlots/Slot3/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 10
+text = "[3]"
+horizontal_alignment = 1
+
+[node name="LabelTitle" type="Label" parent="PanelCenter/HBoxSlots/Slot3/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Kniv (Knife)"
+horizontal_alignment = 1
+
+[node name="LabelSub" type="Label" parent="PanelCenter/HBoxSlots/Slot3/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65, 0.65, 0.65, 1)
+theme_override_font_sizes/font_size = 9
+text = "Rask / Jakt"
+horizontal_alignment = 1
+
+[node name="Slot4" type="PanelContainer" parent="PanelCenter/HBoxSlots"]
+custom_minimum_size = Vector2(98, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_slot_init")
+
+[node name="VBox" type="VBoxContainer" parent="PanelCenter/HBoxSlots/Slot4"]
+layout_mode = 2
+alignment = 1
+
+[node name="LabelKey" type="Label" parent="PanelCenter/HBoxSlots/Slot4/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 10
+text = "[4]"
+horizontal_alignment = 1
+
+[node name="LabelTitle" type="Label" parent="PanelCenter/HBoxSlots/Slot4/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Bue (Bow)"
+horizontal_alignment = 1
+
+[node name="LabelSub" type="Label" parent="PanelCenter/HBoxSlots/Slot4/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 1)
+theme_override_font_sizes/font_size = 9
+text = "24 Pil"
+horizontal_alignment = 1
+
+[node name="BowChargeBar" type="ProgressBar" parent="PanelCenter/HBoxSlots/Slot4/VBox"]
+visible = false
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+show_percentage = false
+
+[node name="Slot5" type="PanelContainer" parent="PanelCenter/HBoxSlots"]
+custom_minimum_size = Vector2(98, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_slot_init")
+
+[node name="VBox" type="VBoxContainer" parent="PanelCenter/HBoxSlots/Slot5"]
+layout_mode = 2
+alignment = 1
+
+[node name="LabelKey" type="Label" parent="PanelCenter/HBoxSlots/Slot5/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.78, 0.35, 1)
+theme_override_font_sizes/font_size = 10
+text = "[5]"
+horizontal_alignment = 1
+
+[node name="LabelTitle" type="Label" parent="PanelCenter/HBoxSlots/Slot5/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.92, 0.92, 0.9, 1)
+theme_override_font_sizes/font_size = 12
+text = "Fakkel (Torch)"
+horizontal_alignment = 1
+
+[node name="LabelSub" type="Label" parent="PanelCenter/HBoxSlots/Slot5/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 0.65, 0.25, 1)
+theme_override_font_sizes/font_size = 9
+text = "Varme & Lys"
+horizontal_alignment = 1

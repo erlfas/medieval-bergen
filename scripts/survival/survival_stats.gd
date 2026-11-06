@@ -27,6 +27,7 @@ signal vitals_updated(stats: Dictionary)
 
 # Environmental state
 var is_near_fire: bool = false
+var is_holding_torch: bool = false
 var is_sheltered: bool = false
 var is_in_rain: bool = false
 var ambient_temperature_celsius: float = 6.0 # Typical Bergen autumn
@@ -44,6 +45,8 @@ func _update_vitals(delta: float) -> void:
 		wetness = minf(100.0, wetness + 4.0 * delta)
 	elif is_near_fire:
 		wetness = maxf(0.0, wetness - 12.0 * delta)
+	elif is_holding_torch:
+		wetness = maxf(0.0, wetness - 4.0 * delta)
 	elif is_sheltered:
 		wetness = maxf(0.0, wetness - 2.5 * delta)
 
@@ -51,6 +54,9 @@ func _update_vitals(delta: float) -> void:
 	if is_near_fire:
 		# Fire warms and restores body heat
 		warmth = minf(100.0, warmth + 8.0 * delta)
+	elif is_holding_torch:
+		# Pine-tar torch radiates warmth to prevent hypothermia
+		warmth = minf(100.0, warmth + 4.0 * delta)
 	else:
 		# Cold environment + wet clothes = hypothermia
 		var cold_factor := (18.0 - ambient_temperature_celsius) * 0.15
