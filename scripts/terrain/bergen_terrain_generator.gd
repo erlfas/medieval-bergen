@@ -364,8 +364,26 @@ func generate_terrain() -> void:
 	# Generate authentic medieval Bergen farmsteads on fertile lower shelves
 	_generate_farmsteads()
 
+	# Generate historic Bryggen Hanseatic Wharf on Vågen waterfront
+	_generate_bryggen_waterfront()
+
 	# Scatter wildlife & livestock across distinct ecosystem zones
 	_scatter_wildlife()
+
+func _generate_bryggen_waterfront() -> void:
+	var bryggen_container := get_node_or_null("BryggenWaterfront") as Node3D
+	if bryggen_container:
+		bryggen_container.queue_free()
+
+	# Bryggen is situated along the east shoreline of Vågen
+	var bx: float = 62.0
+	var bz: float = 80.0
+	var by: float = bryggen_shelf_height
+
+	var bryggen_node := BryggenWharfGenerator.create_bryggen_waterfront(Vector3(bx, by, bz))
+	bryggen_node.name = "BryggenWaterfront"
+	add_child(bryggen_node)
+	bryggen_node.owner = self
 
 func _create_terrain_material() -> Material:
 	var fallback := StandardMaterial3D.new()
@@ -646,13 +664,17 @@ func _scatter_forests() -> void:
 		var tz := rng.randf_range(-60.0, 480.0)
 		var ty := sample_height(tx, tz)
 
-		# Keep farmstead yards clear of trees
-		var near_farm := false
+		# Keep farmstead yards and Bryggen wharf clear of trees
+		var near_settlement := false
 		for f_pos in [Vector3(160.0, 0, -200.0), Vector3(160.0, 0, 150.0), Vector3(160.0, 0, 580.0)]:
 			if Vector2(tx - f_pos.x, tz - f_pos.z).length() < 18.0:
-				near_farm = true
+				near_settlement = true
 				break
-		if near_farm:
+		# Bryggen wharf exclusion zone
+		if Vector2(tx - 62.0, tz - 80.0).length() < 34.0:
+			near_settlement = true
+
+		if near_settlement:
 			continue
 
 		# Only plant on solid land above sea level and below rocky crags
