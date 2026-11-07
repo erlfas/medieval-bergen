@@ -71,6 +71,7 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	var stabbur := _assemble_stabbur(4.0, 4.5, mat_wood, mat_wood_dark, mat_stone, mat_sod)
 	stabbur.name = "TimberStorehouse_Stabbur"
 	stabbur.position = stabbur_offset
+	stabbur.add_to_group("shelter")
 	farm_root.add_child(stabbur)
 
 	var stabbur_world_pos := origin + stabbur_offset
@@ -113,6 +114,7 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	var hay_area := _assemble_hay_rack(mat_wood_dark)
 	hay_area.name = "HayStorageRack"
 	hay_area.position = hay_offset
+	hay_area.add_to_group("shelter")
 	farm_root.add_child(hay_area)
 
 	var hay_world_pos := origin + hay_offset

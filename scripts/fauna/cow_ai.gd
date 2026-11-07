@@ -7,7 +7,7 @@ extends CharacterBody3D
 ## - Can be milked by the settler with [E] for fresh milk (restores hunger & thirst).
 ## - Can be harvested for hearty beef and thick cattle hide / leather.
 
-enum State { GRAZING, CHEWING_CUD, WANDERING, ALERT, DEAD }
+enum State { GRAZING, CHEWING_CUD, WANDERING, ALERT, SHELTERING, DEAD }
 
 @export var current_state: State = State.GRAZING
 @export var walk_speed: float = 1.4
@@ -18,6 +18,9 @@ enum State { GRAZING, CHEWING_CUD, WANDERING, ALERT, DEAD }
 @export var pasture_radius: float = 20.0
 
 var wander_target: Vector3 = Vector3.ZERO
+var shelter_target: Vector3 = Vector3.ZERO
+var season_manager: SeasonManager
+var weather_check_timer: float = 0.0
 var state_timer: float = 0.0
 var milk_cooldown: float = 0.0
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -34,6 +37,7 @@ func _ready() -> void:
 		home_position = global_position
 	_pick_wander_target()
 	state_timer = randf_range(4.0, 10.0)
+	weather_check_timer = randf_range(0.5, 2.0)
 	if get_node_or_null("VisualModel") == null:
 		_build_cow_mesh()
 
@@ -47,6 +51,11 @@ func _physics_process(delta: float) -> void:
 
 	milk_cooldown = maxf(0.0, milk_cooldown - delta)
 	state_timer -= delta
+	weather_check_timer -= delta
+
+	if weather_check_timer <= 0.0:
+		weather_check_timer = 2.0
+		_check_weather_and_shelter()
 
 	match current_state:
 		State.GRAZING:
@@ -102,10 +111,62 @@ func _physics_process(delta: float) -> void:
 				current_state = State.GRAZING
 				state_timer = 5.0
 
+		State.SHELTERING:
+			var dir := (shelter_target - global_position)
+			dir.y = 0.0
+			var dist := dir.length()
+			if dist > 1.8:
+				dir = dir.normalized()
+				velocity.x = dir.x * (walk_speed * 1.15)
+				velocity.z = dir.z * (walk_speed * 1.15)
+				if Vector2(dir.x, dir.z).length() > 0.1:
+					var target_rot := atan2(-dir.x, -dir.z)
+					rotation.y = lerp_angle(rotation.y, target_rot, delta * 3.5)
+			else:
+				velocity.x = move_toward(velocity.x, 0.0, 1.5)
+				velocity.z = move_toward(velocity.z, 0.0, 1.5)
+
+			# Huddle posture: head tucked slightly down, gentle breathing motion
+			if head_pivot:
+				var huddle_nod := sin(Time.get_ticks_msec() * 0.002) * deg_to_rad(4.0)
+				head_pivot.rotation.x = deg_to_rad(15.0) + huddle_nod
+
 	# Animate legs when walking
 	_animate_limbs(delta)
 
 	move_and_slide()
+
+func _check_weather_and_shelter() -> void:
+	if current_state == State.DEAD:
+		return
+	if season_manager == null and get_tree():
+		season_manager = get_tree().get_first_node_in_group("season_manager") as SeasonManager
+
+	var is_stormy := false
+	if season_manager:
+		is_stormy = season_manager.is_precipitating or season_manager.is_raining or season_manager.is_snowing or (season_manager.current_weather in [SeasonManager.WeatherState.HEAVY_RAIN, SeasonManager.WeatherState.SNOW])
+
+	if is_stormy:
+		if current_state != State.SHELTERING and current_state != State.ALERT:
+			_find_nearest_shelter()
+			current_state = State.SHELTERING
+	elif current_state == State.SHELTERING:
+		current_state = State.GRAZING
+		state_timer = randf_range(4.0, 8.0)
+
+func _find_nearest_shelter() -> void:
+	var shelters := get_tree().get_nodes_in_group("shelter")
+	var best_dist := 60.0
+	var chosen_pos := home_position
+
+	for s in shelters:
+		if s is Node3D and is_instance_valid(s):
+			var d := global_position.distance_to(s.global_position)
+			if d < best_dist:
+				best_dist = d
+				chosen_pos = s.global_position + Vector3(0, 0, 1.8)
+
+	shelter_target = chosen_pos
 
 func _animate_limbs(delta: float) -> void:
 	var horiz_vel := Vector2(velocity.x, velocity.z).length()

@@ -21,6 +21,13 @@ enum State { PATROL, STALK, ATTACK, FLEE_FIRE, DEAD }
 @export var min_mountain_altitude: float = 80.0
 @export var mountain_home: Vector3 = Vector3(320.0, 110.0, 200.0)
 
+enum PackRole { ALPHA_LEAD, FLANK_LEFT, FLANK_RIGHT, REAR_AMBUSH }
+
+var pack_role: int = PackRole.ALPHA_LEAD
+var pack_cooldown: float = 0.0
+var howl_cooldown: float = 0.0
+var pack_size: int = 1
+
 var player_target: CharacterBody3D
 var fire_source_position: Vector3 = Vector3.ZERO
 var has_fire_threat: bool = false
@@ -85,6 +92,12 @@ func _physics_process(delta: float) -> void:
 
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
 	patrol_timer -= delta
+	pack_cooldown -= delta
+	howl_cooldown -= delta
+
+	if pack_cooldown <= 0.0:
+		pack_cooldown = 1.4
+		_update_pack_coordination()
 
 	# Check for fire sources (settler holding torch or nearby hearth)
 	_scan_for_fire()
@@ -177,6 +190,30 @@ func _process_patrol(delta: float) -> void:
 					wander_target = hare.global_position
 					break
 
+func _update_pack_coordination() -> void:
+	var nearby_wolves: Array[Node] = []
+	for w in get_tree().get_nodes_in_group("wolf"):
+		if is_instance_valid(w) and w is WolfAI and w.current_state != State.DEAD:
+			if global_position.distance_to(w.global_position) < 35.0:
+				nearby_wolves.append(w)
+
+	pack_size = nearby_wolves.size()
+	nearby_wolves.sort_custom(func(a: Node, b: Node) -> bool: return a.get_instance_id() < b.get_instance_id())
+	var my_idx := nearby_wolves.find(self)
+	if my_idx >= 0:
+		pack_role = my_idx % 4
+
+func alert_pack(threat_pos: Vector3) -> void:
+	if howl_cooldown > 0.0:
+		return
+	howl_cooldown = 8.0
+	for w in get_tree().get_nodes_in_group("wolf"):
+		if w != self and is_instance_valid(w) and w is WolfAI and w.current_state != State.DEAD:
+			if global_position.distance_to(w.global_position) < 45.0:
+				if w.current_state == State.PATROL:
+					w.current_state = State.STALK
+					w.wander_target = threat_pos
+
 func _process_stalk(delta: float) -> void:
 	if not player_target:
 		current_state = State.PATROL
@@ -186,11 +223,20 @@ func _process_stalk(delta: float) -> void:
 		current_state = State.FLEE_FIRE
 		return
 
+	# Solo injured wolf retreat
+	if pack_size <= 1 and health < 20.0:
+		current_state = State.PATROL
+		_retreat_to_mountain(delta)
+		return
+
 	# Disengage stalk if player flees down to the lowlands
 	if player_target.global_position.y < min_mountain_altitude - 8.0:
 		current_state = State.PATROL
 		_pick_mountain_patrol_target()
 		return
+
+	# Howl / alert nearby pack members to converge
+	alert_pack(player_target.global_position)
 
 	var dist := global_position.distance_to(player_target.global_position)
 	if dist <= attack_radius:
@@ -198,12 +244,34 @@ func _process_stalk(delta: float) -> void:
 	elif dist > detection_radius * 1.5:
 		current_state = State.PATROL
 	else:
-		# Move towards settler
-		var dir := (player_target.global_position - global_position).normalized()
-		velocity.x = dir.x * chase_speed
-		velocity.z = dir.z * chase_speed
-		if dir.length() > 0.1:
-			var target_rot := atan2(-dir.x, -dir.z)
+		# Calculate pack flanking vector
+		var to_target := (player_target.global_position - global_position).normalized()
+		var flank_dir := to_target
+		match pack_role:
+			PackRole.FLANK_LEFT:
+				flank_dir = to_target.rotated(Vector3.UP, deg_to_rad(45.0)).normalized()
+			PackRole.FLANK_RIGHT:
+				flank_dir = to_target.rotated(Vector3.UP, deg_to_rad(-45.0)).normalized()
+			PackRole.REAR_AMBUSH:
+				flank_dir = to_target.rotated(Vector3.UP, deg_to_rad(85.0)).normalized()
+			_:
+				flank_dir = to_target
+
+		# Anti-crowding separation from packmates
+		var sep := Vector3.ZERO
+		for w in get_tree().get_nodes_in_group("wolf"):
+			if w != self and is_instance_valid(w) and w is Node3D:
+				var d_w := global_position.distance_to(w.global_position)
+				if d_w < 2.8 and d_w > 0.05:
+					sep += (global_position - w.global_position).normalized() * (2.8 - d_w)
+
+		if sep.length_squared() > 0.01:
+			flank_dir = (flank_dir + sep * 0.45).normalized()
+
+		velocity.x = flank_dir.x * chase_speed
+		velocity.z = flank_dir.z * chase_speed
+		if Vector2(flank_dir.x, flank_dir.z).length() > 0.1:
+			var target_rot := atan2(-flank_dir.x, -flank_dir.z)
 			rotation.y = lerp_angle(rotation.y, target_rot, delta * 5.0)
 
 func _process_attack(_delta: float) -> void:

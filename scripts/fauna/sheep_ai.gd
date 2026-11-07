@@ -7,7 +7,7 @@ extends CharacterBody3D
 ## - Can be sheared with [E] for raw wool (used for warm clothing and tunics).
 ## - Can be hunted for raw mutton and sheepskin.
 
-enum State { GRAZING, RESTING, WANDERING, FLEEING, DEAD }
+enum State { GRAZING, RESTING, WANDERING, FLEEING, SHELTERING, DEAD }
 
 @export var current_state: State = State.GRAZING
 @export var walk_speed: float = 2.0
@@ -20,6 +20,9 @@ enum State { GRAZING, RESTING, WANDERING, FLEEING, DEAD }
 @export var fleece_color: Color = Color(0.88, 0.86, 0.82) # Natural undyed sheep wool
 
 var wander_target: Vector3 = Vector3.ZERO
+var shelter_target: Vector3 = Vector3.ZERO
+var season_manager: SeasonManager
+var weather_check_timer: float = 0.0
 var state_timer: float = 0.0
 var shear_cooldown: float = 0.0
 var has_wool: bool = true
@@ -40,6 +43,7 @@ func _ready() -> void:
 		player_target = get_tree().get_first_node_in_group("settler") as Node3D
 	_pick_wander_target()
 	state_timer = randf_range(3.0, 8.0)
+	weather_check_timer = randf_range(0.5, 2.0)
 	if get_node_or_null("VisualModel") == null:
 		_build_sheep_mesh()
 
@@ -58,6 +62,11 @@ func _physics_process(delta: float) -> void:
 			fleece_mesh.visible = true
 
 	state_timer -= delta
+	weather_check_timer -= delta
+
+	if weather_check_timer <= 0.0:
+		weather_check_timer = 2.0
+		_check_weather_and_shelter()
 
 	# Check for approaching threats (wolf or sprinting settler)
 	if player_target:
@@ -129,11 +138,68 @@ func _physics_process(delta: float) -> void:
 			if head_pivot:
 				head_pivot.rotation.x = lerpf(head_pivot.rotation.x, deg_to_rad(-10.0), delta * 8.0)
 			if state_timer <= 0.0:
-				current_state = State.GRAZING
+				if _is_weather_stormy():
+					current_state = State.SHELTERING
+					_find_nearest_shelter()
+				else:
+					current_state = State.GRAZING
 				state_timer = 5.0
+
+		State.SHELTERING:
+			var dir := (shelter_target - global_position)
+			dir.y = 0.0
+			var dist := dir.length()
+			if dist > 1.4:
+				dir = dir.normalized()
+				velocity.x = dir.x * (walk_speed * 1.2)
+				velocity.z = dir.z * (walk_speed * 1.2)
+				if Vector2(dir.x, dir.z).length() > 0.1:
+					var target_rot := atan2(-dir.x, -dir.z)
+					rotation.y = lerp_angle(rotation.y, target_rot, delta * 4.0)
+			else:
+				velocity.x = move_toward(velocity.x, 0.0, 1.5)
+				velocity.z = move_toward(velocity.z, 0.0, 1.5)
+
+			# Huddled resting under eave / rack
+			if head_pivot:
+				var huddle := sin(Time.get_ticks_msec() * 0.003) * deg_to_rad(3.0)
+				head_pivot.rotation.x = deg_to_rad(8.0) + huddle
 
 	_animate_limbs(delta)
 	move_and_slide()
+
+func _is_weather_stormy() -> bool:
+	if season_manager == null and get_tree():
+		season_manager = get_tree().get_first_node_in_group("season_manager") as SeasonManager
+	if season_manager:
+		return season_manager.is_precipitating or season_manager.is_raining or season_manager.is_snowing or (season_manager.current_weather in [SeasonManager.WeatherState.HEAVY_RAIN, SeasonManager.WeatherState.SNOW])
+	return false
+
+func _check_weather_and_shelter() -> void:
+	if current_state == State.DEAD or current_state == State.FLEEING:
+		return
+
+	if _is_weather_stormy():
+		if current_state != State.SHELTERING:
+			_find_nearest_shelter()
+			current_state = State.SHELTERING
+	elif current_state == State.SHELTERING:
+		current_state = State.GRAZING
+		state_timer = randf_range(3.0, 7.0)
+
+func _find_nearest_shelter() -> void:
+	var shelters := get_tree().get_nodes_in_group("shelter")
+	var best_dist := 65.0
+	var chosen_pos := home_position
+
+	for s in shelters:
+		if s is Node3D and is_instance_valid(s):
+			var d := global_position.distance_to(s.global_position)
+			if d < best_dist:
+				best_dist = d
+				chosen_pos = s.global_position + Vector3(0.5, 0, 1.2)
+
+	shelter_target = chosen_pos
 
 func _animate_limbs(delta: float) -> void:
 	var horiz_vel := Vector2(velocity.x, velocity.z).length()
