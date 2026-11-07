@@ -21,7 +21,8 @@ enum EquippedItem {
 	WATER_BOTTLE = 2,
 	KNIFE = 3,
 	BOW = 4,
-	TORCH = 5
+	TORCH = 5,
+	FISHING_LINE = 6
 }
 
 @export var tunic_color: Color = Color(0.46, 0.48, 0.52) # Slate grey wool
@@ -51,6 +52,7 @@ var water_bottle_mesh: Node3D
 var bow_mesh: Node3D
 var arrow_hand_mesh: Node3D
 var carried_log_node: Node3D
+var fishing_spool_mesh: Node3D
 
 # State
 var walk_cycle: float = 0.0
@@ -287,6 +289,9 @@ func _build_box_man() -> void:
 
 	# Arrow in Right Hand (held ready when Bow Slot 4 is active)
 	_build_held_arrow(mat_wood, mat_iron)
+
+	# Handline & Cod Jig Spool in Right Hand (Slot 6)
+	_build_fishing_spool(mat_wood, mat_iron, mat_dark_leather)
 
 	# =========================================================================
 	# 5. Left Leg (Hip pivot at -0.13, 0.72, 0)
@@ -749,6 +754,51 @@ func _build_torch(mat_wood: Material) -> void:
 	torch_flame.material_override = mat_flame
 	torch_mesh.add_child(torch_flame)
 
+func _build_fishing_spool(mat_wood: Material, mat_iron: Material, mat_line: Material) -> void:
+	fishing_spool_mesh = Node3D.new()
+	fishing_spool_mesh.name = "FishingSpool"
+	fishing_spool_mesh.position = Vector3(0, -0.46, -0.06)
+	fishing_spool_mesh.rotation_degrees = Vector3(15, 0, 10)
+	fishing_spool_mesh.visible = false
+	right_arm_pivot.add_child(fishing_spool_mesh)
+
+	# 1. Wooden handline winder frame (H-shaped juksehjul)
+	var spool_frame := MeshInstance3D.new()
+	var box_frame := BoxMesh.new()
+	box_frame.size = Vector3(0.04, 0.22, 0.12)
+	spool_frame.mesh = box_frame
+	spool_frame.material_override = mat_wood
+	fishing_spool_mesh.add_child(spool_frame)
+
+	# 2. Wound hemp / linen fishing line coil
+	var line_coil := MeshInstance3D.new()
+	var box_line := BoxMesh.new()
+	box_line.size = Vector3(0.045, 0.14, 0.09)
+	line_coil.mesh = box_line
+	line_coil.material_override = mat_line
+	fishing_spool_mesh.add_child(line_coil)
+
+	# 3. Trailing line cord with small iron jig sinker (dreg / juksa)
+	var trailing_line := MeshInstance3D.new()
+	var cyl_tl := CylinderMesh.new()
+	cyl_tl.top_radius = 0.003
+	cyl_tl.bottom_radius = 0.003
+	cyl_tl.height = 0.35
+	trailing_line.mesh = cyl_tl
+	trailing_line.position = Vector3(0, -0.22, 0)
+	trailing_line.material_override = mat_line
+	fishing_spool_mesh.add_child(trailing_line)
+
+	var jig_sinker := MeshInstance3D.new()
+	var cyl_jig := CylinderMesh.new()
+	cyl_jig.top_radius = 0.012
+	cyl_jig.bottom_radius = 0.004
+	cyl_jig.height = 0.08
+	jig_sinker.mesh = cyl_jig
+	jig_sinker.position = Vector3(0, -0.40, 0)
+	jig_sinker.material_override = mat_iron
+	fishing_spool_mesh.add_child(jig_sinker)
+
 ## Changes active equipped item and updates 3D mesh visibility
 func set_equipped_item(item_slot: int) -> void:
 	equipped_item = item_slot
@@ -762,6 +812,7 @@ func _update_hand_item_visibility() -> void:
 		if bow_mesh: bow_mesh.visible = false
 		if arrow_hand_mesh: arrow_hand_mesh.visible = false
 		if torch_mesh: torch_mesh.visible = false
+		if fishing_spool_mesh: fishing_spool_mesh.visible = false
 		return
 
 	if axe_mesh:
@@ -776,6 +827,8 @@ func _update_hand_item_visibility() -> void:
 		arrow_hand_mesh.visible = (equipped_item == EquippedItem.BOW and is_aiming_bow)
 	if torch_mesh:
 		torch_mesh.visible = (equipped_item == EquippedItem.TORCH or has_torch)
+	if fishing_spool_mesh:
+		fishing_spool_mesh.visible = (equipped_item == EquippedItem.FISHING_LINE)
 
 ## Updates procedural animation every physics frame
 func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: bool, holding_torch: bool, is_swimming: bool = false, is_climbing: bool = false, is_on_rope: bool = false) -> void:
@@ -1057,6 +1110,12 @@ func _apply_item_poses(arm_swing: float, delta: float, is_airborne: bool, breath
 		right_arm_pivot.rotation.x = -deg_to_rad(65) + chop * deg_to_rad(95)
 		right_arm_pivot.rotation.y = 0.0
 		right_arm_pivot.rotation.z = 0.0
+	elif equipped_item == EquippedItem.FISHING_LINE:
+		# Handline jigging posture: hold arm forward with rhythmic gentle bobbing
+		var jig_bob := sin(Time.get_ticks_msec() * 0.005) * deg_to_rad(6.0)
+		right_arm_pivot.rotation.x = lerp_angle(right_arm_pivot.rotation.x, deg_to_rad(-45) + jig_bob, delta * 8.0)
+		right_arm_pivot.rotation.y = lerp_angle(right_arm_pivot.rotation.y, deg_to_rad(-12), delta * 8.0)
+		right_arm_pivot.rotation.z = lerp_angle(right_arm_pivot.rotation.z, deg_to_rad(10), delta * 8.0)
 	else:
 		right_arm_pivot.rotation.y = lerp_angle(right_arm_pivot.rotation.y, 0.0, delta * 8.0)
 		right_arm_pivot.rotation.z = lerp_angle(right_arm_pivot.rotation.z, 0.0, delta * 8.0)
@@ -1091,6 +1150,12 @@ func trigger_drink() -> void:
 	if not is_carrying_log:
 		is_drinking = true
 		drink_timer = 0.0
+
+## Triggers fish catch reel-in animation (Slot 6)
+func trigger_fish_catch() -> void:
+	if not is_carrying_log:
+		is_knife_slashing = true
+		knife_timer = 0.0
 
 ## Updates bow aiming and draw strength (Slot 4)
 func set_bow_aim(aiming: bool, draw_progress: float = 0.0) -> void:

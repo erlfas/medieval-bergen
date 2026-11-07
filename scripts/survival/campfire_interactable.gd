@@ -164,6 +164,18 @@ func on_interact(actor: Node) -> void:
 			inv.add_resource("roasted_mutton", mutton)
 			actions_taken.append("Stekte %d sauekjøtt" % mutton)
 
+		var cod := inv.get_count("fresh_cod")
+		if cod > 0:
+			inv.consume_resources({"fresh_cod": cod})
+			inv.add_resource("cooked_fish", cod)
+			actions_taken.append("Grillet %d fersk torsk" % cod)
+
+		var herring := inv.get_count("fresh_herring")
+		if herring > 0:
+			inv.consume_resources({"fresh_herring": herring})
+			inv.add_resource("cooked_fish", herring)
+			actions_taken.append("Røkte %d fersk sild" % herring)
+
 		# 2. Whittle arrows if holding timber
 		var timber := inv.get_count("timber_log")
 		if timber > 0 and equip:

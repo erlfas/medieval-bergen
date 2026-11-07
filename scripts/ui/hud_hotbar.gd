@@ -18,11 +18,13 @@ extends Control
 	$PanelCenter/HBoxSlots/Slot2,
 	$PanelCenter/HBoxSlots/Slot3,
 	$PanelCenter/HBoxSlots/Slot4,
-	$PanelCenter/HBoxSlots/Slot5
+	$PanelCenter/HBoxSlots/Slot5,
+	$PanelCenter/HBoxSlots/Slot6
 ]
 
 @onready var label_water: Label = $PanelCenter/HBoxSlots/Slot2/VBox/LabelSub
 @onready var label_arrows: Label = $PanelCenter/HBoxSlots/Slot4/VBox/LabelSub
+@onready var label_fishing: Label = $PanelCenter/HBoxSlots/Slot6/VBox/LabelSub
 @onready var bow_charge_bar: ProgressBar = $PanelCenter/HBoxSlots/Slot4/VBox/BowChargeBar
 
 var active_style: StyleBoxFlat
@@ -99,6 +101,7 @@ func _find_equipment_manager() -> void:
 		equipment_manager.water_reservoir_updated.connect(_on_water_updated)
 		equipment_manager.arrow_count_updated.connect(_on_arrows_updated)
 		equipment_manager.bow_aim_state_changed.connect(_on_bow_aim_changed)
+		equipment_manager.fishing_state_changed.connect(_on_fishing_state_changed)
 		_highlight_slot(equipment_manager.current_slot)
 		_on_water_updated(equipment_manager.water_reservoir, equipment_manager.max_water_reservoir)
 		_on_arrows_updated(equipment_manager.arrow_count)
@@ -157,3 +160,24 @@ func _on_bow_aim_changed(is_aiming: bool, draw_progress: float) -> void:
 			else:
 				reticle_label.text = "( + )"
 				reticle_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9, 0.65))
+
+func _on_fishing_state_changed(state: int, message: String) -> void:
+	if label_fishing:
+		match state:
+			1: # WAITING_FOR_BITE
+				label_fishing.text = "Jukser..."
+				label_fishing.add_theme_color_override("font_color", Color(0.3, 0.9, 0.95))
+			2: # HOOKED
+				label_fishing.text = "NAPP! [KLIKK]"
+				label_fishing.add_theme_color_override("font_color", Color(1.0, 0.88, 0.2))
+			_: # IDLE
+				label_fishing.text = "Juksa / Fjord"
+				label_fishing.add_theme_color_override("font_color", Color(0.4, 0.85, 0.95))
+
+	if reticle_label and equipment_manager and equipment_manager.current_slot == EquipmentManager.Slot.FISHING_LINE:
+		if state == 2: # HOOKED
+			reticle_label.visible = true
+			reticle_label.text = "[ NAPP! KLIKK! ]"
+			reticle_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.1, 1.0))
+		elif not equipment_manager.is_aiming_bow:
+			reticle_label.visible = false

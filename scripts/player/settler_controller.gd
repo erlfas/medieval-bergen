@@ -213,6 +213,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if equipment: equipment.select_slot(4)
 		elif event.physical_keycode == KEY_5:
 			if equipment: equipment.select_slot(5)
+		elif event.physical_keycode == KEY_6:
+			if equipment: equipment.select_slot(6)
 
 	# Interaction Key (E) - pick up or drop log, or interact with objects
 	if event.is_action_pressed("interact"):

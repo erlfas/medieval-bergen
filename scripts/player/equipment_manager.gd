@@ -14,6 +14,7 @@ signal slot_changed(new_slot: int, old_slot: int)
 signal water_reservoir_updated(current: float, maximum: float)
 signal arrow_count_updated(current: int)
 signal bow_aim_state_changed(is_aiming: bool, draw_progress: float)
+signal fishing_state_changed(state: int, message: String)
 signal item_action_triggered(slot: int, action_name: String)
 
 enum Slot {
@@ -22,7 +23,14 @@ enum Slot {
 	WATER_BOTTLE = 2,
 	KNIFE = 3,
 	BOW = 4,
-	TORCH = 5
+	TORCH = 5,
+	FISHING_LINE = 6
+}
+
+enum FishingState {
+	IDLE = 0,
+	WAITING_FOR_BITE = 1,
+	HOOKED = 2
 }
 
 const SLOT_NAMES := {
@@ -30,7 +38,8 @@ const SLOT_NAMES := {
 	Slot.WATER_BOTTLE: "Drinking Horn / Flask",
 	Slot.KNIFE: "Hunting Knife",
 	Slot.BOW: "Recurve Bow & Arrow",
-	Slot.TORCH: "Pine-tar Torch"
+	Slot.TORCH: "Pine-tar Torch",
+	Slot.FISHING_LINE: "Handline & Cod Jig (Fiskesnøre)"
 }
 
 @export var current_slot: int = Slot.AXE
@@ -43,6 +52,11 @@ const SLOT_NAMES := {
 var attack_cooldown: float = 0.0
 var is_aiming_bow: bool = false
 var bow_draw_time: float = 0.0
+
+# Fishing state
+var fishing_state: int = FishingState.IDLE
+var fishing_wait_timer: float = 0.0
+var fishing_hooked_timer: float = 0.0
 var max_bow_draw_time: float = 0.70 # Time in seconds to reach full bow tension
 
 # Node references
@@ -83,12 +97,26 @@ func _process(delta: float) -> void:
 		if box_man_model:
 			box_man_model.set_bow_aim(true, progress)
 
-## Selects an equipment slot by number (1 to 5)
+	# Update fishing jigging state timers
+	if current_slot == Slot.FISHING_LINE and fishing_state != FishingState.IDLE:
+		if fishing_state == FishingState.WAITING_FOR_BITE:
+			fishing_wait_timer -= delta
+			if fishing_wait_timer <= 0.0:
+				fishing_state = FishingState.HOOKED
+				fishing_hooked_timer = 2.2
+				fishing_state_changed.emit(FishingState.HOOKED, "NAPP! (BITE!) Trykk venstreklikk for å håve inn!")
+		elif fishing_state == FishingState.HOOKED:
+			fishing_hooked_timer -= delta
+			if fishing_hooked_timer <= 0.0:
+				fishing_state = FishingState.IDLE
+				fishing_state_changed.emit(FishingState.IDLE, "Fisken glapp unna!")
+
+## Selects an equipment slot by number (1 to 6)
 func select_slot(slot_idx: int, force: bool = false) -> void:
 	if box_man_model == null or settler == null:
 		_bind_settler_references()
 
-	if slot_idx < Slot.AXE or slot_idx > Slot.TORCH:
+	if slot_idx < Slot.AXE or slot_idx > Slot.FISHING_LINE:
 		return
 	if current_slot == slot_idx and not force:
 		return
@@ -96,6 +124,10 @@ func select_slot(slot_idx: int, force: bool = false) -> void:
 	# If currently drawing bow, cancel draw cleanly before switching
 	if is_aiming_bow:
 		cancel_bow_aim()
+
+	# If currently fishing, cancel fishing state cleanly
+	if fishing_state != FishingState.IDLE:
+		cancel_fishing()
 
 	var old_slot := current_slot
 	current_slot = slot_idx
@@ -114,12 +146,18 @@ func select_slot(slot_idx: int, force: bool = false) -> void:
 
 	slot_changed.emit(current_slot, old_slot)
 
+func cancel_fishing() -> void:
+	fishing_state = FishingState.IDLE
+	fishing_wait_timer = 0.0
+	fishing_hooked_timer = 0.0
+	fishing_state_changed.emit(FishingState.IDLE, "")
+
 func cycle_slot(direction: int) -> void:
 	var new_slot := current_slot + direction
-	if new_slot > Slot.TORCH:
+	if new_slot > Slot.FISHING_LINE:
 		new_slot = Slot.AXE
 	elif new_slot < Slot.AXE:
-		new_slot = Slot.TORCH
+		new_slot = Slot.FISHING_LINE
 	select_slot(new_slot)
 
 ## Executes primary use of equipped item (Left Click)
@@ -139,6 +177,8 @@ func use_primary(raycast: RayCast3D, camera: Camera3D) -> void:
 			pass
 		Slot.TORCH:
 			_use_torch(raycast)
+		Slot.FISHING_LINE:
+			_use_fishing_line(raycast)
 
 ## Slot 1: Woodcutter's Axe: Heavy melee swing (28 dmg), chops trees, costs 12 stamina
 func _use_axe(raycast: RayCast3D) -> void:
@@ -313,3 +353,64 @@ func _use_torch(raycast: RayCast3D) -> void:
 		var target := raycast.get_collider()
 		if target and target.has_method("take_damage"):
 			target.take_damage(14.0, settler)
+
+## Slot 6: Handline & Cod Jig (Fiskesnøre & Juksa)
+func _use_fishing_line(raycast: RayCast3D) -> void:
+	if not settler:
+		return
+
+	# Case 1: Currently hooked - successful catch!
+	if fishing_state == FishingState.HOOKED:
+		attack_cooldown = 0.50
+		fishing_state = FishingState.IDLE
+		fishing_hooked_timer = 0.0
+
+		var caught_fish := "fresh_cod" if randf() < 0.70 else "fresh_herring"
+		var fish_name := "torsk" if caught_fish == "fresh_cod" else "sild"
+
+		if inventory:
+			inventory.add_resource(caught_fish, 1)
+
+		if survival_stats:
+			survival_stats.consume_stamina(6.0)
+
+		if box_man_model and box_man_model.has_method("trigger_fish_catch"):
+			box_man_model.trigger_fish_catch()
+
+		item_action_triggered.emit(Slot.FISHING_LINE, "catch")
+		fishing_state_changed.emit(FishingState.IDLE, "✓ Du dro i land en sprellende %s!" % fish_name)
+		return
+
+	# Case 2: Waiting for bite, but clicked too early
+	if fishing_state == FishingState.WAITING_FOR_BITE:
+		attack_cooldown = 0.35
+		fishing_state = FishingState.IDLE
+		fishing_wait_timer = 0.0
+		item_action_triggered.emit(Slot.FISHING_LINE, "reel_early")
+		fishing_state_changed.emit(FishingState.IDLE, "Dro inn for tidlig! Fisken ble skremt.")
+		return
+
+	# Case 3: IDLE - Cast line if near water
+	var is_swimming: bool = settler.get("is_swimming") if "is_swimming" in settler else false
+	var near_water := is_swimming or settler.global_position.y <= 4.0
+
+	# Also check raycast pointing downwards or forward at water level
+	if not near_water and raycast and raycast.is_colliding():
+		var col_pt := raycast.get_collision_point()
+		if col_pt.y <= 1.5:
+			near_water = true
+
+	if not near_water:
+		fishing_state_changed.emit(FishingState.IDLE, "Gå ned til fjorden eller bryggen for å kaste snøret!")
+		return
+
+	# Start fishing
+	attack_cooldown = 0.40
+	fishing_state = FishingState.WAITING_FOR_BITE
+	fishing_wait_timer = randf_range(2.2, 4.8)
+
+	if survival_stats:
+		survival_stats.consume_stamina(3.0)
+
+	item_action_triggered.emit(Slot.FISHING_LINE, "cast")
+	fishing_state_changed.emit(FishingState.WAITING_FOR_BITE, "Kaster snøret... Jukser etter torsk i Byfjorden.")

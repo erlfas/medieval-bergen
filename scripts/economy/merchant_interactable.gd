@@ -25,7 +25,7 @@ func _setup_ui() -> void:
 	prompt_label.outline_size = 6
 	prompt_label.modulate = Color(1.0, 0.90, 0.55) # Hanseatic gold
 	prompt_label.outline_modulate = Color(0.08, 0.06, 0.04, 0.95)
-	prompt_label.text = "⚓ %s\n[E] Bytt handel (Barter: 2 Tømmer ➔ 6 Søm & 2 Tørrfisk)" % merchant_name
+	prompt_label.text = "⚓ %s\n[E] Handel (Tørrfisk / Tømmer / Pels ➔ Søm, Salt & Brød)" % merchant_name
 	prompt_label.position = Vector3(0, 2.2, 0)
 	add_child(prompt_label)
 
@@ -57,17 +57,39 @@ func on_interact(actor: Node) -> void:
 	if inv == null:
 		return
 
-	# Priority 1: Trade 2 timber logs for 6 iron nails and 2 dried fish (tørrfisk)
+	# Priority 1: Historic Bergen Stockfish Trade (Hanseatic League's primary export)
+	# Trade 2 stockfish for continental iron nails, salt cask, and Baltic rye bread
+	if inv.get_count("stockfish") >= 2:
+		inv.consume_resources({"stockfish": 2})
+		inv.add_resource("iron_nails", 8)
+		inv.add_resource("salt_cask", 1)
+		inv.add_resource("rye_bread", 2)
+		_show_feedback("✓ Hansakontoret: Byttet 2 Tørrfisk mot 8 Jernsøm, Salt & Rugbrød!")
+		if stats:
+			stats.eat_food(20.0, true)
+		return
+
+	# Priority 2: Trade 2 fresh fjord cod for iron nails and rye bread
+	if inv.get_count("fresh_cod") >= 2:
+		inv.consume_resources({"fresh_cod": 2})
+		inv.add_resource("iron_nails", 5)
+		inv.add_resource("rye_bread", 1)
+		_show_feedback("✓ Handlet: Byttet 2 Fersk Torsk mot 5 Jernsøm & Rugbrød!")
+		if stats:
+			stats.eat_food(15.0, true)
+		return
+
+	# Priority 3: Trade 2 timber logs for 6 iron nails and 2 dried fish (tørrfisk)
 	if inv.get_count("timber_log") >= 2:
 		inv.consume_resources({"timber_log": 2})
 		inv.add_resource("iron_nails", 6)
-		inv.add_resource("dried_fish", 2)
+		inv.add_resource("stockfish", 2)
 		_show_feedback("✓ Handlet: Byttet 2 Tømmer mot 6 Jernsøm & 2 Tørrfisk!")
 		if stats:
 			stats.eat_food(15.0, true)
 		return
 
-	# Priority 2: Trade 1 hare fur or wool fleece for salt and rye bread
+	# Priority 4: Trade 1 hare fur or wool fleece for salt and rye bread
 	if inv.get_count("hare_fur") >= 1:
 		inv.consume_resources({"hare_fur": 1})
 		inv.add_resource("salt_cask", 1)

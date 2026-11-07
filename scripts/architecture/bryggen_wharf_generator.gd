@@ -195,8 +195,8 @@ static func _assemble_sjostue(w: float, d: float, h: float, mat_wall: Material, 
 	return building
 
 ## Assembles an authentic Norwegian Stockfish Drying Rack (Fiskehjell)
-static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Material) -> Node3D:
-	var rack := Node3D.new()
+static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Material) -> StaticBody3D:
+	var rack := StockfishRackInteractable.new()
 	rack.name = "StockfishRack"
 
 	# Compound A-frame Timber Uprights & Ridge Pole
@@ -235,6 +235,15 @@ static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Ma
 	fish_bundle.position = Vector3(0, 1.85, 0)
 	fish_bundle.material_override = mat_fish
 	rack.add_child(fish_bundle)
+	rack.fish_bundle_mesh = fish_bundle
+
+	# Physical collision shape for settler interaction
+	var col := CollisionShape3D.new()
+	var col_box := BoxShape3D.new()
+	col_box.size = Vector3(1.6, 2.6, length + 0.4)
+	col.shape = col_box
+	col.position = Vector3(0, 1.3, 0)
+	rack.add_child(col)
 
 	return rack
 
