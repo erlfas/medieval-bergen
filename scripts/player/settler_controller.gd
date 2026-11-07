@@ -572,10 +572,10 @@ func _physics_process(delta: float) -> void:
 			if velocity.y < 0.0:
 				velocity.y = 0.0
 
-	# Procedural box man animations (Task 1, 2, 7)
+	# Procedural box man animations (Stage 2)
 	if box_man_model:
 		var horiz_vel := Vector3(velocity.x, velocity.y if (is_climbing or is_on_rope) else 0.0, velocity.z)
-		box_man_model.update_animation(delta, horiz_vel, is_on_floor() and not is_swimming, is_holding_torch and not is_carrying_log, is_swimming, is_climbing, is_on_rope)
+		box_man_model.update_animation(delta, horiz_vel, is_on_floor() and not is_swimming, is_holding_torch and not is_carrying_log, is_swimming, is_climbing, is_on_rope, velocity.y)
 
 	# Smooth camera positioning and collision avoidance (with over-shoulder bow aiming zoom)
 	var desired_cam_dist := target_cam_distance
@@ -708,9 +708,10 @@ func _update_camera(delta: float) -> void:
 	if not camera or not head:
 		return
 
-	# Smooth FOV zoom when aiming bow
-	var target_fov := 52.0 if (equipment and equipment.is_aiming_bow) else 75.0
-	camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
+	# Smooth FOV zoom when aiming bow and dynamic widening during sprint
+	var base_fov := 79.0 if is_sprinting else 75.0
+	var target_fov := 52.0 if (equipment and equipment.is_aiming_bow) else base_fov
+	camera.fov = lerpf(camera.fov, target_fov, delta * 10.0)
 
 	if current_cam_distance < 0.3 or not is_third_person:
 		# First-person view

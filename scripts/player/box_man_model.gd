@@ -78,6 +78,12 @@ var tread_cycle: float = 0.0
 var climb_cycle: float = 0.0
 var rope_cycle: float = 0.0
 
+# Stage 2 Procedural Locomotion, Weight & Landing Squash Variables
+var _last_global_y_rot: float = 0.0
+var _prev_is_grounded: bool = true
+var _prev_vert_vel: float = 0.0
+var landing_compression: float = 0.0
+
 func _ready() -> void:
 	_build_box_man()
 
@@ -831,7 +837,7 @@ func _update_hand_item_visibility() -> void:
 		fishing_spool_mesh.visible = (equipped_item == EquippedItem.FISHING_LINE)
 
 ## Updates procedural animation every physics frame
-func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: bool, holding_torch: bool, is_swimming: bool = false, is_climbing: bool = false, is_on_rope: bool = false) -> void:
+func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: bool, holding_torch: bool, is_swimming: bool = false, is_climbing: bool = false, is_on_rope: bool = false, vertical_velocity: float = 0.0) -> void:
 	has_torch = holding_torch
 	self.is_swimming = is_swimming
 	self.is_climbing = is_climbing
@@ -841,6 +847,13 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		carried_log_node.visible = is_carrying_log
 
 	_update_hand_item_visibility()
+
+	# Stage 2: Landing impact detection and spring recovery
+	if not _prev_is_grounded and is_grounded and _prev_vert_vel < -1.8:
+		landing_compression = clampf(absf(_prev_vert_vel) * 0.018, 0.035, 0.12)
+	_prev_is_grounded = is_grounded
+	_prev_vert_vel = vertical_velocity
+	landing_compression = lerpf(landing_compression, 0.0, delta * 11.0)
 
 	var horiz_speed := horizontal_velocity.length()
 
@@ -990,18 +1003,42 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		torso_node.position.y = 1.05
 		head_node.position.y = 1.52
 	else:
-		torso_node.rotation.x = lerp_angle(torso_node.rotation.x, 0.0, delta * 8.0)
+		# Stage 2 Procedural Torso Banking & Acceleration Lean
+		var target_roll: float = 0.0
+		var target_pitch: float = 0.0
+
+		if is_grounded and horiz_speed > 0.2:
+			var current_y_rot := global_rotation.y
+			var turn_rate := (current_y_rot - _last_global_y_rot) / maxf(delta, 0.001)
+			_last_global_y_rot = current_y_rot
+			turn_rate = wrapf(turn_rate, -PI, PI)
+
+			# Roll into turn (lean into curve)
+			target_roll = clampf(-turn_rate * 0.22, -deg_to_rad(8.0), deg_to_rad(8.0))
+
+			# Pitch lean forward during sprint and brisk walking
+			var sprint_ratio := clampf((horiz_speed - 3.5) / 3.5, 0.0, 1.0)
+			target_pitch = deg_to_rad(2.0 + 6.0 * sprint_ratio)
+		else:
+			_last_global_y_rot = global_rotation.y
+
+		torso_node.rotation.x = lerp_angle(torso_node.rotation.x, target_pitch, delta * 8.0)
 		torso_node.rotation.y = lerp_angle(torso_node.rotation.y, 0.0, delta * 8.0)
-		torso_node.rotation.z = lerp_angle(torso_node.rotation.z, 0.0, delta * 8.0)
-		head_node.rotation.x = lerp_angle(head_node.rotation.x, 0.0, delta * 8.0)
+		torso_node.rotation.z = lerp_angle(torso_node.rotation.z, target_roll, delta * 8.0)
+		head_node.rotation.x = lerp_angle(head_node.rotation.x, -target_pitch * 0.35, delta * 8.0)
 		head_node.rotation.y = lerp_angle(head_node.rotation.y, 0.0, delta * 8.0)
-		head_node.rotation.z = lerp_angle(head_node.rotation.z, 0.0, delta * 8.0)
-		left_leg_pivot.rotation.z = 0.0
-		right_leg_pivot.rotation.z = 0.0
+		head_node.rotation.z = lerp_angle(head_node.rotation.z, -target_roll * 0.45, delta * 8.0)
+
+		# Leg flare on landing impact squash
+		left_leg_pivot.rotation.z = landing_compression * 0.35
+		right_leg_pivot.rotation.z = -landing_compression * 0.35
+
+		var base_torso_y := 1.05 - landing_compression
+		var base_head_y := 1.52 - landing_compression * 0.75
 
 		if is_grounded and horiz_speed > 0.15:
-			# Walking / Sprinting stride cycle
-			var anim_rate := clampf(horiz_speed * 1.8, 4.0, 14.0)
+			# Walking / Sprinting stride cycle synced to ground velocity
+			var anim_rate := clampf(horiz_speed * 2.2, 4.0, 15.0)
 			walk_cycle += delta * anim_rate
 
 			var leg_swing := sin(walk_cycle) * 0.65
@@ -1016,8 +1053,8 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 				_apply_item_poses(arm_swing, delta, false)
 
 			# Torso subtle vertical bobbing
-			torso_node.position.y = 1.05 + absf(sin(walk_cycle * 2.0)) * 0.035
-			head_node.position.y = 1.52 + absf(sin(walk_cycle * 2.0)) * 0.025
+			torso_node.position.y = base_torso_y + absf(sin(walk_cycle * 2.0)) * 0.035
+			head_node.position.y = base_head_y + absf(sin(walk_cycle * 2.0)) * 0.025
 		elif not is_grounded:
 			# Airborne / jumping pose
 			walk_cycle = 0.0
@@ -1045,8 +1082,8 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 			else:
 				_apply_item_poses(0.0, delta, false, breath)
 
-			torso_node.position.y = 1.05 + breath
-			head_node.position.y = 1.52 + breath * 0.7
+			torso_node.position.y = base_torso_y + breath
+			head_node.position.y = base_head_y + breath * 0.7
 
 func _apply_log_carry_pose(cycle: float, breath: float = 0.0) -> void:
 	var bob := sin(cycle * 2.0) * deg_to_rad(3.0) + breath * 1.5
