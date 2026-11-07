@@ -169,3 +169,53 @@ The procedures developed and refined during this project have been formalized in
    - **Scope:** Headless Godot 4 Web PCK package export, asset import & `.godot/` script class cache bootstrapping (`--editor --quit`), byte-exact PCK file size synchronization in `index.html` loader, and offscreen headless rendering validation using Xvfb with Mesa OpenGL3/llvmpipe.
 2. **`godot-web-deploy`**:
    - **Scope:** Web export packaging, Vite bundling, Cross-Origin Isolation (`COOP`/`COEP`) headers for SharedArrayBuffer / WebAssembly threads, and static deployment configurations for Netlify, Vercel, and GitHub Pages.
+3. **`game-verification`**:
+   - **Scope:** Automated verification pipeline using headless Chromium via Chrome DevTools Protocol (CDP) to boot WebGL games, inspect runtime exceptions, check for WebGL context loss, and capture visual proof screenshots.
+4. **`game-bug-and-performance-profiler`**:
+   - **Scope:** WebGL resource budgeting, checking GPU draw calls, MeshInstance counts, JS heap memory pressure, and canvas rendering states.
+5. **`procedural-terrain-pbr-pipeline`**:
+   - **Scope:** Procedural seamless spectral fractal ($1/f^\beta$ FFT) texture synthesis for organic terrain PBR materials, WebGL 2.0-compliant spatial shader authoring, and SurfaceTool tangent space configuration.
+
+---
+
+## 11. Kinematic Climbing & Collision Contact Invariants
+
+### The Mid-Air Climbing Exploit
+In open-world games featuring freeform climbing, decoupling climbing mechanics from physical contact checks creates severe exploits where characters ascend infinitely into mid-air:
+- **Root Cause Analysis:**
+  1. **Unbounded Terrain Slope Sampling:** Direct heightmap checks (`sample_height(x, z)`) test if a slope is steep ($> 50^\circ$), but if they do not verify vertical altitude difference ($\lvert y_{\text{player}} - y_{\text{terrain}}\rvert < 1.8\text{m}$), the slope calculation evaluates to `true` even when airborne 100 meters above the mountain.
+  2. **Missing Disengage Loop:** While climbing (`is_climbing == true`), if the character traverses over a ledge crest or turns away from the cliff face, failure to continuously test contact results in retaining the last known wall normal, disabling gravity indefinitely.
+  3. **Instant Re-Latching on Release:** When a player presses jump to disengage from a cliff, the jump impulse moves them slightly, but on the subsequent frame the forward raycast immediately detects the wall again and re-engages climbing before the character can clear the wall.
+- **Architectural Solution:**
+  - **Arm's Reach Distance Bounds:** Constrain forward raycasts to realistic reach ($1.05\text{m}$–$1.1\text{m}$).
+  - **Altitude Proximity Guard:** Guard terrain slope sampling with `absf(global_position.y - h_center) < 1.8`.
+  - **Continuous Contact Loop:** Check `_check_steep_cliff()` every physics frame during climbing. If contact is lost, immediately set `is_climbing = false` and apply downward velocity (`velocity.y = -2.0`).
+  - **State Transition Cooldown:** Introduce `_climb_cooldown` (e.g. $0.35\text{s}$–$0.45\text{s}$) upon manual disengage or jump-off to guarantee crisp separation before allowing re-engagement.
+
+---
+
+## 12. Ground Surface Grounding & WebGL 2.0 PBR Texturing
+
+### The "Floating in Green Void" Problem
+In 3D terrain rendering, displaying unshaded vertex colors or flat fallback materials robs the player of visual depth, motion parallax, and contact shadows, making the character feel as if they are floating in mid-air over a cartoon void:
+- **Root Cause:**
+  - Setting `fallback.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED` completely bypasses all directional lighting, specular reflection, normal map perturbations, and contact shadows.
+- **Spectral Fractal Texture Synthesis ($1/f^\beta$ FFT):**
+  - Standard periodic sinusoidal noise often creates visible grid/diamond wallpaper artifacts.
+  - Using **2D Fast Fourier Transform (FFT) spectral synthesis** with power-law filtering $S(u, v) \propto (u^2 + v^2)^{-\beta / 2}$ generates 100% seamless, mathematically isotropic fractional Brownian motion (fBm).
+  - Combining multiple spectral octaves ($\beta = 2.3$ macro moisture, $\beta = 1.8$ turf clumping, $\beta = 1.1$ grass blade strokes, $\beta = 0.8$ soil pebble grain) yields organic Norwegian turf, granite crags, and scree gravel.
+  - Generating normal maps via seamless Sobel operator on the composite height field provides rich micro-relief that catches directional sunlight.
+- **Godot 4 WebGL 2.0 / Compatibility Shader Rules:**
+  - **Diffuse Mode:** Use `render_mode cull_back, diffuse_lambert;`. Avoid `diffuse_burley` which is only supported in Mobile / Forward+ renderers.
+  - **Tangent-Space Normal Mapping:** Always call `SurfaceTool.generate_tangents()` when building the mesh. The spatial shader's `NORMAL_MAP` expects tangent-space normal vectors in $[0.0, 1.0]$.
+  - **Multi-Octave Rotation:** Rotate the secondary grass sampling octave by $45^\circ$ at scale $0.51$ to completely eliminate noticeable tiling across large plains.
+
+---
+
+## 13. WebGL MeshInstance Budget & Stability
+
+- **Mesh Instance Budget:** WebGL 2.0 running inside browser sandboxes suffers severe driver stutter or context loss if scene node count exceeds $\sim 2000$ active `MeshInstance3D` nodes.
+- **Optimization Strategy:**
+  - Farmstead fences, cabins, and tree assets must consolidate geometric primitives into single compound meshes or use MultiMeshInstance3D where possible.
+  - Keep total scene `MeshInstance3D` count $< 500$ to maintain a steady 60 FPS and prevent WebGL context destruction.
+
