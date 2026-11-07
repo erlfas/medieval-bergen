@@ -385,6 +385,20 @@ func _generate_bryggen_waterfront() -> void:
 	add_child(bryggen_node)
 	bryggen_node.owner = self
 
+	# Starter Campfires: Bryggen quayside and Settler meadow clearing
+	var campfire_script = load("res://scripts/survival/campfire_interactable.gd")
+	if campfire_script:
+		var cf_bryggen: Node3D = campfire_script.new()
+		cf_bryggen.name = "BryggenCampfire"
+		add_child(cf_bryggen)
+		cf_bryggen.global_position = Vector3(68.0, bryggen_shelf_height + 0.1, 88.0)
+
+		var cf_starter: Node3D = campfire_script.new()
+		cf_starter.name = "StarterCampfire"
+		add_child(cf_starter)
+		var sy := sample_height(148.0, 146.0)
+		cf_starter.global_position = Vector3(148.0, sy, 146.0)
+
 func _create_terrain_material() -> Material:
 	var fallback := StandardMaterial3D.new()
 	fallback.vertex_color_use_as_albedo = true

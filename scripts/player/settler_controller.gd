@@ -197,6 +197,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			var hud_bar = get_tree().get_first_node_in_group("hud_building_bar")
 			if hud_bar and hud_bar.has_method("toggle_cabin_guide"):
 				hud_bar.toggle_cabin_guide()
+		elif event.physical_keycode == KEY_K:
+			_place_campfire()
 
 	# Hotbar Slot Selection [1], [2], [3], [4], [5]
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -786,15 +788,73 @@ func _try_eat() -> void:
 	if not inventory or not survival_stats:
 		return
 
-	if inventory.get_count("cooked_meat") > 0:
-		inventory.items["cooked_meat"] -= 1
+	if inventory.get_count("cooked_venison") > 0:
+		inventory.consume_resources({"cooked_venison": 1})
+		survival_stats.eat_food(48.0, true)
+	elif inventory.get_count("roasted_hare") > 0:
+		inventory.consume_resources({"roasted_hare": 1})
+		survival_stats.eat_food(35.0, true)
+	elif inventory.get_count("roasted_mutton") > 0:
+		inventory.consume_resources({"roasted_mutton": 1})
+		survival_stats.eat_food(42.0, true)
+	elif inventory.get_count("cooked_meat") > 0:
+		inventory.consume_resources({"cooked_meat": 1})
 		survival_stats.eat_food(40.0, true)
+	elif inventory.get_count("stockfish") > 0:
+		inventory.consume_resources({"stockfish": 1})
+		survival_stats.eat_food(32.0, true)
+	elif inventory.get_count("rye_bread") > 0:
+		inventory.consume_resources({"rye_bread": 1})
+		survival_stats.eat_food(28.0, true)
 	elif inventory.get_count("raw_venison") > 0:
-		# If near fire, roast it!
+		inventory.consume_resources({"raw_venison": 1})
 		if survival_stats.is_near_fire:
-			inventory.items["raw_venison"] -= 1
 			survival_stats.eat_food(45.0, true)
 		else:
-			# Eat raw (risk food poisoning)
-			inventory.items["raw_venison"] -= 1
 			survival_stats.eat_food(20.0, false)
+	elif inventory.get_count("raw_hare") > 0:
+		inventory.consume_resources({"raw_hare": 1})
+		if survival_stats.is_near_fire:
+			survival_stats.eat_food(35.0, true)
+		else:
+			survival_stats.eat_food(16.0, false)
+	elif inventory.get_count("raw_mutton") > 0:
+		inventory.consume_resources({"raw_mutton": 1})
+		if survival_stats.is_near_fire:
+			survival_stats.eat_food(38.0, true)
+		else:
+			survival_stats.eat_food(18.0, false)
+
+func _place_campfire() -> void:
+	if not inventory:
+		return
+
+	var has_stones := inventory.get_count("stone") >= 3
+	var has_wood := inventory.get_count("firewood") >= 2 or inventory.get_count("timber_log") >= 1
+
+	if not (has_stones and has_wood):
+		var hud_bar = get_tree().get_first_node_in_group("hud_building_bar")
+		if hud_bar and hud_bar.has_method("_show_placement_error"):
+			hud_bar._show_placement_error("Trenger 3 stein og 1 tømmer (eller 2 ved) for å bygge bål [K]!")
+		return
+
+	# Consume placement cost
+	inventory.consume_resources({"stone": 3})
+	if inventory.get_count("firewood") >= 2:
+		inventory.consume_resources({"firewood": 2})
+	else:
+		inventory.consume_resources({"timber_log": 1})
+
+	# Calculate ground position 2.2m ahead of settler
+	var forward := -global_transform.basis.z.normalized()
+	forward.y = 0.0
+	var place_pos := global_position + forward * 2.2
+	if terrain_generator:
+		place_pos.y = terrain_generator.sample_height(place_pos.x, place_pos.z)
+
+	var campfire_script = load("res://scripts/survival/campfire_interactable.gd")
+	if campfire_script:
+		var cf: Node3D = campfire_script.new()
+		var scene_root := get_parent() if get_parent() else get_tree().current_scene
+		scene_root.add_child(cf)
+		cf.global_position = place_pos
