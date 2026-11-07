@@ -443,17 +443,85 @@ func _ensure_water_plane() -> void:
 
 	var plane_mesh := PlaneMesh.new()
 	plane_mesh.size = world_size * 1.1
-	plane_mesh.subdivide_width = 16
-	plane_mesh.subdivide_depth = 16
+	plane_mesh.subdivide_width = 128
+	plane_mesh.subdivide_depth = 128
 	water_plane_instance.mesh = plane_mesh
 	water_plane_instance.position.y = sea_level
 
-	var water_mat := StandardMaterial3D.new()
-	water_mat.albedo_color = Color(0.10, 0.22, 0.28, 0.82)
-	water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	water_mat.roughness = 0.15
-	water_mat.metallic = 0.1
-	water_plane_instance.material_override = water_mat
+	var water_shader = load("res://shaders/fjord_water.gdshader")
+	if water_shader:
+		var shader_mat := ShaderMaterial.new()
+		shader_mat.shader = water_shader
+
+		# Generate seamless procedural ripple normal maps
+		var noise1 := FastNoiseLite.new()
+		noise1.seed = 1360
+		noise1.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		noise1.frequency = 0.04
+		var norm_tex1 := NoiseTexture2D.new()
+		norm_tex1.seamless = true
+		norm_tex1.as_normal_map = true
+		norm_tex1.bump_strength = 5.0
+		norm_tex1.width = 256
+		norm_tex1.height = 256
+		norm_tex1.noise = noise1
+
+		var noise2 := FastNoiseLite.new()
+		noise2.seed = 1360 + 101
+		noise2.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		noise2.frequency = 0.07
+		var norm_tex2 := NoiseTexture2D.new()
+		norm_tex2.seamless = true
+		norm_tex2.as_normal_map = true
+		norm_tex2.bump_strength = 4.0
+		norm_tex2.width = 256
+		norm_tex2.height = 256
+		norm_tex2.noise = noise2
+
+		shader_mat.set_shader_parameter("wave_normal1", norm_tex1)
+		shader_mat.set_shader_parameter("wave_normal2", norm_tex2)
+		shader_mat.set_shader_parameter("wave_speed", 0.9)
+		shader_mat.set_shader_parameter("wave_amplitude", 0.22)
+		shader_mat.set_shader_parameter("wave_frequency", 0.045)
+		shader_mat.set_shader_parameter("foam_distance", 0.75)
+		water_plane_instance.material_override = shader_mat
+	else:
+		var water_mat := StandardMaterial3D.new()
+		water_mat.albedo_color = Color(0.10, 0.22, 0.28, 0.82)
+		water_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		water_mat.roughness = 0.15
+		water_mat.metallic = 0.1
+		water_plane_instance.material_override = water_mat
+
+## Computes dynamic fjord water height at world position (x, z) synchronized with the shader
+func sample_water_height(x: float, z: float, time_sec: float = -1.0) -> float:
+	var t: float = time_sec
+	if t < 0.0:
+		t = float(Time.get_ticks_msec()) * 0.001
+
+	var wave_speed := 0.9
+	var wave_amplitude := 0.22
+	var wave_frequency := 0.045
+
+	var effective_time: float = t * wave_speed
+
+	var dir1 := Vector2(0.8, 0.6)
+	var k1 := wave_frequency
+	var phase1: float = (dir1.x * x + dir1.y * z) * k1 + effective_time * 1.2
+	var w1: float = sin(phase1)
+
+	var dir2 := Vector2(-0.6, 0.8)
+	var k2 := wave_frequency * 1.7
+	var phase2: float = (dir2.x * x + dir2.y * z) * k2 + effective_time * 1.5
+	var w2: float = sin(phase2)
+
+	var dir3 := Vector2(0.35, -0.93)
+	var k3 := wave_frequency * 3.2
+	var phase3: float = (dir3.x * x + dir3.y * z) * k3 + effective_time * 2.1
+	var w3: float = sin(phase3)
+
+	var wave_h: float = (w1 * 0.55 + w2 * 0.30 + w3 * 0.15) * wave_amplitude
+	return sea_level + wave_h
 
 func _generate_farmsteads() -> void:
 	var farmsteads_container := get_node_or_null("Farmsteads") as Node3D
