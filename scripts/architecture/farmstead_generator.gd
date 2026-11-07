@@ -138,32 +138,25 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	# -------------------------------------------------------------------------
 	# 8. Farmers (2-4 Farmers per farmstead with authentic chores)
 	# -------------------------------------------------------------------------
-	var farmer_count := 3
-	for f in range(farmer_count):
-		var farmer := CharacterBody3D.new()
-		farmer.name = "Farmer_%d_%d" % [farm_id, f]
-		farmer.set_script(load("res://scripts/npc/farmer_ai.gd"))
-
-		var name_idx := (farm_id * 3 + f) % FARMER_NAMES.size()
-		farmer.set("farmer_name", FARMER_NAMES[name_idx])
-		farmer.set("tunic_color", TUNIC_COLORS[(farm_id * 2 + f) % TUNIC_COLORS.size()])
-
-		# Assign chore waypoints
-		farmer.set("crop_pos", crops_world_pos)
-		farmer.set("wood_pos", wood_world_pos)
-		farmer.set("hay_pos", hay_world_pos)
-		farmer.set("hearth_pos", hearth_world_pos)
-		farmer.set("stabbur_pos", stabbur_world_pos)
-
-		farm_root.add_child(farmer)
-
-		# Stagger start positions across the farm
-		var start_spots := [
-			crops_world_pos + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)),
-			wood_world_pos + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)),
-			hearth_world_pos + Vector3(randf_range(-0.5, 0.5), 0, randf_range(-0.5, 0.5))
-		]
-		farmer.position = start_spots[f % start_spots.size()] - origin
+	# var farmer_count := 3
+	# for f in range(farmer_count):
+	# 	var farmer := FarmerAI.new()
+	# 	farmer.name = "Farmer_%d_%d" % [farm_id, f]
+	# 	var name_idx := (farm_id * 3 + f) % FARMER_NAMES.size()
+	# 	farmer.set("farmer_name", FARMER_NAMES[name_idx])
+	# 	farmer.set("tunic_color", TUNIC_COLORS[(farm_id * 2 + f) % TUNIC_COLORS.size()])
+	# 	farmer.set("crop_pos", crops_world_pos)
+	# 	farmer.set("wood_pos", wood_world_pos)
+	# 	farmer.set("hay_pos", hay_world_pos)
+	# 	farmer.set("hearth_pos", hearth_world_pos)
+	# 	farmer.set("stabbur_pos", stabbur_world_pos)
+	# 	farm_root.add_child(farmer)
+	# 	var start_spots := [
+	# 		crops_world_pos + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)),
+	# 		wood_world_pos + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)),
+	# 		hearth_world_pos + Vector3(randf_range(-0.5, 0.5), 0, randf_range(-0.5, 0.5))
+	# 	]
+	# 	farmer.position = start_spots[f % start_spots.size()] - origin
 
 	return farm_root
 
@@ -219,7 +212,7 @@ static func _assemble_stabbur(w: float, d: float, mat_wood: Material, mat_wood_d
 	stabbur.add_child(floor_m)
 
 	# 3. Lafteverk Walls (Stacked horizontal timber logs)
-	var log_count: int = 6
+	var log_count: int = 2
 	var log_h: float = wall_h / float(log_count)
 	var base_y: float = stilt_h + 0.29
 
@@ -307,7 +300,7 @@ static func _assemble_stabbur(w: float, d: float, mat_wood: Material, mat_wood_d
 
 ## Stone Well with Timber Gantry, Rope, and Wooden Bucket (Freshwater source)
 static func _assemble_stone_well(mat_stone: Material, mat_wood: Material) -> StaticBody3D:
-	var well := StaticBody3D.new()
+	var well := FarmWellInteractable.new()
 	well.add_to_group("stone_well")
 	well.add_to_group("freshwater")
 
@@ -387,27 +380,11 @@ static func _assemble_stone_well(mat_stone: Material, mat_wood: Material) -> Sta
 	col.position.y = 1.2
 	well.add_child(col)
 
-	# Interaction script helper on well
-	var well_script := GDScript.new()
-	well_script.source_code = """
-extends StaticBody3D
-
-func on_interact(actor: Node) -> void:
-	if actor and actor.has_node("SurvivalStats"):
-		var stats: SurvivalStats = actor.get_node("SurvivalStats")
-		stats.drink_water(true)
-	if actor and actor.has_node("InventoryManager"):
-		var inv: InventoryManager = actor.get_node("InventoryManager")
-		inv.add_resource("freshwater_bucket", 1)
-"""
-	well_script.reload()
-	well.set_script(well_script)
-
 	return well
 
 ## Crop Patches with Rows of Cabbage, Barley, and Turnips
 static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_wood: Material) -> StaticBody3D:
-	var patch := StaticBody3D.new()
+	var patch := FarmCropInteractable.new()
 	patch.add_to_group("crop_patch")
 
 	# Tilled Soil Bed (raised fertile earth mound)
@@ -452,36 +429,36 @@ static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_woo
 	mat_turnip.roughness = 0.8
 
 	# Row 1: Cabbages (Z = -1.5)
-	for cx in range(-3, 4):
+	for cx in range(-1, 2):
 		var cab := MeshInstance3D.new()
 		var sph := SphereMesh.new()
-		sph.radius = 0.18
-		sph.height = 0.32
+		sph.radius = 0.22
+		sph.height = 0.35
 		cab.mesh = sph
-		cab.position = Vector3(cx * 0.85, 0.25, -1.4)
+		cab.position = Vector3(cx * 1.6, 0.25, -1.4)
 		cab.material_override = mat_cabbage
 		patch.add_child(cab)
 
 	# Row 2: Barley (Z = 0.0)
-	for bx in range(-5, 6):
+	for bx in range(-2, 3):
 		var stalk := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.04
-		cyl.bottom_radius = 0.03
+		cyl.top_radius = 0.05
+		cyl.bottom_radius = 0.04
 		cyl.height = 0.75
 		stalk.mesh = cyl
-		stalk.position = Vector3(bx * 0.55, 0.45, 0.0)
+		stalk.position = Vector3(bx * 1.1, 0.45, 0.0)
 		stalk.rotation.z = deg_to_rad(sin(bx * 1.5) * 8.0)
 		stalk.material_override = mat_barley
 		patch.add_child(stalk)
 
 	# Row 3: Turnips (Z = +1.4)
-	for tx in range(-4, 5):
+	for tx in range(-1, 2):
 		var turnip := MeshInstance3D.new()
 		var box_t := BoxMesh.new()
-		box_t.size = Vector3(0.22, 0.32, 0.22)
+		box_t.size = Vector3(0.28, 0.35, 0.28)
 		turnip.mesh = box_t
-		turnip.position = Vector3(tx * 0.7, 0.24, 1.4)
+		turnip.position = Vector3(tx * 1.5, 0.24, 1.4)
 		turnip.material_override = mat_turnip
 		patch.add_child(turnip)
 
@@ -492,24 +469,6 @@ static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_woo
 	col.shape = box_col
 	col.position.y = 0.15
 	patch.add_child(col)
-
-	# Interaction script to harvest crops
-	var crop_script := GDScript.new()
-	crop_script.source_code = """
-extends StaticBody3D
-
-func on_interact(actor: Node) -> void:
-	if actor and actor.has_node("InventoryManager"):
-		var inv: InventoryManager = actor.get_node("InventoryManager")
-		inv.add_resource("cabbage", 2)
-		inv.add_resource("turnip", 2)
-		inv.add_resource("barley", 4)
-	if actor and actor.has_node("SurvivalStats"):
-		var stats: SurvivalStats = actor.get_node("SurvivalStats")
-		stats.eat_food(20.0, true)
-"""
-	crop_script.reload()
-	patch.set_script(crop_script)
 
 	return patch
 
@@ -549,18 +508,25 @@ static func _assemble_chopping_area(mat_wood: Material, mat_wood_dark: Material,
 	area.add_child(stump_body)
 
 	# Stacked Cords of Firewood
-	for layer in range(3):
-		for log_i in range(4):
-			var f_log := MeshInstance3D.new()
-			var cyl_l := CylinderMesh.new()
-			cyl_l.top_radius = 0.08
-			cyl_l.bottom_radius = 0.08
-			cyl_l.height = 0.95
-			f_log.mesh = cyl_l
-			f_log.rotation.z = deg_to_rad(90.0)
-			f_log.position = Vector3(1.2 + (layer % 2) * 0.05, 0.08 + layer * 0.15, -0.6 + log_i * 0.22)
-			f_log.material_override = mat_wood
-			area.add_child(f_log)
+	var stack_m := MeshInstance3D.new()
+	var stack_box := BoxMesh.new()
+	stack_box.size = Vector3(0.6, 0.45, 0.85)
+	stack_m.mesh = stack_box
+	stack_m.position = Vector3(1.2, 0.22, -0.2)
+	stack_m.material_override = mat_wood_dark
+	area.add_child(stack_m)
+
+	for log_i in range(3):
+		var f_log := MeshInstance3D.new()
+		var cyl_l := CylinderMesh.new()
+		cyl_l.top_radius = 0.08
+		cyl_l.bottom_radius = 0.08
+		cyl_l.height = 0.8
+		f_log.mesh = cyl_l
+		f_log.rotation.z = deg_to_rad(90.0)
+		f_log.position = Vector3(1.2, 0.5, -0.45 + log_i * 0.25)
+		f_log.material_override = mat_wood
+		area.add_child(f_log)
 
 	return area
 
@@ -608,44 +574,38 @@ static func _create_fence_line(parent: Node3D, from_pos: Vector3, to_pos: Vector
 	var span_vec := to_pos - from_pos
 	var total_len := span_vec.length()
 	var dir := span_vec.normalized()
-	var seg_len: float = 3.2
-	var count := maxi(1, int(ceil(total_len / seg_len)))
-	var actual_step := total_len / float(count)
 
-	for i in range(count):
-		var p1 := from_pos + dir * (float(i) * actual_step)
-		var p2 := from_pos + dir * (float(i + 1) * actual_step)
-		var mid := (p1 + p2) * 0.5
+	var fence_seg := StaticBody3D.new()
+	fence_seg.position = (from_pos + to_pos) * 0.5
+	fence_seg.rotation.y = atan2(-dir.x, -dir.z)
 
-		var fence_seg := StaticBody3D.new()
-		fence_seg.position = mid
-		fence_seg.rotation.y = atan2(-dir.x, -dir.z)
-
-		# Upright Post at p1
+	# Posts: start, mid, end
+	var post_offsets := [-total_len * 0.5, 0.0, total_len * 0.5]
+	for pz in post_offsets:
 		var post := MeshInstance3D.new()
 		var box_p := BoxMesh.new()
 		box_p.size = Vector3(0.12, 1.3, 0.12)
 		post.mesh = box_p
-		post.position = Vector3(0, 0.65, -actual_step * 0.5)
+		post.position = Vector3(0, 0.65, pz)
 		post.material_override = mat_wood
 		fence_seg.add_child(post)
 
-		# 2 Horizontal / Diagonal Split Rails
-		for r in [0.45, 0.95]:
-			var rail := MeshInstance3D.new()
-			var box_r := BoxMesh.new()
-			box_r.size = Vector3(0.08, 0.08, actual_step + 0.15)
-			rail.mesh = box_r
-			rail.position = Vector3(0, r, 0)
-			rail.material_override = mat_wood
-			fence_seg.add_child(rail)
+	# 2 Horizontal / Diagonal Split Rails spanning the length
+	for r in [0.45, 0.95]:
+		var rail := MeshInstance3D.new()
+		var box_r := BoxMesh.new()
+		box_r.size = Vector3(0.08, 0.08, total_len)
+		rail.mesh = box_r
+		rail.position = Vector3(0, r, 0)
+		rail.material_override = mat_wood
+		fence_seg.add_child(rail)
 
-		# Solid physics collision
-		var col := CollisionShape3D.new()
-		var box_c := BoxShape3D.new()
-		box_c.size = Vector3(0.3, 1.2, actual_step)
-		col.shape = box_c
-		col.position.y = 0.6
-		fence_seg.add_child(col)
+	# Solid physics collision
+	var col := CollisionShape3D.new()
+	var box_c := BoxShape3D.new()
+	box_c.size = Vector3(0.3, 1.2, total_len)
+	col.shape = box_c
+	col.position.y = 0.6
+	fence_seg.add_child(col)
 
-		parent.add_child(fence_seg)
+	parent.add_child(fence_seg)

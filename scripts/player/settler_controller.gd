@@ -92,6 +92,7 @@ func _ready() -> void:
 	# Spawn initial starter carryable logs near settler for immediate testing
 	call_deferred("_spawn_starter_logs")
 
+
 func _ensure_box_man_model() -> void:
 	box_man_model = get_node_or_null("BoxManModel")
 	if box_man_model == null:
@@ -124,7 +125,7 @@ func _create_torch_light() -> void:
 	torch_light.light_color = Color(1.0, 0.65, 0.28) # Warm fire glow
 	torch_light.light_energy = 1.4
 	torch_light.omni_range = 14.0
-	torch_light.shadow_enabled = true
+	torch_light.shadow_enabled = false
 	torch_light.visible = false
 	head.add_child(torch_light)
 

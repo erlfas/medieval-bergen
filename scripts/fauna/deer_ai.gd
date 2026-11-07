@@ -51,8 +51,8 @@ func _physics_process(delta: float) -> void:
 			var dir := (wander_target - global_position).normalized()
 			velocity.x = dir.x * walk_speed
 			velocity.z = dir.z * walk_speed
-			if dir.length() > 0.1:
-				look_at(global_position + Vector3(dir.x, 0, dir.z), Vector3.UP)
+			if Vector2(dir.x, dir.z).length() > 0.1:
+				rotation.y = atan2(-dir.x, -dir.z)
 			if global_position.distance_to(wander_target) < 1.5 or state_timer <= 0.0:
 				current_state = State.GRAZING
 				state_timer = randf_range(4.0, 8.0)
@@ -62,7 +62,8 @@ func _physics_process(delta: float) -> void:
 				var flee_dir := (global_position - player_target.global_position).normalized()
 				velocity.x = flee_dir.x * run_speed
 				velocity.z = flee_dir.z * run_speed
-				look_at(global_position + Vector3(flee_dir.x, 0, flee_dir.z), Vector3.UP)
+				if Vector2(flee_dir.x, flee_dir.z).length() > 0.1:
+					rotation.y = atan2(-flee_dir.x, -flee_dir.z)
 
 				if global_position.distance_to(player_target.global_position) > detection_radius * 1.8:
 					current_state = State.GRAZING

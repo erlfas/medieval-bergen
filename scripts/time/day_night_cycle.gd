@@ -61,14 +61,14 @@ func _update_celestial_bodies(progress: float, month: int, day: int) -> void:
 			sun_light.visible = true
 			sun_light.light_energy = clampf(sin(altitude_rad) * 1.5, 0.2, 1.3)
 			sun_light.light_color = sun_color_day
-			sun_light.shadow_enabled = true
+			sun_light.shadow_enabled = false
 		elif altitude_deg > -4.0:
 			# Sunset / Dawn golden hour & twilight
 			sun_light.visible = true
 			var t := (altitude_deg - (-4.0)) / 9.0
 			sun_light.light_energy = lerpf(0.05, 0.8, t)
 			sun_light.light_color = sun_color_sunset.lerp(sun_color_day, t)
-			sun_light.shadow_enabled = t > 0.4
+			sun_light.shadow_enabled = false
 		else:
 			# Night time
 			sun_light.visible = false

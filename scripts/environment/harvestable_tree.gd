@@ -52,14 +52,8 @@ var terrain_generator: Node = null
 func _ready() -> void:
 	_ensure_setup()
 
-	# Start hidden until settler looks at or chops tree
-	if progress_tracker:
-		progress_tracker.visible = false
-	if trajectory_indicator:
-		trajectory_indicator.visible = false
-
 func _ensure_setup() -> void:
-	if progress_tracker != null:
+	if model_pivot != null:
 		return
 
 	add_to_group("harvestable_trees")
@@ -75,6 +69,11 @@ func _ensure_setup() -> void:
 		fall_direction = natural_lean
 
 	_setup_model_pivot()
+
+func _ensure_interaction_ui() -> void:
+	if progress_tracker != null:
+		return
+
 	_setup_progress_tracker()
 	_setup_trajectory_indicator()
 	_setup_notch()
@@ -442,6 +441,7 @@ func set_settler_focus(settler: Node) -> void:
 		return
 
 	_ensure_setup()
+	_ensure_interaction_ui()
 
 	if settler != null and settler is Node3D:
 		focused_settler = settler as Node3D

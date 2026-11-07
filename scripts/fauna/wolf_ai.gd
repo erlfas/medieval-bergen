@@ -218,8 +218,8 @@ func _process_flee(_delta: float) -> void:
 	var flee_dir := (global_position - fire_source_position).normalized()
 	velocity.x = flee_dir.x * chase_speed * 1.3
 	velocity.z = flee_dir.z * chase_speed * 1.3
-	if flee_dir.length() > 0.1:
-		look_at(global_position + Vector3(flee_dir.x, 0, flee_dir.z), Vector3.UP)
+	if Vector2(flee_dir.x, flee_dir.z).length() > 0.1:
+		rotation.y = atan2(-flee_dir.x, -flee_dir.z)
 
 	if global_position.distance_to(fire_source_position) > fire_fear_radius * 2.2:
 		has_fire_threat = false

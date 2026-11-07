@@ -123,12 +123,6 @@ theme_override_font_sizes/font_size = 12
 text = "🌲 BÆRER TØMMERSTOKK — [E]/[G] Slipp | [B] Bygg (-1 kostnad)"
 horizontal_alignment = 1
 
-[node name="LabelRope" type="Label" parent="PanelResources/HBoxRes"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.85, 0.75, 0.55, 1)
-theme_override_font_sizes/font_size = 13
-text = "Tau: 2"
-
 [node name="PanelBuild" type="PanelContainer" parent="."]
 layout_mode = 1
 anchors_preset = 7
@@ -214,6 +208,12 @@ layout_mode = 2
 theme_override_colors/font_color = Color(0.68, 0.85, 0.58, 1)
 theme_override_font_sizes/font_size = 12
 text = "Torv (Turf): 10"
+
+[node name="LabelRope" type="Label" parent="PanelResources/HBoxRes"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85, 0.75, 0.55, 1)
+theme_override_font_sizes/font_size = 12
+text = "Tau (Rope): 2"
 
 [node name="BtnOpenGuide" type="Button" parent="PanelResources/HBoxRes"]
 layout_mode = 2

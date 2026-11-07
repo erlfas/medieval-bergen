@@ -368,28 +368,9 @@ func generate_terrain() -> void:
 	_scatter_wildlife()
 
 func _create_terrain_material() -> Material:
-	if terrain_shader != null:
-		var mat := ShaderMaterial.new()
-		mat.shader = terrain_shader
-		if grass_texture != null:
-			mat.set_shader_parameter("grass_albedo", grass_texture)
-		if grass_normal_map != null:
-			mat.set_shader_parameter("grass_normal", grass_normal_map)
-		if rock_texture != null:
-			mat.set_shader_parameter("rock_albedo", rock_texture)
-		if rock_normal_map != null:
-			mat.set_shader_parameter("rock_normal", rock_normal_map)
-		if scree_texture != null:
-			mat.set_shader_parameter("scree_albedo", scree_texture)
-		if scree_normal_map != null:
-			mat.set_shader_parameter("scree_normal", scree_normal_map)
-		if macro_noise_map != null:
-			mat.set_shader_parameter("macro_noise", macro_noise_map)
-		return mat
-
-	# Fallback if shader is missing
 	var fallback := StandardMaterial3D.new()
 	fallback.vertex_color_use_as_albedo = true
+	fallback.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fallback.roughness = 0.85
 	fallback.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return fallback
@@ -468,18 +449,16 @@ func _scatter_wildlife() -> void:
 	# -------------------------------------------------------------------------
 	# Packs lurking among the rocky ledges and pines of Fløyen & Sandviksfjellet
 	var wolf_pack_centers: Array[Vector3] = [
-		Vector3(330.0, 0.0, 40.0),   # Sandviksfjellet Upper Crags
-		Vector3(340.0, 0.0, 200.0),  # Fløyen Mountain Plateau Ledges
-		Vector3(360.0, 0.0, 360.0)   # South Fløyen Granite Bluffs
+		Vector3(340.0, 0.0, 200.0)  # Fløyen Mountain Plateau Ledges
 	]
 
 	var wolf_total := 0
 	for p_idx in range(wolf_pack_centers.size()):
 		var p_center: Vector3 = wolf_pack_centers[p_idx]
-		var pack_size: int = 3 + (p_idx % 2) # 3-4 wolves per pack
+		var pack_size: int = 3
 		for w_i in range(pack_size):
-			var wx: float = p_center.x + rng.randf_range(-22.0, 22.0)
-			var wz: float = p_center.z + rng.randf_range(-22.0, 22.0)
+			var wx: float = p_center.x + rng.randf_range(-15.0, 15.0)
+			var wz: float = p_center.z + rng.randf_range(-15.0, 15.0)
 			var wy: float = sample_height(wx, wz)
 
 			# Strict altitude requirement: must be >= 80m
@@ -502,13 +481,13 @@ func _scatter_wildlife() -> void:
 	var cow_total := 0
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
-		for c_i in range(2):
+		for c_i in range(1):
 			var cow := CharacterBody3D.new()
 			cow.name = "Cow_%d" % cow_total
 			cow.set_script(load("res://scripts/fauna/cow_ai.gd"))
 
-			var cx := fc.x + rng.randf_range(-8.0, 8.0)
-			var cz := fc.z + rng.randf_range(-8.0, 8.0)
+			var cx := fc.x + rng.randf_range(-6.0, 6.0)
+			var cz := fc.z + rng.randf_range(-6.0, 6.0)
 			var cy := sample_height(cx, cz)
 			cow.set("home_position", fc)
 			cow.set("pasture_radius", 18.0)
@@ -527,17 +506,17 @@ func _scatter_wildlife() -> void:
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
 		var meadow_center := fc + Vector3(18.0, 0, rng.randf_range(-6.0, 6.0))
-		for s_i in range(4):
+		for s_i in range(1):
 			var sheep := CharacterBody3D.new()
 			sheep.name = "Sheep_%d" % sheep_total
 			sheep.set_script(load("res://scripts/fauna/sheep_ai.gd"))
 
 			# Grazing up along the hillside meadow above the farm
-			var sx := meadow_center.x + rng.randf_range(-7.0, 7.0)
-			var sz := meadow_center.z + rng.randf_range(-7.0, 7.0)
+			var sx := meadow_center.x + rng.randf_range(-6.0, 6.0)
+			var sz := meadow_center.z + rng.randf_range(-6.0, 6.0)
 			var sy := sample_height(sx, sz)
 			sheep.set("home_position", meadow_center)
-			sheep.set("pasture_radius", 22.0)
+			sheep.set("pasture_radius", 20.0)
 
 			# Fleece variations (natural off-white, heather grey, black)
 			var fleece_variations := [
@@ -545,7 +524,7 @@ func _scatter_wildlife() -> void:
 				Color(0.55, 0.53, 0.50), # Heather grey
 				Color(0.25, 0.23, 0.22)  # Charcoal black
 			]
-			sheep.set("fleece_color", fleece_variations[(farm_idx * 2 + s_i) % fleece_variations.size()])
+			sheep.set("fleece_color", fleece_variations[farm_idx % fleece_variations.size()])
 
 			wildlife_container.add_child(sheep)
 			sheep.add_to_group("sheep")
@@ -560,20 +539,20 @@ func _scatter_wildlife() -> void:
 	var rabbit_total := 0
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
-		for r_i in range(5):
+		for r_i in range(1):
 			var rabbit := CharacterBody3D.new()
 			rabbit.name = "Rabbit_%d" % rabbit_total
 			rabbit.set_script(load("res://scripts/fauna/rabbit_ai.gd"))
 
 			# Hopping in perimeter brush 16m to 35m outside farm fences
 			var angle := rng.randf() * 2.0 * PI
-			var dist := rng.randf_range(16.0, 34.0)
+			var dist := rng.randf_range(16.0, 30.0)
 			var rx := fc.x + cos(angle) * dist
 			var rz := fc.z + sin(angle) * dist
 			var ry := sample_height(rx, rz)
 
 			rabbit.set("home_position", Vector3(rx, ry, rz))
-			rabbit.set("roam_radius", 30.0)
+			rabbit.set("roam_radius", 25.0)
 
 			wildlife_container.add_child(rabbit)
 			rabbit.add_to_group("rabbit")
@@ -584,7 +563,7 @@ func _scatter_wildlife() -> void:
 	# -------------------------------------------------------------------------
 	# 5. Red Deer (Peaceful herbivores grazing in lower valley & woods)
 	# -------------------------------------------------------------------------
-	for i in range(12):
+	for i in range(4):
 		var dx := rng.randf_range(40.0, 180.0)
 		var dz := rng.randf_range(50.0, 420.0)
 		var dy := sample_height(dx, dz)
@@ -659,8 +638,8 @@ func _scatter_forests() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = world_seed + 999
 
-	# Scatter ~150 harvestable trees along the lower hillsides and valley
-	var count := 150
+	# Scatter ~100 harvestable trees along the lower hillsides and valley
+	var count := 100
 	for i in range(count):
 		# Concentrate trees in the valley and mountain slopes: x in [20, 220], z in [-50, 450]
 		var tx := rng.randf_range(30.0, 200.0)

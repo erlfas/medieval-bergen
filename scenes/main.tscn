@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://dp6m5k3u5o2a4"]
+[gd_scene load_steps=15 format=3 uid="uid://dp6m5k3u5o2a4"]
 
 [ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
 [ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
@@ -27,13 +27,12 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 2
 sky = SubResource("Sky_env")
-ambient_light_source = 3
-ambient_light_color = Color(0.65, 0.7, 0.78, 1)
-tonemap_mode = 3
-glow_enabled = true
-fog_enabled = true
-fog_light_color = Color(0.62, 0.68, 0.75, 1)
-fog_density = 0.001
+ambient_light_source = 2
+ambient_light_color = Color(0.72, 0.77, 0.85, 1)
+ambient_light_energy = 1.0
+tonemap_mode = 0
+glow_enabled = false
+fog_enabled = false
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.4
@@ -68,8 +67,10 @@ bergen_latitude_deg = 60.4
 environment = SubResource("Environment_main")
 
 [node name="SunLight" type="DirectionalLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 150, 0)
-shadow_enabled = true
+transform = Transform3D(0.866025, -0.25, 0.433013, 0, 0.866025, 0.5, -0.5, -0.433013, 0.75, 0, 150, 0)
+light_color = Color(1, 0.95, 0.88, 1)
+light_energy = 1.2
+shadow_enabled = false
 
 [node name="BergenTerrain" type="Node3D" parent="." groups=["terrain_generator"]]
 script = ExtResource("4_terrain")
@@ -112,15 +113,19 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.65, 0)
 [node name="Camera3D" type="Camera3D" parent="Settler/Head"]
 current = true
 fov = 75.0
+near = 0.2
+far = 1500.0
 
 [node name="InteractRayCast" type="RayCast3D" parent="Settler/Head"]
 target_position = Vector3(0, 0, -3.5)
 
 [node name="HUDLayer" type="CanvasLayer" parent="."]
+visible = true
 
 [node name="HUDClockCalendar" parent="HUDLayer" instance=ExtResource("9_hud")]
 
 [node name="HUDBuildingBar" parent="HUDLayer" instance=ExtResource("10_build_hud")]
 
 [node name="HUDHotbar" parent="HUDLayer" instance=ExtResource("14_hotbar")]
+
 

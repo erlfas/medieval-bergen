@@ -65,11 +65,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 		Vector3(-half_w, -0.15, -half_d),
 		Vector3(half_w, -0.15, -half_d),
 		Vector3(-half_w, -0.15, half_d),
-		Vector3(half_w, -0.15, half_d),
-		Vector3(0, -0.15, -half_d),
-		Vector3(0, -0.15, half_d),
-		Vector3(-half_w, -0.15, 0),
-		Vector3(half_w, -0.15, 0)
+		Vector3(half_w, -0.15, half_d)
 	]
 	for pos in foundation_coords:
 		var stone_mesh := MeshInstance3D.new()
@@ -110,7 +106,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	# -------------------------------------------------------------
 	# 3. Lafteverk Walls (Stacked horizontal timber logs)
 	# -------------------------------------------------------------
-	var log_count: int = 7
+	var log_count: int = 3
 	var log_h: float = wall_h / float(log_count)
 	var nov_extension: float = 0.30 # Overhang past corner joints
 
@@ -252,7 +248,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	var gable_h: float = ridge_h - wall_h
 
 	for gable_z in [-half_d, half_d]:
-		var gable_steps: int = 4
+		var gable_steps: int = 2
 		for g in range(gable_steps):
 			var frac: float = float(g + 0.5) / float(gable_steps)
 			var cur_w: float = (width + nov_extension * 2.0) * (1.0 - frac * 0.88)
@@ -401,57 +397,9 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	fire_light.light_color = Color(1.0, 0.65, 0.25)
 	fire_light.light_energy = 1.8
 	fire_light.omni_range = 9.0
-	fire_light.shadow_enabled = true
+	fire_light.shadow_enabled = false
 	fire_light.position = Vector3(0, 0.65, 0)
 	hearth.add_child(fire_light)
-
-	# Hearth Smoke Particles (Soft rising smoke drifting up towards the ljore)
-	var smoke_particles := CPUParticles3D.new()
-	smoke_particles.name = "HearthSmoke"
-	smoke_particles.amount = 14
-	smoke_particles.lifetime = 3.2
-	smoke_particles.speed_scale = 0.85
-	smoke_particles.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	smoke_particles.emission_sphere_radius = 0.18
-	smoke_particles.direction = Vector3(0, 1, 0)
-	smoke_particles.spread = 12.0
-	smoke_particles.gravity = Vector3(0, 0.35, 0) # Rises upwards toward smoke hole
-	smoke_particles.initial_velocity_min = 0.4
-	smoke_particles.initial_velocity_max = 0.8
-	var smoke_mesh := SphereMesh.new()
-	smoke_mesh.radius = 0.14
-	smoke_mesh.height = 0.28
-	var mat_smoke := StandardMaterial3D.new()
-	mat_smoke.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat_smoke.albedo_color = Color(0.38, 0.36, 0.34, 0.3)
-	mat_smoke.roughness = 1.0
-	smoke_mesh.material = mat_smoke
-	smoke_particles.mesh = smoke_mesh
-	smoke_particles.position = Vector3(0, 0.35, 0)
-	hearth.add_child(smoke_particles)
-
-	# Hearth Sparks / Floating Embers
-	var spark_particles := CPUParticles3D.new()
-	spark_particles.name = "HearthSparks"
-	spark_particles.amount = 8
-	spark_particles.lifetime = 1.6
-	spark_particles.direction = Vector3(0, 1, 0)
-	spark_particles.spread = 30.0
-	spark_particles.gravity = Vector3(0, 0.15, 0)
-	spark_particles.initial_velocity_min = 0.3
-	spark_particles.initial_velocity_max = 0.7
-	var spark_mesh := SphereMesh.new()
-	spark_mesh.radius = 0.02
-	spark_mesh.height = 0.04
-	var mat_spark := StandardMaterial3D.new()
-	mat_spark.albedo_color = Color(1.0, 0.6, 0.1)
-	mat_spark.emission_enabled = true
-	mat_spark.emission = Color(1.0, 0.65, 0.15)
-	mat_spark.emission_energy_multiplier = 3.2
-	spark_mesh.material = mat_spark
-	spark_particles.mesh = spark_mesh
-	spark_particles.position = Vector3(0, 0.25, 0)
-	hearth.add_child(spark_particles)
 
 	return cabin
 
@@ -816,7 +764,7 @@ static func assemble_cabin_stage_hearth(width: float = 5.0, depth: float = 5.0) 
 	fire_light.light_color = Color(1.0, 0.65, 0.25)
 	fire_light.light_energy = 1.8
 	fire_light.omni_range = 9.0
-	fire_light.shadow_enabled = true
+	fire_light.shadow_enabled = false
 	fire_light.position = Vector3(0, 0.65, 0)
 	hearth.add_child(fire_light)
 
