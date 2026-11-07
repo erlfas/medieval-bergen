@@ -2,11 +2,12 @@
 class_name BergenTerrainGenerator
 extends Node3D
 
-## Procedural, Deterministic Bergen 1360 Topography Generator
+## Procedural, Deterministic Bergen 1360 Topography & Valley Plain Generator
 ## Models the geography of Bergen:
-## - Vågen harbour bay
+## - Vågen harbour bay & shallow wading foreshore
 ## - Nordnes peninsula
-## - Bryggen terrace bank
+## - Bryggen terrace bank & Øvregaten town plain
+## - Broad glacial valley plains (Sandviken, Central Hinterland, Markov, Store Lungegårdsvann)
 ## - Fløyen & Sandviksfjellet steep eastern mountains
 ## - Puddefjorden western fjord
 
@@ -28,8 +29,8 @@ extends Node3D
 @export var vagen_length: float = 750.0
 @export var vagen_width: float = 220.0
 @export var vagen_depth: float = -28.0
-@export var bryggen_shelf_width: float = 90.0 ## Flat shoreline strip for medieval tenements
-@export var bryggen_shelf_height: float = 1.8 ## Slightly above high tide
+@export var bryggen_shelf_width: float = 110.0 ## Flat shoreline & valley town strip for medieval tenements
+@export var bryggen_shelf_height: float = 2.0 ## Safely above Gerstner wave crests (+0.22m)
 
 @export_group("Generation Actions")
 @export var regenerate: bool = false:
@@ -55,6 +56,10 @@ var _warp_noise: FastNoiseLite
 
 var terrain_mesh_instance: MeshInstance3D
 var water_plane_instance: MeshInstance3D
+
+## Registered flat valley plain pads for city districts and farmsteads:
+## Each entry: {"name": String, "x": float, "z": float, "target_y": float, "inner_radius": float, "outer_radius": float, "is_farm": bool}
+var _settlement_pads: Array[Dictionary] = []
 
 func _ready() -> void:
 	_init_noise()
@@ -93,126 +98,189 @@ func _init_noise() -> void:
 	_warp_noise.domain_warp_amplitude = 45.0
 	_warp_noise.domain_warp_frequency = 0.004
 
-## Pure deterministic mathematical height function for Bergen at coordinate (x, z)
-func sample_height(x: float, z: float) -> float:
-	# Apply domain warping to simulate glacial fjord scraping
+	_compute_settlement_plains()
+
+## Evaluates raw natural valley elevation before settlement pad leveling
+func _sample_natural_valley_height(x: float, z: float) -> float:
 	var wx: float = x
 	var wz: float = z
-	var warp_offset_x := _base_noise.get_noise_2d(x * 0.8, z * 0.8) * 35.0
-	var warp_offset_z := _base_noise.get_noise_2d(z * 0.8 + 500.0, x * 0.8) * 35.0
+	var warp_offset_x := _base_noise.get_noise_2d(x * 0.8, z * 0.8) * 32.0
+	var warp_offset_z := _base_noise.get_noise_2d(z * 0.8 + 500.0, x * 0.8) * 32.0
 	wx += warp_offset_x
 	wz += warp_offset_z
 
-	# Geographic orientation:
-	# Center (0, 0) is the mouth of Vågen bay.
-	# +X is East (towards Mount Fløyen)
-	# -X is West (towards Puddefjorden and Nordnes)
-	# +Z is South-East (inland, head of Vågen bay, towards Store Lungegårdsvann)
-	# -Z is North-West (out towards Byfjorden and the North Sea)
-
-	# 1. Macro Mountain Massif: Fløyen on the East (+X)
-	# Ramp height steeply when moving east of x = 120m
-	var fløyen_dist := maxf(0.0, wx - 110.0)
-	var mountain_ramp := clampf(fløyen_dist / 400.0, 0.0, 1.0)
-	# Non-linear cliff ramp: smoothstep
+	# 1. Broad Glacial Valley Floor between Vågen and Mount Fløyen:
+	# Shift the steep mountain cliff ramp east to wx = 185m so x in [45..180] forms wide fertile valley plains
+	var fløyen_dist := maxf(0.0, wx - 180.0)
+	var mountain_ramp := clampf(fløyen_dist / 390.0, 0.0, 1.0)
 	mountain_ramp = mountain_ramp * mountain_ramp * (3.0 - 2.0 * mountain_ramp)
 
 	var ridge_val := (_ridge_noise.get_noise_2d(wx, wz) + 1.0) * 0.5
 	var base_val := (_base_noise.get_noise_2d(wx, wz) + 1.0) * 0.5
-	var detail_val := _detail_noise.get_noise_2d(x, z) * 3.5
+	var detail_val := _detail_noise.get_noise_2d(x, z) * 3.2
 
-	var mountain_height := mountain_ramp * (max_mountain_height * (0.65 * ridge_val + 0.35 * base_val))
+	# Gentle valley meadow undulation (3m to 11m elevation across the valley floor)
+	var valley_meadow_height := 3.2 + base_val * 5.8
+	var mountain_height := valley_meadow_height + mountain_ramp * (max_mountain_height * (0.65 * ridge_val + 0.35 * base_val))
 
 	# 2. Fjord Carving: Vågen Bay
-	# Vågen extends roughly from (0, -200) to (0, +550) along Z
-	var vagen_center_x := sin(wz * 0.003) * 60.0 # slight curve of the bay
+	var vagen_center_x := sin(wz * 0.003) * 55.0
 	var dist_to_vagen_axis := absf(wx - vagen_center_x)
 	var vagen_z_factor := clampf((wz + 200.0) / vagen_length, 0.0, 1.0)
-	
-	# Bay carve mask (tapering at the head of the bay)
+
 	var vagen_half_width := (vagen_width * 0.5) * (1.0 - 0.25 * vagen_z_factor)
-	var in_vagen_trough := 1.0 - smoothstep(vagen_half_width * 0.4, vagen_half_width * 1.2, dist_to_vagen_axis)
+	var in_vagen_trough := 1.0 - smoothstep(vagen_half_width * 0.4, vagen_half_width * 1.18, dist_to_vagen_axis)
 	if wz < -250.0:
-		# Open sea / Byfjorden to the north
 		in_vagen_trough = maxf(in_vagen_trough, clampf((-wz - 250.0) / 150.0, 0.0, 1.0))
 	elif wz > (vagen_length - 100.0):
-		# Head of the bay transitions into marshy valley
 		var falloff := clampf((wz - (vagen_length - 100.0)) / 120.0, 0.0, 1.0)
 		in_vagen_trough *= (1.0 - falloff)
 
-	# 3. Bryggen Shoreline Terrace:
-	# Flat strip along north-east bank of Vågen (wx between 40m and 120m, wz between -100m and 600m)
-	var is_bryggen_zone := false
+	# 3. Bryggen & Valley Shoreline Terrace (wx between 35m and 165m, wz between -140m and 660m)
 	var bryggen_weight := 0.0
-	if wx >= 35.0 and wx <= 140.0 and wz >= -120.0 and wz <= 650.0:
-		var x_shelf_factor := 1.0 - absf((wx - 85.0) / 55.0)
-		var z_shelf_factor := clampf(1.0 - absf((wz - 265.0) / 385.0), 0.0, 1.0)
+	if wx >= 35.0 and wx <= 165.0 and wz >= -140.0 and wz <= 660.0:
+		var x_shelf_factor := 1.0 - clampf(absf((wx - 95.0) / 65.0), 0.0, 1.0)
+		var z_shelf_factor := clampf(1.0 - absf((wz - 260.0) / 400.0), 0.0, 1.0)
 		bryggen_weight = clampf(x_shelf_factor * z_shelf_factor, 0.0, 1.0)
 
-	# 4. Puddefjorden & Western Fjord:
-	# Deep water to the west (wx < -380m)
+	# 4. Puddefjorden & Western Fjord
 	var puddefjord_dist := clampf((-wx - 300.0) / 200.0, 0.0, 1.0)
 
-	# 5. Mountain Streams & Gullies (Glacial freshwater runoff from Fløyen)
-	# Stream 1: Descending from Sandviksfjellet into northern Vågen
-	var stream1_center := sin(wz * 0.02) * 20.0 + (wz * 0.4 + 180.0)
+	# 5. Mountain Streams & Gullies
+	var stream1_center := sin(wz * 0.02) * 20.0 + (wz * 0.4 + 195.0)
 	var stream1_dist := absf(wx - stream1_center)
-	var stream1_mask := clampf(1.0 - (stream1_dist / 14.0), 0.0, 1.0) * clampf((wz + 100.0) / 300.0, 0.0, 1.0)
-	var stream1_carve := stream1_mask * stream1_mask * 4.5
+	var stream1_mask := clampf(1.0 - (stream1_dist / 13.0), 0.0, 1.0) * clampf((wz + 100.0) / 300.0, 0.0, 1.0)
+	var stream1_carve := stream1_mask * stream1_mask * 4.2
 
-	# Stream 2: Fløyen southern creek feeding into the head of the valley
-	var stream2_center := cos(wz * 0.015) * 18.0 + 120.0
+	var stream2_center := cos(wz * 0.015) * 16.0 + 118.0
 	var stream2_dist := absf(wx - stream2_center)
-	var stream2_mask := clampf(1.0 - (stream2_dist / 12.0), 0.0, 1.0) * clampf((wz - 200.0) / 400.0, 0.0, 1.0)
-	var stream2_carve := stream2_mask * stream2_mask * 3.8
+	var stream2_mask := clampf(1.0 - (stream2_dist / 11.0), 0.0, 1.0) * clampf((wz - 210.0) / 400.0, 0.0, 1.0)
+	var stream2_carve := stream2_mask * stream2_mask * 3.5
 
-	# 6. Composite Elevation Calculation
 	var height: float = mountain_height - stream1_carve - stream2_carve
 
-	# Carve Vågen
 	if in_vagen_trough > 0.001:
 		height = lerpf(height, vagen_depth, in_vagen_trough)
 
-	# Carve Puddefjorden
 	if puddefjord_dist > 0.001:
 		height = lerpf(height, vagen_depth * 1.5, puddefjord_dist)
 
-	# Flatten Bryggen terrace for wooden tenements
 	if bryggen_weight > 0.01:
-		height = lerpf(height, bryggen_shelf_height, bryggen_weight * 0.85)
+		height = lerpf(height, bryggen_shelf_height + 1.2, bryggen_weight * 0.78)
 
-	# Add rock and turf surface detail (suppressed in water and flat wharfs)
-	if height > 0.5 and bryggen_weight < 0.8:
-		height += detail_val
+	if height > 0.5 and bryggen_weight < 0.72:
+		height += detail_val * (1.0 - bryggen_weight * 0.85)
 
 	return height
+
+## Pure deterministic mathematical height function for Bergen at coordinate (x, z)
+## Incorporates smooth valley plain leveling pads under city blocks and farmsteads.
+func sample_height(x: float, z: float) -> float:
+	var height := _sample_natural_valley_height(x, z)
+
+	# Apply registered flat valley plain pads (smoothstep transition so no harsh terrain seams occur)
+	for pad in _settlement_pads:
+		var px: float = pad["x"]
+		var pz: float = pad["z"]
+		var dist := Vector2(x - px, z - pz).length()
+		var out_r: float = pad["outer_radius"]
+		if dist < out_r:
+			var in_r: float = pad["inner_radius"]
+			var target_y: float = pad["target_y"]
+			var w: float = 1.0 - smoothstep(in_r, out_r, dist)
+			height = lerpf(height, target_y, w * 0.94)
+
+	return height
+
+## Solves for the flattest plain positions in each valley region and registers leveling pads
+func _compute_settlement_plains() -> void:
+	_settlement_pads.clear()
+
+	# 1. Historic Bryggen Wharf & Rear Valley Town District Pad
+	_settlement_pads.append({
+		"name": "Bryggen City & Wharf Plain",
+		"x": 82.0,
+		"z": 80.0,
+		"target_y": bryggen_shelf_height,
+		"inner_radius": 38.0,
+		"outer_radius": 58.0,
+		"is_farm": false
+	})
+
+	# 2. Candidate Valley Regions for Farmsteads (searched via 9-point flatness kernel)
+	var candidate_valley_zones := [
+		{"name": "Sandviken Dal Gård", "search_x": 142.0, "search_z": -185.0},
+		{"name": "Bryggen Valley Gård", "search_x": 146.0, "search_z": 168.0},
+		{"name": "Markov Valley Gård", "search_x": 144.0, "search_z": 365.0},
+		{"name": "Lungegård Plain Gård", "search_x": 148.0, "search_z": 560.0}
+	]
+
+	for zone in candidate_valley_zones:
+		var best_pos := _find_flattest_valley_spot(zone["search_x"], zone["search_z"], 26.0, 18.0)
+		var base_y := clampf(_sample_natural_valley_height(best_pos.x, best_pos.y), bryggen_shelf_height + 0.6, 16.0)
+		_settlement_pads.append({
+			"name": zone["name"],
+			"x": best_pos.x,
+			"z": best_pos.y,
+			"target_y": base_y,
+			"inner_radius": 22.0,
+			"outer_radius": 38.0,
+			"is_farm": true
+		})
+
+## Searches a valley neighborhood for the coordinate with minimal slope and height variance
+func _find_flattest_valley_spot(center_x: float, center_z: float, search_radius: float, footprint_r: float) -> Vector2:
+	var best_pt := Vector2(center_x, center_z)
+	var best_score := 999999.0
+
+	for dx_step in range(-2, 3):
+		for dz_step in range(-2, 3):
+			var cx := center_x + float(dx_step) * (search_radius * 0.45)
+			var cz := center_z + float(dz_step) * (search_radius * 0.45)
+			var h_c := _sample_natural_valley_height(cx, cz)
+
+			# Must be safely above wave crests and below steep mountain slopes
+			if h_c < 2.2 or h_c > 24.0:
+				continue
+			if is_freshwater_stream(Vector3(cx, h_c, cz)):
+				continue
+
+			var max_dh := 0.0
+			for ox in [-footprint_r, 0.0, footprint_r]:
+				for oz in [-footprint_r, 0.0, footprint_r]:
+					var h_s := _sample_natural_valley_height(cx + ox, cz + oz)
+					max_dh = maxf(max_dh, absf(h_s - h_c))
+
+			if max_dh < best_score:
+				best_score = max_dh
+				best_pt = Vector2(cx, cz)
+
+	return best_pt
 
 ## Returns true if the position has access to drinkable freshwater (streams/springs/wells)
 func is_freshwater_stream(world_pos: Vector3) -> bool:
 	if world_pos.y <= sea_level:
-		# Below sea level is saltwater fjord
 		return false
 
 	var wx := world_pos.x
 	var wz := world_pos.z
 
-	# Check proximity to stream 1
-	var stream1_center := sin(wz * 0.02) * 20.0 + (wz * 0.4 + 180.0)
+	var stream1_center := sin(wz * 0.02) * 20.0 + (wz * 0.4 + 195.0)
 	if absf(wx - stream1_center) < 8.0 and wz > -100.0 and wz < 500.0:
 		return true
 
-	# Check proximity to stream 2
-	var stream2_center := cos(wz * 0.015) * 18.0 + 120.0
-	if absf(wx - stream2_center) < 7.0 and wz > 200.0 and wz < 700.0:
+	var stream2_center := cos(wz * 0.015) * 16.0 + 118.0
+	if absf(wx - stream2_center) < 7.0 and wz > 210.0 and wz < 700.0:
 		return true
 
 	return false
-
 
 ## Generates the 3D terrain ArrayMesh
 func generate_terrain() -> void:
 	if not _base_noise:
 		_init_noise()
+	elif _settlement_pads.is_empty():
+		_compute_settlement_plains()
 
 	if terrain_mesh_instance == null:
 		terrain_mesh_instance = get_node_or_null("TerrainMesh") as MeshInstance3D
@@ -230,7 +298,6 @@ func generate_terrain() -> void:
 	var step_x := world_size.x / float(mesh_resolution)
 	var step_z := world_size.y / float(mesh_resolution)
 
-	# Precompute vertex grid
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
@@ -253,7 +320,6 @@ func generate_terrain() -> void:
 			uvs[vert_index] = Vector2(float(ix) / float(mesh_resolution), float(iz) / float(mesh_resolution))
 			vert_index += 1
 
-	# Compute vertex normals and slope-aware vertex colors
 	vert_index = 0
 	for iz in range(mesh_resolution + 1):
 		for ix in range(mesh_resolution + 1):
@@ -267,22 +333,20 @@ func generate_terrain() -> void:
 
 			var tangent_x := (right - left).normalized()
 			var tangent_z := (up - down).normalized()
-			# Normal pointing UP (+Y): Z cross X in right-handed coordinate system
 			var normal := tangent_z.cross(tangent_x).normalized()
 			if normal.y < 0.0:
 				normal = -normal
 			normals[idx] = normal
 
-			# Slope & elevation-aware biome coloring
 			var y := current.y
 			var slope := 1.0 - clampf(normal.y, 0.0, 1.0)
 			var color: Color
 			if y <= 0.2:
 				color = Color(0.20, 0.23, 0.22) # Muddy fjord seabed / shoreline
-			elif y <= 4.0 and absf(current.x - 85.0) < 55.0 and current.z > -100.0 and current.z < 650.0:
-				color = Color(0.42, 0.38, 0.31) # Wharf gravel, timber foundation level
+			elif y <= 4.0 and absf(current.x - 82.0) < 42.0 and current.z > 20.0 and current.z < 140.0:
+				color = Color(0.42, 0.38, 0.31) # Wharf gravel & town street level
 			else:
-				var base_grass := Color(0.26, 0.46, 0.18) # Lush Bergen meadow green
+				var base_grass := Color(0.26, 0.46, 0.18) # Lush Bergen valley meadow green
 				var highland_moss := Color(0.35, 0.44, 0.28) # Sub-alpine moss and pine
 				var mountain_stone := Color(0.44, 0.46, 0.48) # Cold granite slate / crag
 
@@ -295,14 +359,12 @@ func generate_terrain() -> void:
 					var t := clampf((y - 200.0) / 100.0, 0.0, 1.0)
 					color = highland_moss.lerp(mountain_stone, t)
 
-				# Steep slopes expose rock cliffs (Mount Fløyen & Sandviksfjellet)
 				if slope > 0.36:
 					var cliff_factor := clampf((slope - 0.36) / 0.25, 0.0, 1.0)
 					color = color.lerp(mountain_stone, cliff_factor)
 
 			colors[idx] = color
 
-	# Build triangle faces with Counter-Clockwise (CCW) winding order for upward-facing triangles
 	for iz in range(mesh_resolution):
 		for ix in range(mesh_resolution):
 			var row1 := iz * (mesh_resolution + 1)
@@ -313,7 +375,6 @@ func generate_terrain() -> void:
 			var v2 := row2 + ix
 			var v3 := row2 + (ix + 1)
 
-			# Triangle 1 (v0 -> v1 -> v2) front-facing CCW
 			st.set_normal(normals[v0])
 			st.set_color(colors[v0])
 			st.set_uv(uvs[v0])
@@ -329,7 +390,6 @@ func generate_terrain() -> void:
 			st.set_uv(uvs[v2])
 			st.add_vertex(vertices[v2])
 
-			# Triangle 2 (v1 -> v3 -> v2) front-facing CCW
 			st.set_normal(normals[v1])
 			st.set_color(colors[v1])
 			st.set_uv(uvs[v1])
@@ -349,25 +409,20 @@ func generate_terrain() -> void:
 	var mesh := st.commit()
 	terrain_mesh_instance.mesh = mesh
 
-	# Assign high-fidelity atmospheric shader material with procedural grass & rock textures
 	terrain_mesh_instance.material_override = _create_terrain_material()
-
-	# Generate physical StaticBody3D collision shape from terrain mesh
 	_ensure_terrain_collision(mesh)
-
-	# Setup Water Plane at y = sea_level (y = 0.0)
 	_ensure_water_plane()
 
-	# Scatter harvestable trees deterministically across the terrain
+	# Scatter dense multi-biome forests & understory vegetation
 	_scatter_forests()
 
 	# Scatter bog iron ore deposits in wetland basins along mountain streams
 	_scatter_bog_ore_deposits()
 
-	# Generate authentic medieval Bergen farmsteads on fertile lower shelves
+	# Generate piece-by-piece valley farmsteads on verified flat valley plains
 	_generate_farmsteads()
 
-	# Generate historic Bryggen Hanseatic Wharf on Vågen waterfront
+	# Generate piece-by-piece Bryggen Hanseatic Wharf & Valley Town District
 	_generate_bryggen_waterfront()
 
 	# Scatter wildlife & livestock across distinct ecosystem zones
@@ -376,26 +431,30 @@ func generate_terrain() -> void:
 func _generate_bryggen_waterfront() -> void:
 	var bryggen_container := get_node_or_null("BryggenWaterfront") as Node3D
 	if bryggen_container:
-		bryggen_container.queue_free()
+		bryggen_container.free()
 
-	# Bryggen is situated along the east shoreline of Vågen
 	var bx: float = 62.0
 	var bz: float = 80.0
-	var by: float = bryggen_shelf_height
+	var by: float = sample_height(bx, bz)
 
-	var bryggen_node := BryggenWharfGenerator.create_bryggen_waterfront(Vector3(bx, by, bz))
+	var bryggen_node := BryggenWharfGenerator.create_bryggen_waterfront(Vector3(bx, by, bz), self)
 	bryggen_node.name = "BryggenWaterfront"
 	add_child(bryggen_node)
 	bryggen_node.owner = self
 
-	# Starter Campfires: Bryggen quayside and Settler meadow clearing
 	var campfire_script = load("res://scripts/survival/campfire_interactable.gd")
 	if campfire_script:
+		var old_cf1 := get_node_or_null("BryggenCampfire")
+		if old_cf1:
+			old_cf1.free()
 		var cf_bryggen: Node3D = campfire_script.new()
 		cf_bryggen.name = "BryggenCampfire"
 		add_child(cf_bryggen)
-		cf_bryggen.global_position = Vector3(68.0, bryggen_shelf_height + 0.1, 88.0)
+		cf_bryggen.global_position = Vector3(68.0, sample_height(68.0, 88.0) + 0.1, 88.0)
 
+		var old_cf2 := get_node_or_null("StarterCampfire")
+		if old_cf2:
+			old_cf2.free()
 		var cf_starter: Node3D = campfire_script.new()
 		cf_starter.name = "StarterCampfire"
 		add_child(cf_starter)
@@ -453,7 +512,6 @@ func _ensure_water_plane() -> void:
 		var shader_mat := ShaderMaterial.new()
 		shader_mat.shader = water_shader
 
-		# Generate seamless procedural ripple normal maps
 		var noise1 := FastNoiseLite.new()
 		noise1.seed = 1360
 		noise1.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
@@ -534,20 +592,17 @@ func _generate_farmsteads() -> void:
 		for child in farmsteads_container.get_children():
 			child.free()
 
-	var farm_definitions := [
-		{"name": "Sandviken Gård", "x": 160.0, "z": -200.0},
-		{"name": "Bryggen Hinterland Gård", "x": 160.0, "z": 150.0},
-		{"name": "Southern Valley Gård", "x": 160.0, "z": 580.0}
-	]
-
-	for i in range(farm_definitions.size()):
-		var farm_def: Dictionary = farm_definitions[i]
-		var fx: float = farm_def["x"]
-		var fz: float = farm_def["z"]
+	var farm_id := 1
+	for pad in _settlement_pads:
+		if not pad.get("is_farm", false):
+			continue
+		var fx: float = pad["x"]
+		var fz: float = pad["z"]
 		var fy: float = sample_height(fx, fz)
 
-		var farm_node := FarmsteadGenerator.create_farmstead(i + 1, Vector3(fx, fy, fz), farm_def["name"], self)
+		var farm_node := FarmsteadGenerator.create_farmstead(farm_id, Vector3(fx, fy, fz), pad["name"], self)
 		farmsteads_container.add_child(farm_node)
+		farm_id += 1
 
 func _scatter_wildlife() -> void:
 	var wildlife_container := get_node_or_null("Wildlife") as Node3D
@@ -563,18 +618,16 @@ func _scatter_wildlife() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = world_seed + 777
 
-	var farm_centers := [
-		Vector3(160.0, sample_height(160.0, -200.0), -200.0),
-		Vector3(160.0, sample_height(160.0, 150.0), 150.0),
-		Vector3(160.0, sample_height(160.0, 580.0), 580.0)
-	]
+	var farm_centers: Array[Vector3] = []
+	for pad in _settlement_pads:
+		if pad.get("is_farm", false):
+			var fx: float = pad["x"]
+			var fz: float = pad["z"]
+			farm_centers.append(Vector3(fx, sample_height(fx, fz), fz))
 
-	# -------------------------------------------------------------------------
 	# 1. Mountain Wolves (Confined strictly to crags above 80m altitude)
-	# -------------------------------------------------------------------------
-	# Packs lurking among the rocky ledges and pines of Fløyen & Sandviksfjellet
 	var wolf_pack_centers: Array[Vector3] = [
-		Vector3(340.0, 0.0, 200.0)  # Fløyen Mountain Plateau Ledges
+		Vector3(380.0, 0.0, 200.0)
 	]
 
 	var wolf_total := 0
@@ -586,7 +639,6 @@ func _scatter_wildlife() -> void:
 			var wz: float = p_center.z + rng.randf_range(-15.0, 15.0)
 			var wy: float = sample_height(wx, wz)
 
-			# Strict altitude requirement: must be >= 80m
 			if wy >= 80.0:
 				var wolf := CharacterBody3D.new()
 				wolf.name = "Wolf_%d" % wolf_total
@@ -600,100 +652,86 @@ func _scatter_wildlife() -> void:
 				wolf.global_position = Vector3(wx, wy, wz)
 				wolf_total += 1
 
-	# -------------------------------------------------------------------------
-	# 2. Docile Norwegian Cattle (Cows grazing inside/adjacent to farm pastures)
-	# -------------------------------------------------------------------------
+	# 2. Docile Norwegian Cattle (Cows grazing inside/adjacent to valley farm pastures)
 	var cow_total := 0
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
-		for c_i in range(1):
-			var cow := CharacterBody3D.new()
-			cow.name = "Cow_%d" % cow_total
-			cow.set_script(load("res://scripts/fauna/cow_ai.gd"))
+		var cow := CharacterBody3D.new()
+		cow.name = "Cow_%d" % cow_total
+		cow.set_script(load("res://scripts/fauna/cow_ai.gd"))
 
-			var cx := fc.x + rng.randf_range(-6.0, 6.0)
-			var cz := fc.z + rng.randf_range(-6.0, 6.0)
-			var cy := sample_height(cx, cz)
-			cow.set("home_position", fc)
-			cow.set("pasture_radius", 18.0)
+		var cx := fc.x + rng.randf_range(-4.0, 5.0)
+		var cz := fc.z + rng.randf_range(2.0, 8.0)
+		var cy := sample_height(cx, cz)
+		cow.set("home_position", fc)
+		cow.set("pasture_radius", 18.0)
 
-			wildlife_container.add_child(cow)
-			cow.add_to_group("cow")
-			cow.add_to_group("fauna")
-			cow.add_to_group("livestock")
-			cow.global_position = Vector3(cx, cy, cz)
-			cow_total += 1
+		wildlife_container.add_child(cow)
+		cow.add_to_group("cow")
+		cow.add_to_group("fauna")
+		cow.add_to_group("livestock")
+		cow.global_position = Vector3(cx, cy, cz)
+		cow_total += 1
 
-	# -------------------------------------------------------------------------
-	# 3. Old Norwegian Short-Tail Sheep (Villsau grazing on hillside meadows near farms)
-	# -------------------------------------------------------------------------
+	# 3. Old Norwegian Short-Tail Sheep (Villsau grazing on valley meadows near farms)
 	var sheep_total := 0
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
 		var meadow_center := fc + Vector3(18.0, 0, rng.randf_range(-6.0, 6.0))
-		for s_i in range(1):
-			var sheep := CharacterBody3D.new()
-			sheep.name = "Sheep_%d" % sheep_total
-			sheep.set_script(load("res://scripts/fauna/sheep_ai.gd"))
+		var sheep := CharacterBody3D.new()
+		sheep.name = "Sheep_%d" % sheep_total
+		sheep.set_script(load("res://scripts/fauna/sheep_ai.gd"))
 
-			# Grazing up along the hillside meadow above the farm
-			var sx := meadow_center.x + rng.randf_range(-6.0, 6.0)
-			var sz := meadow_center.z + rng.randf_range(-6.0, 6.0)
-			var sy := sample_height(sx, sz)
-			sheep.set("home_position", meadow_center)
-			sheep.set("pasture_radius", 20.0)
+		var sx := meadow_center.x + rng.randf_range(-5.0, 5.0)
+		var sz := meadow_center.z + rng.randf_range(-5.0, 5.0)
+		var sy := sample_height(sx, sz)
+		sheep.set("home_position", meadow_center)
+		sheep.set("pasture_radius", 20.0)
 
-			# Fleece variations (natural off-white, heather grey, black)
-			var fleece_variations := [
-				Color(0.88, 0.86, 0.82), # Oatmeal white
-				Color(0.55, 0.53, 0.50), # Heather grey
-				Color(0.25, 0.23, 0.22)  # Charcoal black
-			]
-			sheep.set("fleece_color", fleece_variations[farm_idx % fleece_variations.size()])
+		var fleece_variations := [
+			Color(0.88, 0.86, 0.82),
+			Color(0.55, 0.53, 0.50),
+			Color(0.25, 0.23, 0.22)
+		]
+		sheep.set("fleece_color", fleece_variations[farm_idx % fleece_variations.size()])
 
-			wildlife_container.add_child(sheep)
-			sheep.add_to_group("sheep")
-			sheep.add_to_group("fauna")
-			sheep.add_to_group("livestock")
-			sheep.global_position = Vector3(sx, sy, sz)
-			sheep_total += 1
+		wildlife_container.add_child(sheep)
+		sheep.add_to_group("sheep")
+		sheep.add_to_group("fauna")
+		sheep.add_to_group("livestock")
+		sheep.global_position = Vector3(sx, sy, sz)
+		sheep_total += 1
 
-	# -------------------------------------------------------------------------
-	# 4. Norwegian Mountain Hares (Rabbits hopping in brush & perimeter outside farms)
-	# -------------------------------------------------------------------------
+	# 4. Norwegian Mountain Hares (Rabbits hopping in perimeter brush outside farms)
 	var rabbit_total := 0
 	for farm_idx in range(farm_centers.size()):
 		var fc: Vector3 = farm_centers[farm_idx]
-		for r_i in range(1):
-			var rabbit := CharacterBody3D.new()
-			rabbit.name = "Rabbit_%d" % rabbit_total
-			rabbit.set_script(load("res://scripts/fauna/rabbit_ai.gd"))
+		var rabbit := CharacterBody3D.new()
+		rabbit.name = "Rabbit_%d" % rabbit_total
+		rabbit.set_script(load("res://scripts/fauna/rabbit_ai.gd"))
 
-			# Hopping in perimeter brush 16m to 35m outside farm fences
-			var angle := rng.randf() * 2.0 * PI
-			var dist := rng.randf_range(16.0, 30.0)
-			var rx := fc.x + cos(angle) * dist
-			var rz := fc.z + sin(angle) * dist
-			var ry := sample_height(rx, rz)
+		var angle := rng.randf() * 2.0 * PI
+		var dist := rng.randf_range(18.0, 30.0)
+		var rx := fc.x + cos(angle) * dist
+		var rz := fc.z + sin(angle) * dist
+		var ry := sample_height(rx, rz)
 
-			rabbit.set("home_position", Vector3(rx, ry, rz))
-			rabbit.set("roam_radius", 25.0)
+		rabbit.set("home_position", Vector3(rx, ry, rz))
+		rabbit.set("roam_radius", 25.0)
 
-			wildlife_container.add_child(rabbit)
-			rabbit.add_to_group("rabbit")
-			rabbit.add_to_group("fauna")
-			rabbit.global_position = Vector3(rx, ry, rz)
-			rabbit_total += 1
+		wildlife_container.add_child(rabbit)
+		rabbit.add_to_group("rabbit")
+		rabbit.add_to_group("fauna")
+		rabbit.global_position = Vector3(rx, ry, rz)
+		rabbit_total += 1
 
-	# -------------------------------------------------------------------------
 	# 5. Red Deer (Peaceful herbivores grazing in lower valley & woods)
-	# -------------------------------------------------------------------------
 	for i in range(4):
-		var dx := rng.randf_range(40.0, 180.0)
-		var dz := rng.randf_range(50.0, 420.0)
+		var dx := rng.randf_range(45.0, 175.0)
+		var dz := rng.randf_range(40.0, 420.0)
 		var dy := sample_height(dx, dz)
 
-		if dy > 1.5 and dy < 60.0:
+		if dy > 1.8 and dy < 60.0:
 			var deer := CharacterBody3D.new()
 			deer.name = "Deer_%d" % i
 			deer.set_script(load("res://scripts/fauna/deer_ai.gd"))
@@ -731,12 +769,10 @@ func _scatter_wildlife() -> void:
 			deer.global_position = Vector3(dx, dy, dz)
 
 func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
-	# Clear existing collision children if any
 	for child in terrain_mesh_instance.get_children():
 		if child is StaticBody3D:
 			child.queue_free()
 
-	# Create static body and concave trimesh collision
 	var static_body := StaticBody3D.new()
 	static_body.name = "TerrainStaticBody"
 	terrain_mesh_instance.add_child(static_body)
@@ -751,119 +787,21 @@ func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
 	col_shape.owner = self
 
 static func _build_compound_tree_mesh(is_spruce: bool) -> ArrayMesh:
-	var trunk_mesh := CylinderMesh.new()
-	trunk_mesh.top_radius = 0.18
-	trunk_mesh.bottom_radius = 0.25
-	trunk_mesh.height = 4.0
-
-	var trunk_mat := StandardMaterial3D.new()
-	trunk_mat.albedo_color = Color(0.32, 0.22, 0.14) if is_spruce else Color(0.9, 0.9, 0.85)
-
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.05
-	cone.bottom_radius = 1.6 if is_spruce else 1.9
-	cone.height = 5.0 if is_spruce else 3.5
-
-	var canopy_mat := StandardMaterial3D.new()
-	canopy_mat.albedo_color = Color(0.14, 0.28, 0.12) if is_spruce else Color(0.35, 0.52, 0.18)
-
-	var arr_mesh := ArrayMesh.new()
-	var st := SurfaceTool.new()
-
-	# Surface 0: Trunk
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_material(trunk_mat)
-	st.append_from(trunk_mesh, 0, Transform3D(Basis(), Vector3(0, 2.0, 0)))
-	st.generate_tangents()
-	st.commit(arr_mesh)
-
-	# Surface 1: Canopy
-	st.clear()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_material(canopy_mat)
-	var canopy_y: float = 5.2 if is_spruce else 4.0
-	st.append_from(cone, 0, Transform3D(Basis(), Vector3(0, canopy_y, 0)))
-	st.generate_tangents()
-	st.commit(arr_mesh)
-
-	return arr_mesh
+	return VegetationManager.build_detailed_tree_mesh(1 if is_spruce else 0)
 
 func _scatter_forests() -> void:
-	var trees_container := get_node_or_null("HarvestableTrees") as Node3D
-	if trees_container:
-		trees_container.queue_free()
-
-	trees_container = Node3D.new()
-	trees_container.name = "HarvestableTrees"
-	add_child(trees_container)
-	trees_container.owner = self
-
-	var rng := RandomNumberGenerator.new()
-	rng.seed = world_seed + 999
-
-	var spruce_mesh := _build_compound_tree_mesh(true)
-	var birch_mesh := _build_compound_tree_mesh(false)
-
-	# Scatter ~100 harvestable trees along the lower hillsides and valley
-	var count := 100
-	for i in range(count):
-		# Concentrate trees in the valley and mountain slopes: x in [20, 220], z in [-50, 450]
-		var tx := rng.randf_range(30.0, 200.0)
-		var tz := rng.randf_range(-60.0, 480.0)
-		var ty := sample_height(tx, tz)
-
-		# Keep farmstead yards and Bryggen wharf clear of trees
-		var near_settlement := false
-		for f_pos in [Vector3(160.0, 0, -200.0), Vector3(160.0, 0, 150.0), Vector3(160.0, 0, 580.0)]:
-			if Vector2(tx - f_pos.x, tz - f_pos.z).length() < 18.0:
-				near_settlement = true
-				break
-		# Bryggen wharf exclusion zone
-		if Vector2(tx - 62.0, tz - 80.0).length() < 34.0:
-			near_settlement = true
-
-		if near_settlement:
-			continue
-
-		# Only plant on solid land above sea level and below rocky crags
-		if ty > 1.2 and ty < 90.0:
-			var tree_node := StaticBody3D.new()
-			tree_node.name = "Tree_%d" % i
-			tree_node.set_script(load("res://scripts/environment/harvestable_tree.gd"))
-
-			# 70% Spruce, 30% Birch
-			var is_spruce := rng.randf() > 0.3
-			tree_node.set("tree_type", 1 if is_spruce else 0)
-
-			# Single compound primitive mesh (Trunk + Canopy in one MeshInstance3D)
-			var tree_mesh := MeshInstance3D.new()
-			tree_mesh.name = "TreeCompoundMesh"
-			tree_mesh.mesh = spruce_mesh if is_spruce else birch_mesh
-			tree_node.add_child(tree_mesh)
-
-			# Collision shape for axe hits
-			var col := CollisionShape3D.new()
-			var capsule := CapsuleShape3D.new()
-			capsule.radius = 0.4
-			capsule.height = 4.0
-			col.shape = capsule
-			col.position.y = 2.0
-			tree_node.add_child(col)
-
-			trees_container.add_child(tree_node)
-			tree_node.global_position = Vector3(tx, ty, tz)
+	VegetationManager.populate_dense_vegetation(self, _settlement_pads, world_seed)
 
 func _scatter_bog_ore_deposits() -> void:
 	var bog_container := get_node_or_null("BogOreDeposits") as Node3D
 	if bog_container:
-		bog_container.queue_free()
+		bog_container.free()
 
 	bog_container = Node3D.new()
 	bog_container.name = "BogOreDeposits"
 	add_child(bog_container)
 	bog_container.owner = self
 
-	# 6 historical bog ore locations in the wetland hollows near mountain streams
 	var deposit_locations := [
 		Vector2(45.0, 85.0),
 		Vector2(65.0, 140.0),
@@ -876,7 +814,6 @@ func _scatter_bog_ore_deposits() -> void:
 	for i in range(deposit_locations.size()):
 		var loc: Vector2 = deposit_locations[i]
 		var gh: float = sample_height(loc.x, loc.y)
-		# Only place in low to medium wetland zones above sea level
 		if gh >= sea_level + 0.8 and gh <= sea_level + 35.0:
 			var deposit := BogOreDeposit.new()
 			deposit.name = "BogDeposit_%d" % i

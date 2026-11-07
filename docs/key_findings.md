@@ -409,3 +409,42 @@ Initial player movement assigned velocities instantaneously (`velocity.x = direc
    - `_spawn_water_ripple(pos)` instantiates lightweight torus ring meshes that expand ($0.5\,\text{m} \to 3.2\,\text{m}$) and fade to alpha 0 over $0.65\,\text{s}$ via tweens whenever the settler takes wading steps or swimming strokes.
    - WebGL 2.0 draw call overhead is strictly bounded through automatic queue-free recycling.
 
+---
+
+## 23. Piece-by-Piece Procedural Building Architecture, Valley Plain Placement & Dense MultiMesh Vegetation
+
+### 1. Piece-by-Piece Modular Building Construction (`scripts/architecture/building_assembler.gd`)
+Rather than spawning buildings out of monolithic boxes, all city and farmstead structures are assembled piece-by-piece from discrete medieval Scandinavian timber elements and committed into material-streamed `ArrayMesh` surfaces (`_commit_piece_streams()`):
+- **Foundations (`_append_foundation_pieces`):** Corner stone piers (*steinkjeller*), perimeter dry-stone plinths (*grunnmur*), heavy tarred timber sill beams (*svill*), floor joists, and individual floor planks.
+- **Lafteverk Notched Log Walls (`_append_lafteverk_wall_courses`):** 8 horizontal log courses with alternating protruding corner notch ends (*lafteknuter / nov*). Log courses dynamically split into left and right segments around any door or window aperture.
+- **Grindverk Stave & Trestle Framing (`_append_grindverk_wall_face`):** Corner & bay stave posts (*stav*), top wall plates (*stavline*), transverse tie beams (*bete*), angled diagonal wind braces (*skråbånd*), and vertical overlapping plank cladding (*stående kledning*).
+- **Framed Doors & Recessed Mullioned Windows (`_append_door_piece`, `_append_window_piece`):** Heavy timber jambs, lintels, walkable stone thresholds ($0.14\,\text{m}$ high for smooth `SettlerController` step-up), recessed crown-glass panes with wooden crossbar mullions (*sprosser*), and open wooden storm shutters (*vinduslemmer*) with wrought-iron hinge straps.
+- **Roofs (`_append_roof_assembly`):** Heavy ridge beam (*mønsås*), side purlins (*åser*), individual exposed rafters (*sperrer*), birch bark or dark plank underlayment, 5 stepped courses of sod turf or wooden shingles (angled at $-\text{sign}_x \cdot \theta_{\text{pitch}}$ to meet cleanly at the central ridge crest cap), gable bargeboards (*vindski*), and optional Hanseatic cargo hoist beams (*heisebjelke*) with iron pulley and rope.
+
+### 2. Glacial Valley Plain Site Solver (`scripts/terrain/bergen_terrain_generator.gd`)
+- **Expanded Glacial Valleys:** Added broad flat valley corridors across Sandviken Dal, Bryggen Valley, Markov Valley, and Lungegård Plain.
+- **9-Point Flatness Evaluation (`_find_flattest_valley_spot`):** Evaluates candidate sites within each valley search radius to minimize height variance ($\Delta y < 1.2\,\text{m}$) and slope ($< 10^\circ$) at elevations $3.0\,\text{m} \le y \le 24.0\,\text{m}$.
+- **Smooth Pad Leveling & Sub-Structure Clamping:** Smoothly blends each settlement pad (`inner_r`, `outer_r`) into the surrounding valley floor and clamps each individual farmstead building (*Årestue*, *Fjøs* barn, *Stabbur*, well, crop beds, *Skigard* fence posts) to its exact `(x, z)` terrain elevation.
+
+### 3. Dense Multi-Layer Forests & Understory (`scripts/environment/vegetation_manager.gd`)
+- **3-Species Procedural Forest:** Multi-tier Norway Spruce (*Gran*), Scots Pine (*Furu*), and Nordic White Birch (*Bjørk*).
+- **3-Layer Understory:** Woodland ferns (*Bregner*), juniper & blooming heather shrubs (*Einer og Lyng*), and riparian valley meadow reeds (* Siv og Enggress*).
+- **Hybrid Choppable + MultiMesh Architecture:** Spawns 95 interactive `HarvestableTree` nodes near valley settlement margins for axe woodcutting while instancing **6,522** trees and understory plants across 6 `MultiMeshInstance3D` batches—keeping total scene `MeshInstance3D` count at **454** ($< 500$ budget) and total frame draw calls at **157**.
+
+---
+
+## 24. Performance & Bug Audit Optimizations
+
+1. **Roof Gable Slope Orientation & Empty SurfaceTool Stream Guard (`building_assembler.gd`):**
+   - Corrected roof Z-axis pitch sign to $-\text{sign}_x \cdot \theta_{\text{pitch}}$ so left and right roof slopes meet at a central ridge peak with a sealing ridge crest cap (*Mønskam*).
+   - Guarded conditional `SurfaceTool` stream creation (`birch_bark`, `shutter_wood`, `iron_hardware`) so `generate_tangents()` is never invoked on a zero-vertex stream.
+2. **Cached Unit Primitive Meshes in Procedural Building Assembly (`building_assembler.gd`):**
+   - Replaced per-piece `BoxMesh.new()` and `CylinderMesh.new()` instantiation with cached unit primitives (`_shared_unit_box`, `_shared_unit_cyl`) scaled via `Transform3D(basis.scaled(size), pos)`. This eliminates **3,500+ temporary heap allocations** and redundant primitive vertex generation passes during world load.
+3. **Understory Shadow Culling & Distance Visibility Range (`vegetation_manager.gd`):**
+   - Disabled directional shadow map rasterization (`SHADOW_CASTING_SETTING_OFF`) and configured `visibility_range_end = 260.0` on the 3 micro-foliage understory `MultiMeshInstance3D` batches (~4,100 ferns, shrubs, and reeds) while preserving full shadows on the 3 forest tree batches—eliminating ~150,000 shadow-pass triangles per frame.
+4. **On-Demand Process Activation for Interactive Trees (`harvestable_tree.gd`):**
+   - Disabled `_process` and `_physics_process` by default on all 95 `HarvestableTree` instances at startup, enabling `_process` only when focused/chopped and `_physics_process` only during the topple animation—saving **190 idle GDScript virtual calls per frame**.
+5. **HUD Label Cache & AI Group Scan Throttling (`hud_clock_calendar.gd`, `wolf_ai.gd`):**
+   - Cached `_last_hour` and `_last_minute` in `HUDClockCalendar` to avoid 60 Hz string formatting and UI layout thrashing when the clock minute has not changed.
+   - Throttled `_scan_for_fire()` in `wolf_ai.gd` from 60 Hz to 5 Hz (`0.20s`), eliminating 92% of per-frame `get_nodes_in_group()` array allocations.
+

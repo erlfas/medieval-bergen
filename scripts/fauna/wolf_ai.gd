@@ -82,6 +82,8 @@ func _build_wolf_mesh() -> void:
 	col.position.y = 0.65
 	add_child(col)
 
+var fire_scan_cooldown: float = 0.0
+
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= gravity * delta
@@ -94,13 +96,16 @@ func _physics_process(delta: float) -> void:
 	patrol_timer -= delta
 	pack_cooldown -= delta
 	howl_cooldown -= delta
+	fire_scan_cooldown -= delta
 
 	if pack_cooldown <= 0.0:
 		pack_cooldown = 1.4
 		_update_pack_coordination()
 
-	# Check for fire sources (settler holding torch or nearby hearth)
-	_scan_for_fire()
+	# Check for fire sources at 5 Hz instead of 60 Hz to avoid per-frame group array allocations
+	if fire_scan_cooldown <= 0.0:
+		fire_scan_cooldown = 0.20
+		_scan_for_fire()
 
 	# High Crags Altitude Confinement: if wolf wanders below minimum altitude, head back uphill
 	if global_position.y < min_mountain_altitude - 2.0 and not has_fire_threat:

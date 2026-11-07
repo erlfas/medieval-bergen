@@ -92,40 +92,50 @@ func _init_catalog() -> void:
 	r_stone_footing.dimensions = Vector3(4.0, 0.4, 0.5)
 	catalog.append(r_stone_footing)
 
-	# 7. Farmhouse Lafteverk Log Wall Course
+	# 7. Farmhouse Lafteverk Log Wall Course with Window & Shutters
 	var r_lafte_wall := BuildingPieceRecipe.new()
 	r_lafte_wall.piece_id = "farm_lafte_wall"
-	r_lafte_wall.piece_name = "Lafteverk Timber Wall (Spruce Logs)"
+	r_lafte_wall.piece_name = "Lafteverk Log Wall & Shuttered Window"
 	r_lafte_wall.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_lafte_wall.resource_costs = { "timber_log": 2 }
-	r_lafte_wall.dimensions = Vector3(4.0, 1.0, 0.35)
+	r_lafte_wall.dimensions = Vector3(4.0, 2.2, 0.35)
 	catalog.append(r_lafte_wall)
 
-	# 8. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
+	# 8. Framed Timber Doorway Wall Piece (Jambs, Lintel, Planked Door & Iron Hinges)
+	var r_door_piece := BuildingPieceRecipe.new()
+	r_door_piece.piece_id = "modular_doorway_wall"
+	r_door_piece.piece_name = "Timber Doorway Piece (Jambs, Lintel & Hinged Door)"
+	r_door_piece.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_door_piece.resource_costs = { "timber_log": 2, "stone": 1 }
+	r_door_piece.dimensions = Vector3(4.0, 2.2, 0.35)
+	catalog.append(r_door_piece)
+
+	# 9. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
 	var r_stabbur_pillar := BuildingPieceRecipe.new()
 	r_stabbur_pillar.piece_id = "stabbur_stone_pillar"
-	r_stabbur_pillar.piece_name = "Stabbur Pillar (Raised Slate Post)"
+	r_stabbur_pillar.piece_name = "Stabbur Pillar (Raised Slate Post & Cap)"
 	r_stabbur_pillar.category = BuildingPieceRecipe.BuildingCategory.STOREHOUSE
-	r_stabbur_pillar.resource_costs = { "stone": 3, "timber_log": 1 }
-	r_stabbur_pillar.dimensions = Vector3(0.5, 1.2, 0.5)
+	r_stabbur_pillar.resource_costs = { "stone": 2, "timber_log": 1 }
+	r_stabbur_pillar.dimensions = Vector3(0.6, 1.2, 0.6)
 	catalog.append(r_stabbur_pillar)
 
-	# 9. Barn Grindverk Post-and-Beam Timber Frame
+	# 10. Barn Grindverk Post-and-Beam Timber Frame (Posts, Tie Beam & Wind Braces)
 	var r_barn_frame := BuildingPieceRecipe.new()
 	r_barn_frame.piece_id = "barn_grindverk_post"
-	r_barn_frame.piece_name = "Barn Grindverk Timber Frame"
+	r_barn_frame.piece_name = "Grindverk Lumber Frame (Staves, Tie Beam & Braces)"
 	r_barn_frame.category = BuildingPieceRecipe.BuildingCategory.BARN
 	r_barn_frame.resource_costs = { "timber_log": 3 }
-	r_barn_frame.dimensions = Vector3(0.4, 3.2, 0.4)
+	r_barn_frame.dimensions = Vector3(4.0, 2.6, 0.35)
 	catalog.append(r_barn_frame)
 
-	# 10. Birch Bark & Sod Roof Tile (Torvtak)
+	# 11. Raftered Birch Bark & Sod Roof Section (Torvtak + Sperrer)
 	var r_sod_roof := BuildingPieceRecipe.new()
 	r_sod_roof.piece_id = "roof_sod_turf"
-	r_sod_roof.piece_name = "Sod Turf Tile (Birch Bark + Turf)"
+	r_sod_roof.piece_name = "Raftered Sod Roof Section (Rafters, Birch Bark & Turf)"
 	r_sod_roof.category = BuildingPieceRecipe.BuildingCategory.ROOFING
-	r_sod_roof.resource_costs = { "birch_bark": 2, "turf": 2 }
-	r_sod_roof.dimensions = Vector3(2.0, 0.25, 2.0)
+	r_sod_roof.resource_costs = { "timber_log": 1, "birch_bark": 2, "turf": 2 }
+	r_sod_roof.dimensions = Vector3(4.0, 1.2, 3.0)
+	r_sod_roof.provides_shelter = true
 	catalog.append(r_sod_roof)
 
 func _init_ghost_materials() -> void:
@@ -366,6 +376,29 @@ func _update_ghost_mesh() -> void:
 	selected_piece_changed.emit(recipe)
 
 func _generate_placeholder_mesh(recipe: BuildingPieceRecipe) -> Mesh:
+	var streams: Dictionary = {}
+	var w := recipe.dimensions.x
+	var h := recipe.dimensions.y
+	var d := recipe.dimensions.z
+
+	if recipe.piece_id == "farm_lafte_wall":
+		var win_ap := [{"x": 0.0, "y_min": 0.75, "y_max": 1.55, "w": 0.84}]
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, -h * 0.5, 0), w, h, 0.0, 7, d, 0.24, win_ap)
+		BuildingAssembler._append_window_piece(streams, Vector3(0, 1.15 - h * 0.5, 0), 0.0, 0.84, 0.80, d, true, true)
+	elif recipe.piece_id == "modular_doorway_wall":
+		var door_ap := [{"x": 0.0, "y_min": 0.0, "y_max": 1.92, "w": 1.10}]
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, -h * 0.5, 0), w, h, 0.0, 7, d, 0.24, door_ap)
+		BuildingAssembler._append_door_piece(streams, Vector3(0, -h * 0.5, 0), 0.0, 1.10, 1.92, d, true)
+	elif recipe.piece_id == "barn_grindverk_post":
+		var wins: Array[int] = [1]
+		BuildingAssembler._append_grindverk_wall_face(streams, Vector3(0, -h * 0.5, 0), w, h, 0, 0.0, "wood_weathered", 2, -1, wins, false)
+	elif recipe.piece_id == "roof_sod_turf":
+		BuildingAssembler._append_roof_assembly(streams, w, d, -h * 0.4, h * 0.8, "sod_roof", true, false, false)
+
+	if not streams.is_empty():
+		var mi := BuildingAssembler._commit_piece_streams(streams, "PieceMesh")
+		return mi.mesh
+
 	var box := BoxMesh.new()
 	box.size = recipe.dimensions
 	return box

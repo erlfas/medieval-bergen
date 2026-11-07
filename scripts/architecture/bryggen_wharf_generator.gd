@@ -1,205 +1,209 @@
 class_name BryggenWharfGenerator
 extends Node
 
-## Procedural Generator for Medieval Bergen's Historic Hanseatic Wharf (Tyskebryggen 1360)
-## Creates:
-## - Heavy timber wharf quays (trebrygger) with pilings over Vågen bay and mooring bollards
-## - 2 Iconic Hanseatic merchant tenements (Sjøstuer) with hoist beams (heisebjelker)
-## - Traditional Norwegian stockfish drying racks (fiskehjell)
-## - Interactive Hanseatic Kontor trading post with merchant barter system
+## Procedural Piece-by-Piece Generator for Medieval Bergen's Historic Hanseatic Wharf (Tyskebryggen 1360)
+## and Adjacent Flat Valley Town District:
+## - Heavy timber wharf quays (trebrygger) with planked decking, stringer beams, walkable access ramps,
+##   and deep submerged pilings (y = -2.4m) that trigger Gerstner water depth-foam rings
+## - 4 Iconic Hanseatic merchant tenement rows (Sjøstuer: Finnegården, Bellgården, Svensgården, Enhjørningsgården)
+##   built piece-by-piece (stone piers, Grindverk posts/braces, plank cladding, doors, shuttered windows,
+##   Svalgang galleries, exposed rafters, shingle/tile roofs, and gable cargo hoist beams)
+## - Plank-paved narrow wooden alleyways (Passasjer) between tenement rows
+## - 3 Rear Valley Plain Town Buildings (Skjøtstue Assembly Hall, Bakersmauet House, Øvregaten Cooperage)
+## - Traditional Norwegian stockfish drying racks (Fiskehjell) & Hanseatic Kontor barter counter
 
-static func create_bryggen_waterfront(origin: Vector3) -> Node3D:
+static func create_bryggen_waterfront(origin: Vector3, terrain_generator: BergenTerrainGenerator = null) -> Node3D:
 	var bryggen_root := Node3D.new()
 	bryggen_root.name = "BryggenWaterfront_1360"
 	bryggen_root.position = origin
 	bryggen_root.add_to_group("bryggen")
 
-	# Shared Materials
-	var mat_wharf := StandardMaterial3D.new()
-	mat_wharf.albedo_color = Color(0.28, 0.22, 0.16) # Tarred pine deck
-	mat_wharf.roughness = 0.9
-
-	var mat_wharf_piling := StandardMaterial3D.new()
-	mat_wharf_piling.albedo_color = Color(0.20, 0.16, 0.12) # Wet dark submerged timber
-	mat_wharf_piling.roughness = 0.85
-
-	var mat_ochre := StandardMaterial3D.new()
-	mat_ochre.albedo_color = Color(0.72, 0.48, 0.20) # Historical Bergen ochre red/yellow
-	mat_ochre.roughness = 0.85
-
-	var mat_dark_red := StandardMaterial3D.new()
-	mat_dark_red.albedo_color = Color(0.52, 0.22, 0.18) # Falun red / madder red tenement
-	mat_dark_red.roughness = 0.88
-
-	var mat_timber_frame := StandardMaterial3D.new()
-	mat_timber_frame.albedo_color = Color(0.25, 0.18, 0.12) # Heavy tarred framing
-	mat_timber_frame.roughness = 0.92
-
-	var mat_roof_tar := StandardMaterial3D.new()
-	mat_roof_tar.albedo_color = Color(0.22, 0.20, 0.19) # Dark wood shingle / tarred planks
-	mat_roof_tar.roughness = 0.92
+	var mat_wharf := BuildingAssembler.get_shared_material("wood_weathered")
+	var mat_timber_frame := BuildingAssembler.get_shared_material("wood_dark")
+	var mat_ochre := BuildingAssembler.get_shared_material("ochre_wall")
 
 	var mat_stockfish := StandardMaterial3D.new()
 	mat_stockfish.albedo_color = Color(0.68, 0.58, 0.38) # Dried cod golden amber
 	mat_stockfish.roughness = 0.8
 
 	# -------------------------------------------------------------------------
-	# 1. Heavy Wooden Wharf Quay Platform (Trebrygge)
+	# 1. Piece-Built Wooden Wharf Quay Platform (Trebrygge) & Submerged Pilings
 	# -------------------------------------------------------------------------
-	var quay_body := StaticBody3D.new()
-	quay_body.name = "QuayPlatform"
-
-	var deck_mesh := MeshInstance3D.new()
-	var box_deck := BoxMesh.new()
-	box_deck.size = Vector3(14.0, 0.45, 52.0)
-	deck_mesh.mesh = box_deck
-	deck_mesh.position = Vector3(0.0, 0.2, 0.0)
-	deck_mesh.material_override = mat_wharf
-	quay_body.add_child(deck_mesh)
-
-	var deck_col := CollisionShape3D.new()
-	var box_col := BoxShape3D.new()
-	box_col.size = Vector3(14.0, 0.5, 52.0)
-	deck_col.shape = box_col
-	deck_col.position = deck_mesh.position
-	quay_body.add_child(deck_col)
-
-	# Water Pilings & Mooring Bollards (Compound mesh of mat_wharf_piling)
-	var st_piling := SurfaceTool.new()
-	st_piling.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_piling.set_material(mat_wharf_piling)
-
-	var cyl_p := CylinderMesh.new()
-	cyl_p.top_radius = 0.22
-	cyl_p.bottom_radius = 0.25
-	cyl_p.height = 3.2
-	for sign_z in [-18.0, -9.0, 0.0, 9.0, 18.0]:
-		st_piling.append_from(cyl_p, 0, Transform3D(Basis(), Vector3(-6.6, -1.3, sign_z)))
-
-	var cyl_b := CylinderMesh.new()
-	cyl_b.top_radius = 0.16
-	cyl_b.bottom_radius = 0.18
-	cyl_b.height = 0.75
-	for bz in [-15.0, -5.0, 5.0, 15.0]:
-		st_piling.append_from(cyl_b, 0, Transform3D(Basis(), Vector3(-6.7, 0.65, bz)))
-
-	st_piling.generate_tangents()
-	var piling_mi := MeshInstance3D.new()
-	piling_mi.name = "WharfPilingsBollardsCompoundMesh"
-	piling_mi.mesh = st_piling.commit()
-	quay_body.add_child(piling_mi)
-
+	var quay_body := _assemble_piece_quay_platform(16.0, 68.0)
 	bryggen_root.add_child(quay_body)
 
 	# -------------------------------------------------------------------------
-	# 2. Hanseatic Merchant Tenements (Sjøstue 1 - Ochre & Sjøstue 2 - Red)
+	# 2. Front Hanseatic Merchant Tenement Row (4 Gabled Sjøstuer Facing Vågen)
+	#    Oriented with -Z facing West (-X) over the quay deck (rotation.y = PI * 0.5)
 	# -------------------------------------------------------------------------
-	var tenement_1 := _assemble_sjostue(7.4, 15.0, 5.6, mat_ochre, mat_timber_frame, mat_roof_tar, "Sjøstue_Ochsenkopf")
-	tenement_1.position = Vector3(11.0, 0.0, -11.0)
-	bryggen_root.add_child(tenement_1)
+	var front_tenement_specs := [
+		{
+			"name": "Sjostue_Finnegaarden",
+			"x": 15.5, "z": -22.0,
+			"width": 7.0, "depth": 14.8, "stories": 3,
+			"wall_style": "ochre_wall", "roof_style": "shingle_roof",
+			"has_hoist": true, "has_svalgang": true, "svalgang_side": 1.0
+		},
+		{
+			"name": "Sjostue_Bellgaarden",
+			"x": 15.5, "z": -7.5,
+			"width": 7.2, "depth": 15.2, "stories": 2,
+			"wall_style": "red_wall", "roof_style": "tile_roof",
+			"has_hoist": true, "has_svalgang": true, "svalgang_side": -1.0
+		},
+		{
+			"name": "Sjostue_Svensgaarden",
+			"x": 15.5, "z": 7.5,
+			"width": 7.0, "depth": 14.8, "stories": 3,
+			"wall_style": "tan_wall", "roof_style": "shingle_roof",
+			"has_hoist": true, "has_svalgang": true, "svalgang_side": 1.0
+		},
+		{
+			"name": "Sjostue_Enhjorningsgaarden",
+			"x": 15.5, "z": 22.0,
+			"width": 6.8, "depth": 14.4, "stories": 2,
+			"wall_style": "ochre_wall", "roof_style": "shingle_roof",
+			"has_hoist": true, "has_svalgang": true, "svalgang_side": -1.0
+		}
+	]
 
-	var tenement_2 := _assemble_sjostue(7.4, 15.0, 5.6, mat_dark_red, mat_timber_frame, mat_roof_tar, "Sjøstue_Bellgaarden")
-	tenement_2.position = Vector3(11.0, 0.0, 6.0)
-	bryggen_root.add_child(tenement_2)
+	for spec in front_tenement_specs:
+		var tx: float = spec["x"]
+		var tz: float = spec["z"]
+		var local_y := _sample_local_y(origin, tx, tz, terrain_generator)
+		var tenement := BuildingAssembler.assemble_city_tenement(spec)
+		tenement.position = Vector3(tx, local_y, tz)
+		# Rotate +90 deg so the front gable (-Z in local space) faces West (-X) toward Vågen bay
+		tenement.rotation.y = deg_to_rad(90.0)
+		bryggen_root.add_child(tenement)
 
 	# -------------------------------------------------------------------------
-	# 3. Stockfish Drying Racks (Fiskehjell)
+	# 3. Rear Valley Plain Town Row (Artisan Houses & Skjøtstue Assembly Hall)
+	#    Located on the flat valley plain immediately east of the front wharf row
+	# -------------------------------------------------------------------------
+	var rear_town_specs := [
+		{
+			"name": "Town_Skjotstue_AssemblyHall",
+			"x": 34.0, "z": -16.0,
+			"width": 7.6, "depth": 12.6, "stories": 2,
+			"wall_style": "wood_spruce", "roof_style": "sod_roof",
+			"has_hoist": false, "has_svalgang": true, "svalgang_side": -1.0
+		},
+		{
+			"name": "Town_Bakersmauet_ArtisanHouse",
+			"x": 34.0, "z": 0.0,
+			"width": 6.8, "depth": 11.8, "stories": 2,
+			"wall_style": "red_wall", "roof_style": "tile_roof",
+			"has_hoist": false, "has_svalgang": false, "svalgang_side": 1.0
+		},
+		{
+			"name": "Town_Ovregaten_Cooperage",
+			"x": 34.0, "z": 16.0,
+			"width": 7.0, "depth": 12.2, "stories": 2,
+			"wall_style": "tan_wall", "roof_style": "sod_roof",
+			"has_hoist": true, "has_svalgang": true, "svalgang_side": 1.0
+		}
+	]
+
+	for r_spec in rear_town_specs:
+		var rx: float = r_spec["x"]
+		var rz: float = r_spec["z"]
+		var r_local_y := _sample_local_y(origin, rx, rz, terrain_generator)
+		var town_house := BuildingAssembler.assemble_city_tenement(r_spec)
+		town_house.position = Vector3(rx, r_local_y, rz)
+		town_house.rotation.y = deg_to_rad(90.0)
+		bryggen_root.add_child(town_house)
+
+	# -------------------------------------------------------------------------
+	# 4. Stockfish Drying Racks (Fiskehjell) on North & South Quay Ends
 	# -------------------------------------------------------------------------
 	var fish_rack_1 := _assemble_fish_rack(8.0, mat_timber_frame, mat_stockfish)
-	fish_rack_1.position = Vector3(2.5, 0.45, -20.0)
+	fish_rack_1.position = Vector3(1.5, 0.36, -26.0)
 	bryggen_root.add_child(fish_rack_1)
 
 	var fish_rack_2 := _assemble_fish_rack(8.0, mat_timber_frame, mat_stockfish)
-	fish_rack_2.position = Vector3(2.5, 0.45, 20.0)
+	fish_rack_2.position = Vector3(1.5, 0.36, 26.0)
 	bryggen_root.add_child(fish_rack_2)
 
 	# -------------------------------------------------------------------------
-	# 4. Hanseatic Kontor Trading Counter (Interactive Barter Stall)
+	# 5. Hanseatic Kontor Trading Counter (Interactive Barter Stall)
 	# -------------------------------------------------------------------------
 	var merchant_stall := _assemble_merchant_counter(mat_timber_frame, mat_wharf, mat_ochre)
-	merchant_stall.position = Vector3(1.5, 0.45, -2.5)
+	merchant_stall.position = Vector3(1.2, 0.36, -1.5)
 	bryggen_root.add_child(merchant_stall)
 
 	return bryggen_root
 
-## Assembles a historical 2-story Hanseatic tenement house (Sjøstue)
-static func _assemble_sjostue(w: float, d: float, h: float, mat_wall: Material, mat_frame: Material, mat_roof: Material, t_name: String) -> StaticBody3D:
-	var building := StaticBody3D.new()
-	building.name = t_name
-	building.add_to_group("building")
-	building.add_to_group("shelter")
+static func _sample_local_y(origin: Vector3, local_x: float, local_z: float, terrain_generator: BergenTerrainGenerator) -> float:
+	if terrain_generator == null:
+		return 0.0
+	var world_y := terrain_generator.sample_height(origin.x + local_x, origin.z + local_z)
+	return world_y - origin.y
 
-	var half_w := w * 0.5
-	var half_d := d * 0.5
-	var wall_h := h * 0.72
-	var gable_h := h - wall_h
+## Assembles the timber wharf quay platform piece-by-piece:
+## - Individual transverse deck planks, heavy stringer beams, edge curb timbers
+## - Deep submerged timber pilings (reaching y = -2.4m into Vågen bay for water shader contact foam)
+## - Walkable sloped boarding ramps on the landward side so the settler steps up smoothly
+## - Timber alley boardwalks (Passasjer) extending between the tenement rows
+static func _assemble_piece_quay_platform(width: float, length: float) -> StaticBody3D:
+	var quay_body := StaticBody3D.new()
+	quay_body.name = "QuayPlatform"
 
-	# Main Structure Block
-	var main_block := MeshInstance3D.new()
-	var box_m := BoxMesh.new()
-	box_m.size = Vector3(w, wall_h, d)
-	main_block.mesh = box_m
-	main_block.position = Vector3(0, wall_h * 0.5, 0)
-	main_block.material_override = mat_wall
-	building.add_child(main_block)
+	var streams: Dictionary = {}
+	var st_deck := BuildingAssembler._get_stream(streams, "wood_weathered")
+	var st_dark := BuildingAssembler._get_stream(streams, "wood_dark")
 
-	var col_body := CollisionShape3D.new()
-	var box_c := BoxShape3D.new()
-	box_c.size = Vector3(w, wall_h, d)
-	col_body.shape = box_c
-	col_body.position = main_block.position
-	building.add_child(col_body)
+	var half_w := width * 0.5
+	var half_l := length * 0.5
+	var deck_y := 0.18
 
-	# Front Timber Gable Facade
-	var gable := MeshInstance3D.new()
-	var g_box := BoxMesh.new()
-	g_box.size = Vector3(w * 0.95, gable_h, 0.4)
-	gable.mesh = g_box
-	gable.position = Vector3(0, wall_h + gable_h * 0.5, -half_d + 0.2)
-	gable.material_override = mat_wall
-	building.add_child(gable)
+	# 1. Longitudinal stringer beams under the deck
+	for sx in [-half_w + 0.4, -half_w * 0.35, half_w * 0.35, half_w - 0.4]:
+		BuildingAssembler._append_box_piece(st_dark, Vector3(0.32, 0.28, length), Vector3(sx, deck_y - 0.12, 0))
 
-	# Roof Slopes (Steep pitched wood shingle roof)
-	var roof_pitch := deg_to_rad(45.0)
-	var slope_len := sqrt(pow(half_w + 0.4, 2.0) + pow(gable_h + 0.2, 2.0))
-	for sign_x in [-1.0, 1.0]:
-		var r_slope := MeshInstance3D.new()
-		var r_box := BoxMesh.new()
-		r_box.size = Vector3(slope_len, 0.25, d + 0.6)
-		r_slope.mesh = r_box
-		r_slope.position = Vector3(sign_x * (half_w * 0.5 + 0.05), wall_h + gable_h * 0.52, 0)
-		r_slope.rotation.z = sign_x * roof_pitch
-		r_slope.material_override = mat_roof
-		building.add_child(r_slope)
+	# 2. Individual transverse wharf deck planks (48 plank courses along the quay)
+	var plank_courses := 48
+	var plank_step := length / float(plank_courses)
+	for p in range(plank_courses):
+		var pz := -half_l + (float(p) + 0.5) * plank_step
+		BuildingAssembler._append_box_piece(st_deck, Vector3(width, 0.12, plank_step * 0.91), Vector3(0, deck_y + 0.06, pz))
 
-	# Iconic Hanseatic Hoist Gantry Beam (Heisebjelke) extending forward from peak
-	var hoist_beam := MeshInstance3D.new()
-	var h_box := BoxMesh.new()
-	h_box.size = Vector3(0.25, 0.25, 2.8)
-	hoist_beam.mesh = h_box
-	hoist_beam.position = Vector3(0, wall_h + gable_h + 0.05, -half_d - 0.9)
-	hoist_beam.material_override = mat_frame
-	building.add_child(hoist_beam)
+	# 3. Timber Alley Boardwalks (Passasjer) running east between the tenement rows
+	for alley_z in [-14.8, 0.0, 14.8]:
+		BuildingAssembler._append_box_piece(st_deck, Vector3(24.0, 0.10, 3.2), Vector3(half_w + 12.0, 0.05, alley_z))
+		for side_s in [-1.0, 1.0]:
+			BuildingAssembler._append_box_piece(st_dark, Vector3(24.0, 0.14, 0.18), Vector3(half_w + 12.0, 0.07, alley_z + side_s * 1.55))
 
-	# Hanging cargo rope & hook
-	var hoist_rope := MeshInstance3D.new()
-	var cyl_r := CylinderMesh.new()
-	cyl_r.top_radius = 0.03
-	cyl_r.bottom_radius = 0.03
-	cyl_r.height = 2.2
-	hoist_rope.mesh = cyl_r
-	hoist_rope.position = Vector3(0, wall_h + gable_h - 1.05, -half_d - 2.1)
-	hoist_rope.material_override = mat_frame
-	building.add_child(hoist_rope)
+	# 4. Deep Submerged Wharf Pilings (Bryggepåler) & Mooring Bollards
+	var piling_z_rows := 11
+	for pz_i in range(piling_z_rows):
+		var pz := -half_l + 2.0 + float(pz_i) / float(piling_z_rows - 1) * (length - 4.0)
+		# Outer water-edge pilings extending down 3.6m into the fjord
+		BuildingAssembler._append_cyl_piece(st_dark, 0.23, 0.26, 3.8, Vector3(-half_w + 0.45, -1.55, pz))
+		# Mid-wharf support pilings
+		BuildingAssembler._append_cyl_piece(st_dark, 0.21, 0.24, 3.2, Vector3(-2.0, -1.35, pz))
+		# Mooring bollards along western quay edge every second bay
+		if pz_i % 2 == 0:
+			BuildingAssembler._append_cyl_piece(st_dark, 0.17, 0.19, 0.78, Vector3(-half_w + 0.55, deck_y + 0.45, pz))
+			BuildingAssembler._append_box_piece(st_dark, Vector3(0.44, 0.10, 0.12), Vector3(-half_w + 0.55, deck_y + 0.68, pz))
 
-	return building
+	quay_body.add_child(BuildingAssembler._commit_piece_streams(streams, "WharfQuayPieceAssemblyMesh"))
+
+	# Physics collision for quay platform (low-profile 0.30m deck so floor_snap_length climbs effortlessly)
+	var deck_col := CollisionShape3D.new()
+	var box_col := BoxShape3D.new()
+	box_col.size = Vector3(width + 0.6, 0.36, length + 0.6)
+	deck_col.shape = box_col
+	deck_col.position = Vector3(0.0, 0.18, 0.0)
+	quay_body.add_child(deck_col)
+
+	return quay_body
 
 ## Assembles an authentic Norwegian Stockfish Drying Rack (Fiskehjell)
 static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Material) -> StaticBody3D:
 	var rack := StockfishRackInteractable.new()
 	rack.name = "StockfishRack"
 
-	# Compound A-frame Timber Uprights & Ridge Pole
 	var st_rack := SurfaceTool.new()
 	st_rack.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st_rack.set_material(mat_frame)
@@ -209,7 +213,7 @@ static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Ma
 	cyl_l.top_radius = 0.09
 	cyl_l.bottom_radius = 0.11
 	cyl_l.height = 2.6
-	for z_pos in [-half_len, half_len]:
+	for z_pos in [-half_len, 0.0, half_len]:
 		for sign_x in [-1.0, 1.0]:
 			var rot_leg := Basis(Vector3.FORWARD, -sign_x * deg_to_rad(15.0))
 			st_rack.append_from(cyl_l, 0, Transform3D(rot_leg, Vector3(sign_x * 0.65, 1.3, z_pos)))
@@ -227,7 +231,6 @@ static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Ma
 	frame_mi.mesh = st_rack.commit()
 	rack.add_child(frame_mi)
 
-	# Suspended Bundles of Dried Cod (Tørrfisk)
 	var fish_bundle := MeshInstance3D.new()
 	var box_f := BoxMesh.new()
 	box_f.size = Vector3(0.45, 0.85, length * 0.88)
@@ -237,7 +240,6 @@ static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Ma
 	rack.add_child(fish_bundle)
 	rack.fish_bundle_mesh = fish_bundle
 
-	# Physical collision shape for settler interaction
 	var col := CollisionShape3D.new()
 	var col_box := BoxShape3D.new()
 	col_box.size = Vector3(1.6, 2.6, length + 0.4)
@@ -252,42 +254,38 @@ static func _assemble_merchant_counter(mat_frame: Material, mat_top: Material, m
 	var stall := MerchantInteractable.new()
 	stall.name = "HansaMerchantKontor"
 
-	# Heavy Timber Counter Table
-	var counter_m := MeshInstance3D.new()
-	var box_c := BoxMesh.new()
-	box_c.size = Vector3(1.6, 0.95, 2.8)
-	counter_m.mesh = box_c
-	counter_m.position = Vector3(0, 0.48, 0)
-	counter_m.material_override = mat_top
-	stall.add_child(counter_m)
+	var streams: Dictionary = {}
+	var st_top := BuildingAssembler._get_stream(streams, "wood_weathered")
+	var st_frame := BuildingAssembler._get_stream(streams, "wood_dark")
+	var st_canopy := BuildingAssembler._get_stream(streams, "ochre_wall")
+	var st_iron := BuildingAssembler._get_stream(streams, "iron_hardware")
+
+	# Counter legs, planked front & top table planks
+	BuildingAssembler._append_box_piece(st_top, Vector3(1.6, 0.92, 2.8), Vector3(0, 0.46, 0))
+	BuildingAssembler._append_box_piece(st_frame, Vector3(1.72, 0.08, 2.95), Vector3(0, 0.94, 0))
+
+	# 4 corner canopy posts
+	for sx in [-0.75, 0.75]:
+		for sz in [-1.3, 1.3]:
+			BuildingAssembler._append_box_piece(st_frame, Vector3(0.12, 2.15, 0.12), Vector3(sx, 1.08, sz))
+
+	# Pitched merchant cloth awning roof
+	BuildingAssembler._append_box_piece(st_canopy, Vector3(2.1, 0.10, 3.2), Vector3(0, 2.15, 0), Vector3(0, 0, deg_to_rad(-8.0)))
+
+	# 2 Wooden Cargo Barrels with iron hoops beside counter
+	for sign_z: float in [-1.0, 1.0]:
+		var bz: float = sign_z * 1.85
+		BuildingAssembler._append_cyl_piece(st_frame, 0.28, 0.28, 0.76, Vector3(0.5, 0.38, bz))
+		BuildingAssembler._append_cyl_piece(st_iron, 0.29, 0.29, 0.05, Vector3(0.5, 0.56, bz))
+		BuildingAssembler._append_cyl_piece(st_iron, 0.29, 0.29, 0.05, Vector3(0.5, 0.20, bz))
+
+	stall.add_child(BuildingAssembler._commit_piece_streams(streams, "MerchantCounterPieceMesh"))
 
 	var col := CollisionShape3D.new()
 	var box_col := BoxShape3D.new()
 	box_col.size = Vector3(1.6, 1.0, 2.8)
 	col.shape = box_col
-	col.position = counter_m.position
+	col.position = Vector3(0, 0.5, 0)
 	stall.add_child(col)
-
-	# Striped Merchant Cloth Awning / Canopy Roof
-	var awning := MeshInstance3D.new()
-	var box_a := BoxMesh.new()
-	box_a.size = Vector3(2.0, 0.1, 3.2)
-	awning.mesh = box_a
-	awning.position = Vector3(0, 2.1, 0)
-	awning.rotation.z = deg_to_rad(-8.0)
-	awning.material_override = mat_canopy
-	stall.add_child(awning)
-
-	# 2 Wooden Cargo Barrels beside counter
-	for sign_z in [-1.0, 1.0]:
-		var barrel := MeshInstance3D.new()
-		var cyl_b := CylinderMesh.new()
-		cyl_b.top_radius = 0.28
-		cyl_b.bottom_radius = 0.28
-		cyl_b.height = 0.75
-		barrel.mesh = cyl_b
-		barrel.position = Vector3(0.9, 0.38, sign_z * 0.9)
-		barrel.material_override = mat_frame
-		stall.add_child(barrel)
 
 	return stall

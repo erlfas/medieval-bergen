@@ -51,6 +51,8 @@ var terrain_generator: Node = null
 
 func _ready() -> void:
 	_ensure_setup()
+	set_process(false)
+	set_physics_process(false)
 
 func _ensure_setup() -> void:
 	if model_pivot != null:
@@ -344,6 +346,9 @@ func _process(delta: float) -> void:
 		if trunk_shake_timer <= 0.0 and model_pivot:
 			model_pivot.position = Vector3.ZERO
 
+	if focus_timer <= 0.0 and trunk_shake_timer <= 0.0:
+		set_process(false)
+
 func _physics_process(delta: float) -> void:
 	if not is_falling:
 		return
@@ -457,6 +462,7 @@ func set_settler_focus(settler: Node) -> void:
 	if settler != null and settler is Node3D:
 		focused_settler = settler as Node3D
 		focus_timer = 2.5
+		set_process(true)
 		if progress_tracker:
 			progress_tracker.visible = true
 		if trajectory_indicator:
@@ -487,6 +493,7 @@ func chop(actor: Node) -> void:
 	_ensure_setup()
 	set_settler_focus(actor)
 	focus_timer = 4.0 # Keep displayed for 4 seconds after chopping
+	set_process(true)
 
 	if actor and actor is Node3D:
 		var away_dir: Vector3 = _get_pos(self) - _get_pos(actor as Node3D)
@@ -513,6 +520,8 @@ func chop(actor: Node) -> void:
 
 func fell_tree(_harvester: Node) -> void:
 	is_falling = true
+	set_process(false)
+	set_physics_process(true)
 
 	# Hide tracker and ground indicator during falling animation
 	if progress_tracker:

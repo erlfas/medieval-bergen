@@ -38,15 +38,19 @@ func _ready() -> void:
 
 	_refresh_display()
 
+var _last_hour: int = -1
+var _last_minute: int = -1
+
 func _process(_delta: float) -> void:
-	# Continuously refresh time display
-	if time_manager:
+	if time_manager and (time_manager.current_minute != _last_minute or time_manager.current_hour != _last_hour):
 		_update_time_label()
 
 func _refresh_display() -> void:
 	if not time_manager:
 		return
 
+	_last_hour = -1
+	_last_minute = -1
 	_update_time_label()
 	label_date.text = time_manager.get_formatted_date()
 	if season_manager:
@@ -59,6 +63,8 @@ func _refresh_display() -> void:
 	label_day_counter.text = "Dag %d" % (time_manager.total_days_survived + 1)
 
 func _update_time_label() -> void:
+	_last_hour = time_manager.current_hour
+	_last_minute = time_manager.current_minute
 	label_time.text = time_manager.get_formatted_time()
 
 	# Display Day/Dawn/Dusk/Night period indicator
