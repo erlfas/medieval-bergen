@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode cull_back, diffuse_lambert, specular_schlick_ggx;
 
 // Bergen 1360 - Atmospheric Medieval Norwegian Terrain Shader
 // Features:

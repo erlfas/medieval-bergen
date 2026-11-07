@@ -400,11 +400,33 @@ func _generate_bryggen_waterfront() -> void:
 		cf_starter.global_position = Vector3(148.0, sy, 146.0)
 
 func _create_terrain_material() -> Material:
+	if terrain_shader != null:
+		var mat := ShaderMaterial.new()
+		mat.shader = terrain_shader
+		if grass_texture != null:
+			mat.set_shader_parameter("grass_albedo", grass_texture)
+		if grass_normal_map != null:
+			mat.set_shader_parameter("grass_normal", grass_normal_map)
+		if rock_texture != null:
+			mat.set_shader_parameter("rock_albedo", rock_texture)
+		if rock_normal_map != null:
+			mat.set_shader_parameter("rock_normal", rock_normal_map)
+		if scree_texture != null:
+			mat.set_shader_parameter("scree_albedo", scree_texture)
+		if scree_normal_map != null:
+			mat.set_shader_parameter("scree_normal", scree_normal_map)
+		if macro_noise_map != null:
+			mat.set_shader_parameter("macro_noise", macro_noise_map)
+		return mat
+
 	var fallback := StandardMaterial3D.new()
 	fallback.vertex_color_use_as_albedo = true
-	fallback.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fallback.albedo_texture = grass_texture
+	fallback.normal_enabled = true
+	fallback.normal_texture = grass_normal_map
+	fallback.uv1_scale = Vector3(120.0, 120.0, 1.0)
 	fallback.roughness = 0.85
-	fallback.cull_mode = BaseMaterial3D.CULL_DISABLED
+	fallback.cull_mode = BaseMaterial3D.CULL_BACK
 	return fallback
 
 func _ensure_water_plane() -> void:

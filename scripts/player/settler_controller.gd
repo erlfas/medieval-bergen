@@ -56,6 +56,7 @@ var is_climbing: bool = false
 var climb_normal: Vector3 = Vector3.BACK
 var is_on_rope: bool = false
 var active_rope: ClimbingRope = null
+var _climb_cooldown: float = 0.0
 
 var cam_yaw: float = 0.0
 var cam_pitch: float = deg_to_rad(-8.0)
@@ -265,6 +266,9 @@ func toggle_torch() -> void:
 			torch_light.visible = is_holding_torch
 
 func _physics_process(delta: float) -> void:
+	if _climb_cooldown > 0.0:
+		_climb_cooldown -= delta
+
 	# Direction relative to camera view (Task 1)
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 	var cam_forward := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
@@ -298,7 +302,7 @@ func _physics_process(delta: float) -> void:
 	# -------------------------------------------------------------
 	# 2. MOUNTAIN CLIFF DETECTION & ROCK CLIMBING ENGAGE (Task 7)
 	# -------------------------------------------------------------
-	if not is_climbing and not is_swimming and not is_on_rope and not is_carrying_log:
+	if _climb_cooldown <= 0.0 and not is_climbing and not is_swimming and not is_on_rope and not is_carrying_log:
 		var cliff_info := _check_steep_cliff()
 		if not cliff_info.is_empty():
 			var moving_into_cliff := input_dir.y < -0.2
@@ -351,6 +355,15 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector3.ZERO
 
 	elif is_climbing:
+		# Check if cliff contact is maintained - disengage immediately if moving into open air or off cliff
+		var track_info := _check_steep_cliff()
+		if track_info.is_empty():
+			is_climbing = false
+			_climb_cooldown = 0.25
+			velocity = Vector3.DOWN * 2.0
+		else:
+			climb_normal = track_info.normal
+
 		# FREEFORM ROCK CLIMBING (Task 7)
 		# W climbs UP, S climbs DOWN, A climbs LEFT, D climbs RIGHT
 		var cliff_right := Vector3.UP.cross(climb_normal).normalized()
@@ -370,11 +383,13 @@ func _physics_process(delta: float) -> void:
 		# Exhaustion slip if stamina depletes
 		if survival_stats.stamina <= 0.0:
 			is_climbing = false
+			_climb_cooldown = 1.0
 			velocity = climb_normal * 1.5 + Vector3.DOWN * 2.0
 
 		# Push off / Jump off cliff face
 		if Input.is_action_just_pressed("jump"):
 			is_climbing = false
+			_climb_cooldown = 0.45
 			velocity = climb_normal * 4.2 + Vector3.UP * 3.6
 
 		# Vault onto top ledge if reached
@@ -390,16 +405,13 @@ func _physics_process(delta: float) -> void:
 					if l_norm.angle_to(Vector3.UP) < deg_to_rad(45.0):
 						global_position = ledge_hit.position + Vector3(0.0, 0.1, 0.0)
 						is_climbing = false
+						_climb_cooldown = 0.5
 						velocity = Vector3.ZERO
 
 		# Reached ground at base of cliff
 		if input_dir.y > 0.2 and is_on_floor():
 			is_climbing = false
-
-		# Continuous normal updates as settler traverses cliff
-		var track_info := _check_steep_cliff()
-		if not track_info.is_empty():
-			climb_normal = track_info.normal
+			_climb_cooldown = 0.2
 
 	elif is_swimming:
 		# SWIMMING MECHANICS (Task 2)
@@ -523,10 +535,10 @@ func _check_steep_cliff() -> Dictionary:
 		return {}
 
 	var chest_origin := global_position + Vector3(0.0, 1.05, 0.0)
-	var forward_dir := -global_transform.basis.z
+	var forward_dir := -climb_normal if is_climbing else -global_transform.basis.z
 
-	# 1. Forward raycast check
-	var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + forward_dir * 1.35)
+	# 1. Forward raycast check - physical contact within arm's reach (1.1m)
+	var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + forward_dir * 1.1)
 	query.exclude = [get_rid()]
 	var hit := space_state.intersect_ray(query)
 
@@ -542,18 +554,20 @@ func _check_steep_cliff() -> Dictionary:
 		if wall_n.angle_to(Vector3.UP) >= deg_to_rad(50.0):
 			return {"hit": true, "normal": wall_n, "position": global_position - wall_n * 0.45, "distance": 0.45}
 
-	# 3. Direct terrain slope sampling
+	# 3. Direct terrain slope sampling (ONLY when adjacent to ground surface)
 	if terrain_generator:
 		var px := global_position.x
 		var pz := global_position.z
 		var h_center := terrain_generator.sample_height(px, pz)
-		var step_dist := 0.75
-		var h_fwd := terrain_generator.sample_height(px + forward_dir.x * step_dist, pz + forward_dir.z * step_dist)
-		var rise := h_fwd - h_center
-		var slope_deg := rad_to_deg(atan2(rise, step_dist))
-		if slope_deg >= 50.0:
-			var estimated_norm := Vector3(-forward_dir.x, 0.25, -forward_dir.z).normalized()
-			return {"hit": true, "normal": estimated_norm, "position": global_position + forward_dir * 0.6, "distance": 0.6}
+		# Settler must be within touching reach of terrain surface (<= 1.8m vertical)
+		if absf(global_position.y - h_center) < 1.8:
+			var step_dist := 0.75
+			var h_fwd := terrain_generator.sample_height(px + forward_dir.x * step_dist, pz + forward_dir.z * step_dist)
+			var rise := h_fwd - h_center
+			var slope_deg := rad_to_deg(atan2(rise, step_dist))
+			if slope_deg >= 50.0:
+				var estimated_norm := Vector3(-forward_dir.x, 0.25, -forward_dir.z).normalized()
+				return {"hit": true, "normal": estimated_norm, "position": global_position + forward_dir * 0.6, "distance": 0.6}
 
 	return {}
 
