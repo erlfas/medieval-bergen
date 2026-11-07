@@ -33,6 +33,8 @@ func _ready() -> void:
 
 	if season_manager:
 		season_manager.weather_changed.connect(_on_weather_changed)
+		if season_manager.has_signal("weather_state_changed"):
+			season_manager.weather_state_changed.connect(_on_weather_state_changed)
 
 	_refresh_display()
 
@@ -47,12 +49,14 @@ func _refresh_display() -> void:
 
 	_update_time_label()
 	label_date.text = time_manager.get_formatted_date()
-	label_season.text = time_manager.get_season_name()
+	if season_manager:
+		label_season.text = "%s • %s" % [time_manager.get_season_name(), season_manager.get_weather_display_name()]
+		var wet_indicator := " [Våt]" if season_manager.is_raining else ""
+		label_temp.text = "%+.1f°C%s" % [season_manager.current_temperature_celsius, wet_indicator]
+	else:
+		label_season.text = time_manager.get_season_name()
 	label_age.text = "Alder: %d år" % time_manager.settler_age
 	label_day_counter.text = "Dag %d" % (time_manager.total_days_survived + 1)
-
-	if season_manager:
-		label_temp.text = "%+.1f°C" % season_manager.current_temperature_celsius
 
 func _update_time_label() -> void:
 	label_time.text = time_manager.get_formatted_time()
@@ -77,8 +81,19 @@ func _on_day_advanced(_d: int, _m: int, _y: int) -> void:
 func _on_birthday(new_age: int) -> void:
 	label_age.text = "Alder: %d år (Bursdag!)" % new_age
 
-func _on_season_changed(_season: TimeManager.Season, season_name: String) -> void:
-	label_season.text = season_name
+func _on_season_changed(_season: TimeManager.Season, _season_name: String) -> void:
+	if time_manager and season_manager:
+		label_season.text = "%s • %s" % [time_manager.get_season_name(), season_manager.get_weather_display_name()]
+	elif time_manager:
+		label_season.text = time_manager.get_season_name()
 
 func _on_weather_changed(_rain: bool, _snow: bool, temp: float) -> void:
-	label_temp.text = "%+.1f°C" % temp
+	if season_manager:
+		var wet_indicator := " [Våt]" if season_manager.is_raining else ""
+		label_temp.text = "%+.1f°C%s" % [temp, wet_indicator]
+	else:
+		label_temp.text = "%+.1f°C" % temp
+
+func _on_weather_state_changed(_state: int, _state_name: String) -> void:
+	if time_manager and season_manager:
+		label_season.text = "%s • %s" % [time_manager.get_season_name(), season_manager.get_weather_display_name()]

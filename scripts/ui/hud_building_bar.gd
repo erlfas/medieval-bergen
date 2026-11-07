@@ -152,10 +152,10 @@ func _update_quest_tracker() -> void:
 	var logs := inventory.get_count("timber_log") if inventory else 0
 	var stones := inventory.get_count("stone") if inventory else 0
 
-	var log_check := "✓" if (logs >= 6 or (logs >= 5 and is_carrying_log) or has_built_cabin) else "○"
-	var stone_check := "✓" if (stones >= 4 or has_built_cabin) else "○"
-	var build_check := "✓" if (player_builder and player_builder.is_build_mode) else "○"
-	var placed_check := "✓" if has_built_cabin else "○"
+	var log_check := "[X]" if (logs >= 6 or (logs >= 5 and is_carrying_log) or has_built_cabin) else "[ ]"
+	var stone_check := "[X]" if (stones >= 4 or has_built_cabin) else "[ ]"
+	var build_check := "[X]" if (player_builder and player_builder.is_build_mode) else "[ ]"
+	var placed_check := "[X]" if has_built_cabin else "[ ]"
 
 	var text := ""
 	text += "%s 1. Samle tømmer (6 logs) [%d/6%s]\n" % [log_check, logs, " +1 i favnen" if is_carrying_log else ""]
@@ -163,8 +163,8 @@ func _update_quest_tracker() -> void:
 	text += "%s 3. Åpne byggemodus [B]\n" % [build_check]
 	text += "%s 4. Roter døråpning [R] & plasser [L-Klikk]\n" % [placed_check]
 	if has_built_cabin:
-		text += "🔥 Laftehytte fullført! Gå inn og varm deg ved Åre-ildstedet."
+		text += "* Laftehytte fullført! Gå inn og varm deg ved Åre-ildstedet."
 	else:
-		text += "💡 Trykk [C] for Byggebok (How to build guide)"
+		text += "* Trykk [C] for Byggebok (How to build guide)"
 
 	label_quest_status.text = text

@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://dp6m5k3u5o2a4"]
+[gd_scene load_steps=16 format=3 uid="uid://dp6m5k3u5o2a4"]
 
 [ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
 [ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
@@ -14,6 +14,7 @@
 [ext_resource type="Script" path="res://scripts/player/box_man_model.gd" id="12_boxman"]
 [ext_resource type="Script" path="res://scripts/player/equipment_manager.gd" id="13_equip"]
 [ext_resource type="PackedScene" uid="uid://c6v2n4q1r7tp9" path="res://scenes/ui/hud_hotbar.tscn" id="14_hotbar"]
+[ext_resource type="Script" path="res://scripts/environment/weather_visual_controller.gd" id="15_weather"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.48, 0.65, 1)
@@ -63,14 +64,20 @@ sun_light = NodePath("../SunLight")
 world_environment = NodePath("../WorldEnvironment")
 bergen_latitude_deg = 60.4
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." groups=["world_environment"]]
 environment = SubResource("Environment_main")
 
-[node name="SunLight" type="DirectionalLight3D" parent="."]
+[node name="SunLight" type="DirectionalLight3D" parent="." groups=["sun_light"]]
 transform = Transform3D(0.866025, -0.25, 0.433013, 0, 0.866025, 0.5, -0.5, -0.433013, 0.75, 0, 150, 0)
 light_color = Color(1, 0.95, 0.88, 1)
 light_energy = 1.2
 shadow_enabled = false
+
+[node name="WeatherVisualController" type="Node3D" parent="." node_paths=PackedStringArray("season_manager", "world_environment", "sun_light")]
+script = ExtResource("15_weather")
+season_manager = NodePath("../SeasonManager")
+world_environment = NodePath("../WorldEnvironment")
+sun_light = NodePath("../SunLight")
 
 [node name="BergenTerrain" type="Node3D" parent="." groups=["terrain_generator"]]
 script = ExtResource("4_terrain")

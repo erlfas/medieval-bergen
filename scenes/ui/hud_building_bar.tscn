@@ -89,7 +89,7 @@ theme_override_constants/separation = 4
 layout_mode = 2
 theme_override_colors/font_color = Color(0.96, 0.88, 0.65, 1)
 theme_override_font_sizes/font_size = 13
-text = "⚔️ Oppdrag: Bygg Laftehytte"
+text = "Oppdrag: Bygg Laftehytte"
 
 [node name="HSeparator" type="HSeparator" parent="PanelQuest/VBox"]
 layout_mode = 2
@@ -98,7 +98,7 @@ layout_mode = 2
 layout_mode = 2
 theme_override_colors/font_color = Color(0.82, 0.84, 0.86, 1)
 theme_override_font_sizes/font_size = 11
-text = "○ 1. Samle tømmer (6 logs)\n○ 2. Samle stein (4 stein)\n○ 3. Åpne byggemodus [B]\n○ 4. Roter døråpning [R] & plasser [L-Klikk]\n💡 Trykk [C] for Byggebok (Guide)"
+text = "[ ] 1. Samle tømmer (6 logs)\n[ ] 2. Samle stein (4 stein)\n[ ] 3. Åpne byggemodus [B]\n[ ] 4. Roter døråpning [R] & plasser [L-Klikk]\n* Trykk [C] for Byggebok (Guide)"
 
 [node name="PanelCarriedLog" type="PanelContainer" parent="."]
 visible = false
@@ -120,7 +120,7 @@ theme_override_styles/panel = SubResource("StyleBoxFlat_carried")
 layout_mode = 2
 theme_override_colors/font_color = Color(1, 0.9, 0.6, 1)
 theme_override_font_sizes/font_size = 12
-text = "🌲 BÆRER TØMMERSTOKK — [E]/[G] Slipp | [B] Bygg (-1 kostnad)"
+text = "BÆRER TØMMERSTOKK — [E]/[G] Slipp | [B] Bygg (-1 kostnad)"
 horizontal_alignment = 1
 
 [node name="PanelBuild" type="PanelContainer" parent="."]
@@ -219,7 +219,7 @@ text = "Tau (Rope): 2"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.96, 0.88, 0.65, 1)
 theme_override_font_sizes/font_size = 11
-text = "📖 Byggebok [C]"
+text = "Byggebok [C]"
 
 [node name="ModalCabinGuide" type="PanelContainer" parent="."]
 visible = false
