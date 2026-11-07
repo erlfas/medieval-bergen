@@ -329,3 +329,83 @@ Before blast furnaces, medieval Norwegian settlers excavated bog iron ore (*myrm
    - **Offscreen OpenGL3 Frame Render:** Execute via `xvfb-run -a godot --rendering-driver opengl3` to measure draw calls and inspect viewport framebuffers.
    - **CDP Headless Chromium Verification:** Run headless Chromium with `--use-angle=swiftshader-webgl` and CDP monitoring to verify zero WebGL context losses and zero unhandled JavaScript exceptions.
 
+---
+
+## 19. Kinematic Character Movement Physics & Locomotion Feel
+
+### The Problem: Instant Velocity Snapping and Floatiness
+Initial player movement assigned velocities instantaneously (`velocity.x = direction.x * speed`). Releasing movement keys abruptly zeroed velocity without accounting for frame delta. Air movement permitted instant 180° reversals, and jumping failed if the Spacebar was pressed even a single frame prior to touching the floor.
+
+### Technical Implementation (`settler_controller.gd`)
+1. **Ground Inertia & Friction Model:**
+   - Implemented separate ground acceleration ($a_{\text{accel}} = 15.0\,\text{m/s}^2$) and friction deceleration ($a_{\text{decel}} = 24.0\,\text{m/s}^2$).
+   - **Active Direction Reversal Braking:** When the dot product between current horizontal velocity and target input is negative ($\vec{v}_{\text{curr}} \cdot \vec{v}_{\text{targ}} < -0.2$), a heightened braking rate ($a_{\text{brake}} = 34.0\,\text{m/s}^2$) engages, preventing ice-skating drift while feeling physically grounded.
+2. **Coyote Time & Jump Input Buffering:**
+   - **Coyote Time:** Grace window ($\tau_{\text{coyote}} = 0.12\,\text{s}$) allowing jumps after walking off wharves, cliffs, or stair ledges.
+   - **Jump Input Buffering:** Pre-touchdown window ($\tau_{\text{buffer}} = 0.14\,\text{s}$) capturing jump input slightly before ground touchdown.
+3. **Variable Gravity & Air Momentum:**
+   - Snappier falling gravity curve ($g_{\text{fall}} = 1.35 \times g_{\text{default}}$) producing crisp, physical jump arcs.
+   - Air steering acceleration limited to $5.0\,\text{m/s}^2$, preserving jumping momentum.
+4. **Slope Traversal & Anti-Snagging:**
+   - Floor snapping (`floor_snap_length = 0.35`, `floor_constant_speed = true`, `floor_max_angle = 48^\circ`) eliminates micro-bouncing down hillsides.
+   - Speed modulates according to floor incline angle $\theta$: uphill movement experiences up to $35\%$ speed penalty, while downhill traversal provides gentle natural acceleration.
+
+---
+
+## 20. Procedural Locomotion Animation, Torso Banking & Weight Simulation
+
+### Technical Implementation (`box_man_model.gd` & `settler_controller.gd`)
+1. **Dynamic Torso Banking:**
+   - Calculates character turning angular velocity $\omega_{\text{yaw}} = \Delta \theta / \Delta t$.
+   - Applies roll tilt ($\phi \in [-8^\circ, +8^\circ]$) into the curve:
+     $$\phi_{\text{roll}} = \text{clamp}(-0.22\,\omega_{\text{yaw}}, -8^\circ, +8^\circ)$$
+2. **Acceleration & Sprint Forward Pitch Lean:**
+   - Leans the torso forward ($\theta_{\text{pitch}} \approx +8^\circ$) during sprints and brisk movement.
+   - Gaze stabilization: head counters torso pitch and roll ($-\theta_{\text{pitch}} \times 0.35$ and $-\phi_{\text{roll}} \times 0.45$) to keep player eyes level on the horizon.
+3. **Stride Cadence & Foot-Plant Matching:**
+   - Dynamically scales leg swing phase cycle with true ground velocity:
+     $$\Delta \text{stride} = \Delta t \times \text{clamp}(v_{\text{horiz}} \times 2.2, 4.0, 15.0)$$
+     Eliminates visual foot-sliding across flat wharves and steep slopes alike.
+4. **Touchdown Landing Squash & Knee Flare:**
+   - Senses vertical touchdown velocity on the transition from airborne to grounded:
+     $$y_{\text{squash}} = \text{clamp}(|v_{\text{fall}}| \times 0.018, 0.035, 0.12\,\text{m})$$
+   - Torso and head depress vertically while knees flare outward ($\pm y_{\text{squash}} \times 0.35\,\text{rad}$), smoothly recovering via a spring-damper ($\lambda = 11.0$).
+5. **Camera Sprint FOV Expansion:**
+   - Camera dynamically expands field of view ($75^\circ \to 79^\circ$) during sprinting, amplifying the sensation of speed.
+
+---
+
+## 21. Realistic WebGL 2.0 Fjord Water Shader Architecture
+
+### Technical Implementation (`shaders/fjord_water.gdshader` & `bergen_terrain_generator.gd`)
+1. **Multi-Harmonic Gerstner Wave Displacement:**
+   - Combines three directional sine waves in the vertex stage: primary Atlantic swell (ENE drift), secondary cross-swell, and coastal chop.
+   - Recalculates analytic surface normal derivatives directly from spatial wave gradients $\partial w / \partial x$ and $\partial w / \partial z$, producing crisp sunlight specular highlights.
+   - Water mesh subdivision increased from $16 \times 16$ to $128 \times 128$ quads for smooth wave curvature at $< 32\text{k}$ triangles.
+2. **Beer-Lambert Depth Color Absorption:**
+   - Reconstructs linear eye depth using `hint_depth_texture` and `INV_PROJECTION_MATRIX`.
+   - Transitions smoothly from shallow coastal turquoise (`#1F6670`) showing seabed gravel to deep cold Byfjorden Atlantic navy (`#081729`).
+3. **Shoreline Contact Foam & Wave Crest White-Caps:**
+   - Softstep contact foam band where water surface intersects shore terrain and Bryggen wooden stilts.
+   - Dynamic white-cap crest foam on wave peaks exceeding $55\%$ maximum amplitude.
+4. **Dual Scrolling Micro-Ripple Normal Maps:**
+   - Procedurally generated seamless normal maps (`NoiseTexture2D` with simplex noise) scrolling in opposing diagonal directions, creating rich water surface micro-turbulence.
+5. **Schlick Fresnel Grazing Sheen:**
+   - Grazing angles reflect atmospheric sky tones, preserving depth clarity when looking directly downward.
+
+---
+
+## 22. Water-Settler Interaction, Wading Physics & Wave-Synchronized Buoyancy
+
+### Technical Implementation
+1. **Three-Tier Water State Machine:**
+   - **Dry Land:** Full unrestricted ground locomotion.
+   - **Shallow Wading ($0.08\,\text{m} < \text{submergence} < 1.05\,\text{m}$):** Settler remains on the seabed; progressive water drag scales velocity down to $55\%$ at chest depth. Cold water steadily increases survival wetness.
+   - **Deep Swimming ($\text{submergence} \ge 1.05\,\text{m}$):** Buoyancy engages, floating the settler atop the undulating wave surface.
+2. **Synchronized GDScript Wave Sampling (`sample_water_height`):**
+   - Implemented an exact analytical mathematical clone of the shader's Gerstner wave displacement on `BergenTerrainGenerator`.
+   - Character buoyancy and floating props sample the dynamic wave height in real time, bobbing in frame-perfect sync with visual wave peaks and troughs.
+3. **Procedural Water Surface Ripples & Wake FX:**
+   - `_spawn_water_ripple(pos)` instantiates lightweight torus ring meshes that expand ($0.5\,\text{m} \to 3.2\,\text{m}$) and fade to alpha 0 over $0.65\,\text{s}$ via tweens whenever the settler takes wading steps or swimming strokes.
+   - WebGL 2.0 draw call overhead is strictly bounded through automatic queue-free recycling.
+
