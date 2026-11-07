@@ -62,11 +62,13 @@ var terrain_generator: BergenTerrainGenerator
 
 # State flags for swimming and mountain climbing
 var is_swimming: bool = false
+var is_wading: bool = false
 var is_climbing: bool = false
 var climb_normal: Vector3 = Vector3.BACK
 var is_on_rope: bool = false
 var active_rope: ClimbingRope = null
 var _climb_cooldown: float = 0.0
+var _ripple_timer: float = 0.0
 
 var cam_yaw: float = 0.0
 var cam_pitch: float = deg_to_rad(-8.0)
@@ -75,6 +77,34 @@ var current_cam_distance: float = 3.2
 # Stage 1 Kinematic jump buffering & coyote timers
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
+
+func _spawn_water_ripple(pos: Vector3) -> void:
+	if not is_inside_tree():
+		return
+	var ripple := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.20
+	torus.outer_radius = 0.35
+	torus.rings = 16
+	torus.ring_segments = 6
+	ripple.mesh = torus
+
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.85, 0.95, 1.0, 0.65)
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ripple.material_override = mat
+
+	ripple.position = pos
+	var parent_node := get_parent()
+	if parent_node:
+		parent_node.add_child(ripple)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ripple, "scale", Vector3(3.2, 1.0, 3.2), 0.65).from(Vector3(0.5, 1.0, 0.5))
+	tween.tween_property(mat, "albedo_color:a", 0.0, 0.65)
+	tween.chain().tween_callback(ripple.queue_free)
 
 func _enter_tree() -> void:
 	_ensure_box_man_model()
@@ -308,28 +338,39 @@ func _physics_process(delta: float) -> void:
 	var direction := (cam_right * input_dir.x - cam_forward * input_dir.y).normalized()
 
 	var sea_level := 0.0
+	var water_surface_y := sea_level + water_surface_offset
 	if terrain_generator:
 		sea_level = terrain_generator.sea_level
-	var water_surface_y := sea_level + water_surface_offset
+		if terrain_generator.has_method("sample_water_height"):
+			water_surface_y = terrain_generator.sample_water_height(global_position.x, global_position.z) + water_surface_offset
+		else:
+			water_surface_y = sea_level + water_surface_offset
 
 	var ground_h := sea_level - 10.0
 	if terrain_generator:
 		ground_h = terrain_generator.sample_height(global_position.x, global_position.z)
 
 	# -------------------------------------------------------------
-	# 1. WATER & SWIMMING STATE TRANSITION (Task 2)
+	# 1. WATER, WADING & SWIMMING STATE TRANSITION (Stage 4)
 	# -------------------------------------------------------------
-	if not is_swimming:
-		# Enter water when submerged at or below water surface in water zone
-		if global_position.y <= (water_surface_y + 0.1) and ground_h < (water_surface_y - 0.05):
+	var water_submergence := water_surface_y - global_position.y
+	var water_column := water_surface_y - ground_h
+
+	if water_submergence > 0.08 and water_column > 0.12:
+		if water_submergence >= 1.05 or not is_on_floor():
+			# Deep swimming
 			is_swimming = true
+			is_wading = false
 			is_climbing = false
 			is_on_rope = false
 			active_rope = null
-	else:
-		# Exit water when standing on solid ground above water surface
-		if ground_h >= (water_surface_y - 0.08) and is_on_floor():
+		else:
+			# Shallow wading
+			is_wading = true
 			is_swimming = false
+	else:
+		is_wading = false
+		is_swimming = false
 
 	# -------------------------------------------------------------
 	# 2. MOUNTAIN CLIFF DETECTION & ROCK CLIMBING ENGAGE (Task 7)
@@ -446,35 +487,36 @@ func _physics_process(delta: float) -> void:
 			_climb_cooldown = 0.2
 
 	elif is_swimming:
-		# SWIMMING MECHANICS (Task 2)
-		# Buoyancy keeps character afloat at water surface (y = sea_level + 0.2)
+		# SWIMMING MECHANICS (Stage 4 Dynamic Wave Buoyancy)
+		# Buoyancy keeps character afloat dynamically atop undulating waves
 		if global_position.y < water_surface_y:
 			var depth := water_surface_y - global_position.y
-			velocity.y = lerpf(velocity.y, depth * 7.5 + 0.5, delta * 6.0)
-			var wave_bob := sin(Time.get_ticks_msec() * 0.003) * 0.035
-			global_position.y = lerpf(global_position.y, water_surface_y + wave_bob, delta * 4.0)
-		elif global_position.y > water_surface_y + 0.4:
+			velocity.y = lerpf(velocity.y, depth * 8.0 + 0.6, delta * 7.0)
+			global_position.y = lerpf(global_position.y, water_surface_y, delta * 5.0)
+		elif global_position.y > water_surface_y + 0.35:
 			velocity.y -= gravity * delta
 		else:
 			velocity.y = lerpf(velocity.y, 0.0, delta * 8.0)
-			global_position.y = lerpf(global_position.y, water_surface_y, delta * 4.0)
+			global_position.y = lerpf(global_position.y, water_surface_y, delta * 5.0)
 
 		# Jump: treading boost or leaping onto shallow shoreline
 		if Input.is_action_just_pressed("jump"):
-			if ground_h >= water_surface_y - 0.6:
+			_spawn_water_ripple(Vector3(global_position.x, water_surface_y + 0.02, global_position.z))
+			if ground_h >= water_surface_y - 0.7:
 				velocity.y = 4.4
 				if direction != Vector3.ZERO:
 					velocity += direction * 3.2
 			else:
-				velocity.y = 2.2
+				velocity.y = 2.4
 
 		# Swim speed & gentle water drag
 		var current_swim_speed := swim_speed
-		var is_swim_sprinting := Input.is_action_pressed("sprint") and survival_stats.stamina > 5.0
+		var is_swim_sprinting := Input.is_action_pressed("sprint") and (survival_stats != null and survival_stats.stamina > 5.0)
 		if is_swim_sprinting:
 			current_swim_speed = swim_sprint_speed
-			survival_stats.consume_stamina(6.5 * delta)
-		else:
+			if survival_stats:
+				survival_stats.consume_stamina(6.5 * delta)
+		elif survival_stats:
 			survival_stats.consume_stamina(1.8 * delta)
 
 		if is_carrying_log:
@@ -486,6 +528,12 @@ func _physics_process(delta: float) -> void:
 			if is_third_person:
 				var target_heading := atan2(-direction.x, -direction.z)
 				rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+
+			# Swimming stroke surface ripples
+			_ripple_timer -= delta
+			if _ripple_timer <= 0.0:
+				_ripple_timer = 0.45
+				_spawn_water_ripple(Vector3(global_position.x, water_surface_y + 0.02, global_position.z))
 		else:
 			# Gentle water drag deceleration
 			velocity.x = move_toward(velocity.x, 0.0, delta * 4.5)
@@ -496,7 +544,7 @@ func _physics_process(delta: float) -> void:
 			survival_stats.wetness = minf(100.0, survival_stats.wetness + 25.0 * delta)
 
 	else:
-		# NORMAL GROUND / AIR MOVEMENT (Stage 1 Kinematic Physics)
+		# NORMAL GROUND / AIR MOVEMENT (Stage 1 Kinematic Physics & Stage 4 Wading)
 		var on_floor := is_on_floor()
 
 		# Snappier gravity curve: heavier fall gravity for physical, responsive jump arcs
@@ -520,6 +568,20 @@ func _physics_process(delta: float) -> void:
 
 		if is_sprinting and direction != Vector3.ZERO:
 			survival_stats.consume_stamina(10.0 * delta)
+
+		# Shallow Wading Drag & Wetness (Stage 4)
+		if is_wading:
+			var wading_drag := clampf(1.0 - (water_submergence / 1.1) * 0.45, 0.55, 0.95)
+			speed *= wading_drag
+			if survival_stats:
+				survival_stats.wetness = minf(100.0, survival_stats.wetness + 14.0 * delta)
+
+			# Surface wake ripples when wading in shallow surf
+			if direction != Vector3.ZERO:
+				_ripple_timer -= delta
+				if _ripple_timer <= 0.0:
+					_ripple_timer = 0.38
+					_spawn_water_ripple(Vector3(global_position.x, water_surface_y + 0.02, global_position.z))
 
 		# Slope incline speed modulation
 		var slope_mult := 1.0
