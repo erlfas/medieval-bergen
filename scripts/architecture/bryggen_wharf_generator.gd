@@ -64,29 +64,30 @@ static func create_bryggen_waterfront(origin: Vector3) -> Node3D:
 	deck_col.position = deck_mesh.position
 	quay_body.add_child(deck_col)
 
-	# Water Pilings (Stolper anchored into the fjord bed)
-	for sign_z in [-18.0, -9.0, 0.0, 9.0, 18.0]:
-		var piling := MeshInstance3D.new()
-		var cyl_p := CylinderMesh.new()
-		cyl_p.top_radius = 0.22
-		cyl_p.bottom_radius = 0.25
-		cyl_p.height = 3.2
-		piling.mesh = cyl_p
-		piling.position = Vector3(-6.6, -1.3, sign_z)
-		piling.material_override = mat_wharf_piling
-		quay_body.add_child(piling)
+	# Water Pilings & Mooring Bollards (Compound mesh of mat_wharf_piling)
+	var st_piling := SurfaceTool.new()
+	st_piling.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_piling.set_material(mat_wharf_piling)
 
-	# Mooring Bollards (Fortøyningspåler along seaward edge)
+	var cyl_p := CylinderMesh.new()
+	cyl_p.top_radius = 0.22
+	cyl_p.bottom_radius = 0.25
+	cyl_p.height = 3.2
+	for sign_z in [-18.0, -9.0, 0.0, 9.0, 18.0]:
+		st_piling.append_from(cyl_p, 0, Transform3D(Basis(), Vector3(-6.6, -1.3, sign_z)))
+
+	var cyl_b := CylinderMesh.new()
+	cyl_b.top_radius = 0.16
+	cyl_b.bottom_radius = 0.18
+	cyl_b.height = 0.75
 	for bz in [-15.0, -5.0, 5.0, 15.0]:
-		var bollard := MeshInstance3D.new()
-		var cyl_b := CylinderMesh.new()
-		cyl_b.top_radius = 0.16
-		cyl_b.bottom_radius = 0.18
-		cyl_b.height = 0.75
-		bollard.mesh = cyl_b
-		bollard.position = Vector3(-6.7, 0.65, bz)
-		bollard.material_override = mat_wharf_piling
-		quay_body.add_child(bollard)
+		st_piling.append_from(cyl_b, 0, Transform3D(Basis(), Vector3(-6.7, 0.65, bz)))
+
+	st_piling.generate_tangents()
+	var piling_mi := MeshInstance3D.new()
+	piling_mi.name = "WharfPilingsBollardsCompoundMesh"
+	piling_mi.mesh = st_piling.commit()
+	quay_body.add_child(piling_mi)
 
 	bryggen_root.add_child(quay_body)
 
@@ -198,32 +199,33 @@ static func _assemble_fish_rack(length: float, mat_frame: Material, mat_fish: Ma
 	var rack := Node3D.new()
 	rack.name = "StockfishRack"
 
-	# A-frame Timber Uprights
+	# Compound A-frame Timber Uprights & Ridge Pole
+	var st_rack := SurfaceTool.new()
+	st_rack.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_rack.set_material(mat_frame)
+
 	var half_len := length * 0.5
+	var cyl_l := CylinderMesh.new()
+	cyl_l.top_radius = 0.09
+	cyl_l.bottom_radius = 0.11
+	cyl_l.height = 2.6
 	for z_pos in [-half_len, half_len]:
 		for sign_x in [-1.0, 1.0]:
-			var leg := MeshInstance3D.new()
-			var cyl_l := CylinderMesh.new()
-			cyl_l.top_radius = 0.09
-			cyl_l.bottom_radius = 0.11
-			cyl_l.height = 2.6
-			leg.mesh = cyl_l
-			leg.position = Vector3(sign_x * 0.65, 1.3, z_pos)
-			leg.rotation.z = -sign_x * deg_to_rad(15.0)
-			leg.material_override = mat_frame
-			rack.add_child(leg)
+			var rot_leg := Basis(Vector3.FORWARD, -sign_x * deg_to_rad(15.0))
+			st_rack.append_from(cyl_l, 0, Transform3D(rot_leg, Vector3(sign_x * 0.65, 1.3, z_pos)))
 
-	# Top Horizontal Ridge Pole (Rie)
-	var pole := MeshInstance3D.new()
 	var cyl_p := CylinderMesh.new()
 	cyl_p.top_radius = 0.08
 	cyl_p.bottom_radius = 0.08
 	cyl_p.height = length + 0.4
-	pole.mesh = cyl_p
-	pole.rotation.x = deg_to_rad(90.0)
-	pole.position = Vector3(0, 2.5, 0)
-	pole.material_override = mat_frame
-	rack.add_child(pole)
+	var rot_pole := Basis(Vector3.RIGHT, deg_to_rad(90.0))
+	st_rack.append_from(cyl_p, 0, Transform3D(rot_pole, Vector3(0, 2.5, 0)))
+
+	st_rack.generate_tangents()
+	var frame_mi := MeshInstance3D.new()
+	frame_mi.name = "FishRackFrameCompoundMesh"
+	frame_mi.mesh = st_rack.commit()
+	rack.add_child(frame_mi)
 
 	# Suspended Bundles of Dried Cod (Tørrfisk)
 	var fish_bundle := MeshInstance3D.new()

@@ -105,29 +105,40 @@ func _setup_model_pivot() -> void:
 		_build_default_meshes()
 
 func _build_default_meshes() -> void:
-	var trunk_mesh := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.18
-	cyl.bottom_radius = 0.25
-	cyl.height = 4.0
-	trunk_mesh.mesh = cyl
-	trunk_mesh.position.y = 2.0
+	var trunk_mesh := CylinderMesh.new()
+	trunk_mesh.top_radius = 0.18
+	trunk_mesh.bottom_radius = 0.25
+	trunk_mesh.height = 4.0
 	var trunk_mat := StandardMaterial3D.new()
 	trunk_mat.albedo_color = Color(0.32, 0.22, 0.14) if tree_type == TreeType.SPRUCE else Color(0.9, 0.9, 0.85)
-	trunk_mesh.material_override = trunk_mat
-	model_pivot.add_child(trunk_mesh)
 
-	var canopy_mesh := MeshInstance3D.new()
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.05
 	cone.bottom_radius = 1.6 if tree_type == TreeType.SPRUCE else 1.9
 	cone.height = 5.0 if tree_type == TreeType.SPRUCE else 3.5
-	canopy_mesh.mesh = cone
-	canopy_mesh.position.y = 5.2 if tree_type == TreeType.SPRUCE else 4.0
 	var canopy_mat := StandardMaterial3D.new()
 	canopy_mat.albedo_color = Color(0.14, 0.28, 0.12) if tree_type == TreeType.SPRUCE else Color(0.35, 0.52, 0.18)
-	canopy_mesh.material_override = canopy_mat
-	model_pivot.add_child(canopy_mesh)
+
+	var arr_mesh := ArrayMesh.new()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(trunk_mat)
+	st.append_from(trunk_mesh, 0, Transform3D(Basis(), Vector3(0, 2.0, 0)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
+
+	st.clear()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(canopy_mat)
+	var canopy_y: float = 5.2 if tree_type == TreeType.SPRUCE else 4.0
+	st.append_from(cone, 0, Transform3D(Basis(), Vector3(0, canopy_y, 0)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
+
+	var tree_mesh := MeshInstance3D.new()
+	tree_mesh.name = "TreeCompoundMesh"
+	tree_mesh.mesh = arr_mesh
+	model_pivot.add_child(tree_mesh)
 
 	if not col_shape:
 		col_shape = CollisionShape3D.new()

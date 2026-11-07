@@ -679,6 +679,44 @@ func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
 	static_body.add_child(col_shape)
 	col_shape.owner = self
 
+static func _build_compound_tree_mesh(is_spruce: bool) -> ArrayMesh:
+	var trunk_mesh := CylinderMesh.new()
+	trunk_mesh.top_radius = 0.18
+	trunk_mesh.bottom_radius = 0.25
+	trunk_mesh.height = 4.0
+
+	var trunk_mat := StandardMaterial3D.new()
+	trunk_mat.albedo_color = Color(0.32, 0.22, 0.14) if is_spruce else Color(0.9, 0.9, 0.85)
+
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.05
+	cone.bottom_radius = 1.6 if is_spruce else 1.9
+	cone.height = 5.0 if is_spruce else 3.5
+
+	var canopy_mat := StandardMaterial3D.new()
+	canopy_mat.albedo_color = Color(0.14, 0.28, 0.12) if is_spruce else Color(0.35, 0.52, 0.18)
+
+	var arr_mesh := ArrayMesh.new()
+	var st := SurfaceTool.new()
+
+	# Surface 0: Trunk
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(trunk_mat)
+	st.append_from(trunk_mesh, 0, Transform3D(Basis(), Vector3(0, 2.0, 0)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
+
+	# Surface 1: Canopy
+	st.clear()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(canopy_mat)
+	var canopy_y: float = 5.2 if is_spruce else 4.0
+	st.append_from(cone, 0, Transform3D(Basis(), Vector3(0, canopy_y, 0)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
+
+	return arr_mesh
+
 func _scatter_forests() -> void:
 	var trees_container := get_node_or_null("HarvestableTrees") as Node3D
 	if trees_container:
@@ -691,6 +729,9 @@ func _scatter_forests() -> void:
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = world_seed + 999
+
+	var spruce_mesh := _build_compound_tree_mesh(true)
+	var birch_mesh := _build_compound_tree_mesh(false)
 
 	# Scatter ~100 harvestable trees along the lower hillsides and valley
 	var count := 100
@@ -723,32 +764,11 @@ func _scatter_forests() -> void:
 			var is_spruce := rng.randf() > 0.3
 			tree_node.set("tree_type", 1 if is_spruce else 0)
 
-			# Visual primitive mesh (Cylinder trunk + Cone canopy)
-			var trunk_mesh := MeshInstance3D.new()
-			var cyl := CylinderMesh.new()
-			cyl.top_radius = 0.18
-			cyl.bottom_radius = 0.25
-			cyl.height = 4.0
-			trunk_mesh.mesh = cyl
-			trunk_mesh.position.y = 2.0
-
-			var trunk_mat := StandardMaterial3D.new()
-			trunk_mat.albedo_color = Color(0.32, 0.22, 0.14) if is_spruce else Color(0.9, 0.9, 0.85) # White bark for birch
-			trunk_mesh.material_override = trunk_mat
-			tree_node.add_child(trunk_mesh)
-
-			var canopy_mesh := MeshInstance3D.new()
-			var cone := CylinderMesh.new()
-			cone.top_radius = 0.05
-			cone.bottom_radius = 1.6 if is_spruce else 1.9
-			cone.height = 5.0 if is_spruce else 3.5
-			canopy_mesh.mesh = cone
-			canopy_mesh.position.y = 5.2 if is_spruce else 4.0
-
-			var canopy_mat := StandardMaterial3D.new()
-			canopy_mat.albedo_color = Color(0.14, 0.28, 0.12) if is_spruce else Color(0.35, 0.52, 0.18)
-			canopy_mesh.material_override = canopy_mat
-			tree_node.add_child(canopy_mesh)
+			# Single compound primitive mesh (Trunk + Canopy in one MeshInstance3D)
+			var tree_mesh := MeshInstance3D.new()
+			tree_mesh.name = "TreeCompoundMesh"
+			tree_mesh.mesh = spruce_mesh if is_spruce else birch_mesh
+			tree_node.add_child(tree_mesh)
 
 			# Collision shape for axe hits
 			var col := CollisionShape3D.new()

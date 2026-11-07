@@ -179,28 +179,37 @@ static func _assemble_stabbur(w: float, d: float, mat_wood: Material, mat_wood_d
 		Vector3(half_w - 0.3, 0, half_d - 0.3)
 	]
 
+	# Compound stilts mesh
+	var st_stilts := SurfaceTool.new()
+	st_stilts.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_stilts.set_material(mat_wood_dark)
+	var cyl_post := CylinderMesh.new()
+	cyl_post.top_radius = 0.16
+	cyl_post.bottom_radius = 0.22
+	cyl_post.height = stilt_h
 	for pos in pillar_coords:
-		# Sturdy pillar post
-		var post := MeshInstance3D.new()
-		var cyl_post := CylinderMesh.new()
-		cyl_post.top_radius = 0.16
-		cyl_post.bottom_radius = 0.22
-		cyl_post.height = stilt_h
-		post.mesh = cyl_post
-		post.position = pos + Vector3(0, stilt_h * 0.5, 0)
-		post.material_override = mat_wood_dark
-		stabbur.add_child(post)
+		st_stilts.append_from(cyl_post, 0, Transform3D(Basis(), pos + Vector3(0, stilt_h * 0.5, 0)))
+	st_stilts.generate_tangents()
+	var stilts_mi := MeshInstance3D.new()
+	stilts_mi.name = "StiltsCompoundMesh"
+	stilts_mi.mesh = st_stilts.commit()
+	stabbur.add_child(stilts_mi)
 
-		# Flared mushroom rodent-guard cap (stabbestein)
-		var cap := MeshInstance3D.new()
-		var cyl_cap := CylinderMesh.new()
-		cyl_cap.top_radius = 0.34
-		cyl_cap.bottom_radius = 0.24
-		cyl_cap.height = 0.14
-		cap.mesh = cyl_cap
-		cap.position = pos + Vector3(0, stilt_h + 0.07, 0)
-		cap.material_override = mat_stone
-		stabbur.add_child(cap)
+	# Compound rodent collar stones mesh
+	var st_caps := SurfaceTool.new()
+	st_caps.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_caps.set_material(mat_stone)
+	var cyl_cap := CylinderMesh.new()
+	cyl_cap.top_radius = 0.34
+	cyl_cap.bottom_radius = 0.24
+	cyl_cap.height = 0.14
+	for pos in pillar_coords:
+		st_caps.append_from(cyl_cap, 0, Transform3D(Basis(), pos + Vector3(0, stilt_h + 0.07, 0)))
+	st_caps.generate_tangents()
+	var caps_mi := MeshInstance3D.new()
+	caps_mi.name = "CapsCompoundMesh"
+	caps_mi.mesh = st_caps.commit()
+	stabbur.add_child(caps_mi)
 
 	# 2. Heavy Timber Sills & Floor Platform
 	var floor_m := MeshInstance3D.new()
@@ -211,82 +220,79 @@ static func _assemble_stabbur(w: float, d: float, mat_wood: Material, mat_wood_d
 	floor_m.material_override = mat_wood_dark
 	stabbur.add_child(floor_m)
 
-	# 3. Lafteverk Walls (Stacked horizontal timber logs)
+	# 3. Lafteverk Walls (Stacked horizontal timber logs - compound mesh)
 	var log_count: int = 2
 	var log_h: float = wall_h / float(log_count)
 	var base_y: float = stilt_h + 0.29
 
-	# Back wall (+Z)
+	var st_walls := SurfaceTool.new()
+	st_walls.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_walls.set_material(mat_wood)
+
+	var log_box_z := BoxMesh.new()
+	log_box_z.size = Vector3(w + 0.5, log_h * 0.94, 0.3)
 	for i in range(log_count):
 		var y_pos: float = base_y + (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(w + 0.5, log_h * 0.94, 0.3)
-		log_m.mesh = log_box
-		log_m.position = Vector3(0, y_pos, half_d)
-		log_m.material_override = mat_wood
-		stabbur.add_child(log_m)
+		st_walls.append_from(log_box_z, 0, Transform3D(Basis(), Vector3(0, y_pos, half_d)))
+		st_walls.append_from(log_box_z, 0, Transform3D(Basis(), Vector3(0, y_pos, -half_d)))
 
-	# Left & Right walls (-X and +X)
+	var log_box_x := BoxMesh.new()
+	log_box_x.size = Vector3(0.3, log_h * 0.94, d + 0.5)
 	for sign_x in [-1.0, 1.0]:
 		for i in range(log_count):
 			var y_pos: float = base_y + (i + 0.5) * log_h
-			var log_m := MeshInstance3D.new()
-			var log_box := BoxMesh.new()
-			log_box.size = Vector3(0.3, log_h * 0.94, d + 0.5)
-			log_m.mesh = log_box
-			log_m.position = Vector3(sign_x * half_w, y_pos, 0)
-			log_m.material_override = mat_wood
-			stabbur.add_child(log_m)
+			st_walls.append_from(log_box_x, 0, Transform3D(Basis(), Vector3(sign_x * half_w, y_pos, 0)))
 
-	# Front wall (-Z) with heavy storehouse door
-	for i in range(log_count):
-		var y_pos: float = base_y + (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(w + 0.5, log_h * 0.94, 0.3)
-		log_m.mesh = log_box
-		log_m.position = Vector3(0, y_pos, -half_d)
-		log_m.material_override = mat_wood
-		stabbur.add_child(log_m)
+	st_walls.generate_tangents()
+	var walls_mi := MeshInstance3D.new()
+	walls_mi.name = "StabburWallsCompoundMesh"
+	walls_mi.mesh = st_walls.commit()
+	stabbur.add_child(walls_mi)
 
-	# Door slab on front
-	var door_m := MeshInstance3D.new()
+	# 4. Access Wooden Steps (Trapp) & Doorway
+	var st_door_steps := SurfaceTool.new()
+	st_door_steps.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_door_steps.set_material(mat_wood_dark)
+
 	var box_door := BoxMesh.new()
 	box_door.size = Vector3(0.95, 1.6, 0.08)
-	door_m.mesh = box_door
-	door_m.position = Vector3(0, base_y + 0.85, -half_d - 0.16)
-	door_m.material_override = mat_wood_dark
-	stabbur.add_child(door_m)
+	st_door_steps.append_from(box_door, 0, Transform3D(Basis(), Vector3(0, base_y + 0.85, -half_d - 0.16)))
 
-	# 4. Access Wooden Steps (Trapp) up to the elevated doorway
 	var step_count := 3
+	var box_step := BoxMesh.new()
+	box_step.size = Vector3(1.1, 0.22, 0.38)
 	for s in range(step_count):
-		var step_m := MeshInstance3D.new()
-		var box_step := BoxMesh.new()
-		box_step.size = Vector3(1.1, 0.22, 0.38)
-		step_m.mesh = box_step
 		var sy: float = (s + 0.5) * (stilt_h / float(step_count))
 		var sz: float = -half_d - 0.3 - (step_count - 1 - s) * 0.35
-		step_m.position = Vector3(0, sy, sz)
-		step_m.material_override = mat_wood_dark
-		stabbur.add_child(step_m)
+		st_door_steps.append_from(box_step, 0, Transform3D(Basis(), Vector3(0, sy, sz)))
 
-	# 5. Sod Roof (Torvtak)
+	st_door_steps.generate_tangents()
+	var door_steps_mi := MeshInstance3D.new()
+	door_steps_mi.name = "DoorStepsCompoundMesh"
+	door_steps_mi.mesh = st_door_steps.commit()
+	stabbur.add_child(door_steps_mi)
+
+	# 5. Sod Roof (Torvtak - compound slopes)
 	var roof_thick: float = 0.24
 	var roof_len: float = d + 0.8
 	var roof_slope_len: float = sqrt(pow(half_w + 0.4, 2.0) + pow(ridge_h - wall_h, 2.0))
 	var pitch_rad: float = atan2(ridge_h - wall_h, half_w)
 
+	var st_roof := SurfaceTool.new()
+	st_roof.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_roof.set_material(mat_sod)
+	var r_box := BoxMesh.new()
+	r_box.size = Vector3(roof_slope_len, roof_thick, roof_len)
 	for sign_x in [-1.0, 1.0]:
-		var r_slope := MeshInstance3D.new()
-		var r_box := BoxMesh.new()
-		r_box.size = Vector3(roof_slope_len, roof_thick, roof_len)
-		r_slope.mesh = r_box
-		r_slope.material_override = mat_sod
-		r_slope.position = Vector3(sign_x * (half_w * 0.5 + 0.08), base_y + wall_h + 0.55, 0)
-		r_slope.rotation.z = sign_x * pitch_rad
-		stabbur.add_child(r_slope)
+		var rot_basis := Basis(Vector3.FORWARD, sign_x * pitch_rad)
+		var xform := Transform3D(rot_basis, Vector3(sign_x * (half_w * 0.5 + 0.08), base_y + wall_h + 0.55, 0))
+		st_roof.append_from(r_box, 0, xform)
+
+	st_roof.generate_tangents()
+	var roof_mi := MeshInstance3D.new()
+	roof_mi.name = "StabburRoofCompoundMesh"
+	roof_mi.mesh = st_roof.commit()
+	stabbur.add_child(roof_mi)
 
 	# 6. Solid Physics Collision Shape
 	var col := CollisionShape3D.new()
@@ -330,46 +336,37 @@ static func _assemble_stone_well(mat_stone: Material, mat_wood: Material) -> Sta
 	water_surf.material_override = mat_w
 	well.add_child(water_surf)
 
-	# 2. Wooden Upright Posts & Crossbeam
-	for sign_x in [-1.0, 1.0]:
-		var post := MeshInstance3D.new()
-		var box_post := BoxMesh.new()
-		box_post.size = Vector3(0.14, 2.0, 0.14)
-		post.mesh = box_post
-		post.position = Vector3(sign_x * 0.88, 1.25, 0)
-		post.material_override = mat_wood
-		well.add_child(post)
+	# 2. Compound Timber Gantry (Posts, Beam, Roof, Bucket)
+	var st_gantry := SurfaceTool.new()
+	st_gantry.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_gantry.set_material(mat_wood)
 
-	# Crossbeam
-	var beam := MeshInstance3D.new()
+	var box_post := BoxMesh.new()
+	box_post.size = Vector3(0.14, 2.0, 0.14)
+	for sign_x in [-1.0, 1.0]:
+		st_gantry.append_from(box_post, 0, Transform3D(Basis(), Vector3(sign_x * 0.88, 1.25, 0)))
+
 	var box_beam := BoxMesh.new()
 	box_beam.size = Vector3(2.0, 0.14, 0.14)
-	beam.mesh = box_beam
-	beam.position = Vector3(0, 2.2, 0)
-	beam.material_override = mat_wood
-	well.add_child(beam)
+	st_gantry.append_from(box_beam, 0, Transform3D(Basis(), Vector3(0, 2.2, 0)))
 
-	# Pitched Shingle Rain Roof
+	var box_r := BoxMesh.new()
+	box_r.size = Vector3(2.1, 0.08, 0.85)
 	for sign_z in [-1.0, 1.0]:
-		var roof := MeshInstance3D.new()
-		var box_r := BoxMesh.new()
-		box_r.size = Vector3(2.1, 0.08, 0.85)
-		roof.mesh = box_r
-		roof.position = Vector3(0, 2.45, sign_z * 0.35)
-		roof.rotation.x = sign_z * deg_to_rad(30.0)
-		roof.material_override = mat_wood
-		well.add_child(roof)
+		var basis_r := Basis(Vector3.RIGHT, sign_z * deg_to_rad(30.0))
+		st_gantry.append_from(box_r, 0, Transform3D(basis_r, Vector3(0, 2.45, sign_z * 0.35)))
 
-	# Rope & Wooden Water Bucket
-	var bucket := MeshInstance3D.new()
 	var cyl_b := CylinderMesh.new()
 	cyl_b.top_radius = 0.18
 	cyl_b.bottom_radius = 0.14
 	cyl_b.height = 0.32
-	bucket.mesh = cyl_b
-	bucket.position = Vector3(0.18, 0.95, 0.1)
-	bucket.material_override = mat_wood
-	well.add_child(bucket)
+	st_gantry.append_from(cyl_b, 0, Transform3D(Basis(), Vector3(0.18, 0.95, 0.1)))
+
+	st_gantry.generate_tangents()
+	var gantry_mi := MeshInstance3D.new()
+	gantry_mi.name = "WellGantryCompoundMesh"
+	gantry_mi.mesh = st_gantry.commit()
+	well.add_child(gantry_mi)
 
 	# Collision
 	var col := CollisionShape3D.new()
@@ -396,24 +393,26 @@ static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_woo
 	bed.material_override = mat_soil
 	patch.add_child(bed)
 
-	# Timber Bed Borders
-	for sign_z in [-1.0, 1.0]:
-		var border := MeshInstance3D.new()
-		var box_b := BoxMesh.new()
-		box_b.size = Vector3(w + 0.2, 0.18, 0.15)
-		border.mesh = box_b
-		border.position = Vector3(0, 0.09, sign_z * (d * 0.5 + 0.07))
-		border.material_override = mat_wood
-		patch.add_child(border)
+	# Timber Bed Borders (compound mesh)
+	var st_borders := SurfaceTool.new()
+	st_borders.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_borders.set_material(mat_wood)
 
+	var box_bz := BoxMesh.new()
+	box_bz.size = Vector3(w + 0.2, 0.18, 0.15)
+	for sign_z in [-1.0, 1.0]:
+		st_borders.append_from(box_bz, 0, Transform3D(Basis(), Vector3(0, 0.09, sign_z * (d * 0.5 + 0.07))))
+
+	var box_bx := BoxMesh.new()
+	box_bx.size = Vector3(0.15, 0.18, d)
 	for sign_x in [-1.0, 1.0]:
-		var border := MeshInstance3D.new()
-		var box_b := BoxMesh.new()
-		box_b.size = Vector3(0.15, 0.18, d)
-		border.mesh = box_b
-		border.position = Vector3(sign_x * (w * 0.5 + 0.07), 0.09, 0)
-		border.material_override = mat_wood
-		patch.add_child(border)
+		st_borders.append_from(box_bx, 0, Transform3D(Basis(), Vector3(sign_x * (w * 0.5 + 0.07), 0.09, 0)))
+
+	st_borders.generate_tangents()
+	var borders_mi := MeshInstance3D.new()
+	borders_mi.name = "CropBordersCompoundMesh"
+	borders_mi.mesh = st_borders.commit()
+	patch.add_child(borders_mi)
 
 	# Materials for crops
 	var mat_cabbage := StandardMaterial3D.new()
@@ -428,39 +427,51 @@ static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_woo
 	mat_turnip.albedo_color = Color(0.24, 0.46, 0.20) # Dark turnip top green
 	mat_turnip.roughness = 0.8
 
-	# Row 1: Cabbages (Z = -1.5)
+	# Row 1: Cabbages (compound mesh)
+	var st_cab := SurfaceTool.new()
+	st_cab.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_cab.set_material(mat_cabbage)
+	var sph := SphereMesh.new()
+	sph.radius = 0.22
+	sph.height = 0.35
 	for cx in range(-1, 2):
-		var cab := MeshInstance3D.new()
-		var sph := SphereMesh.new()
-		sph.radius = 0.22
-		sph.height = 0.35
-		cab.mesh = sph
-		cab.position = Vector3(cx * 1.6, 0.25, -1.4)
-		cab.material_override = mat_cabbage
-		patch.add_child(cab)
+		st_cab.append_from(sph, 0, Transform3D(Basis(), Vector3(cx * 1.6, 0.25, -1.4)))
+	st_cab.generate_tangents()
+	var cab_mi := MeshInstance3D.new()
+	cab_mi.name = "CabbageCompoundMesh"
+	cab_mi.mesh = st_cab.commit()
+	patch.add_child(cab_mi)
 
-	# Row 2: Barley (Z = 0.0)
+	# Row 2: Barley (compound mesh)
+	var st_barley := SurfaceTool.new()
+	st_barley.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_barley.set_material(mat_barley)
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.05
+	cyl.bottom_radius = 0.04
+	cyl.height = 0.75
 	for bx in range(-2, 3):
-		var stalk := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.05
-		cyl.bottom_radius = 0.04
-		cyl.height = 0.75
-		stalk.mesh = cyl
-		stalk.position = Vector3(bx * 1.1, 0.45, 0.0)
-		stalk.rotation.z = deg_to_rad(sin(bx * 1.5) * 8.0)
-		stalk.material_override = mat_barley
-		patch.add_child(stalk)
+		var rot_b := Basis(Vector3.FORWARD, deg_to_rad(sin(bx * 1.5) * 8.0))
+		st_barley.append_from(cyl, 0, Transform3D(rot_b, Vector3(bx * 1.1, 0.45, 0.0)))
+	st_barley.generate_tangents()
+	var barley_mi := MeshInstance3D.new()
+	barley_mi.name = "BarleyCompoundMesh"
+	barley_mi.mesh = st_barley.commit()
+	patch.add_child(barley_mi)
 
-	# Row 3: Turnips (Z = +1.4)
+	# Row 3: Turnips (compound mesh)
+	var st_turnip := SurfaceTool.new()
+	st_turnip.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_turnip.set_material(mat_turnip)
+	var box_t := BoxMesh.new()
+	box_t.size = Vector3(0.28, 0.35, 0.28)
 	for tx in range(-1, 2):
-		var turnip := MeshInstance3D.new()
-		var box_t := BoxMesh.new()
-		box_t.size = Vector3(0.28, 0.35, 0.28)
-		turnip.mesh = box_t
-		turnip.position = Vector3(tx * 1.5, 0.24, 1.4)
-		turnip.material_override = mat_turnip
-		patch.add_child(turnip)
+		st_turnip.append_from(box_t, 0, Transform3D(Basis(), Vector3(tx * 1.5, 0.24, 1.4)))
+	st_turnip.generate_tangents()
+	var turnip_mi := MeshInstance3D.new()
+	turnip_mi.name = "TurnipCompoundMesh"
+	turnip_mi.mesh = st_turnip.commit()
+	patch.add_child(turnip_mi)
 
 	# Low Collision Shape
 	var col := CollisionShape3D.new()
@@ -507,26 +518,35 @@ static func _assemble_chopping_area(mat_wood: Material, mat_wood_dark: Material,
 	stump_body.add_child(col)
 	area.add_child(stump_body)
 
-	# Stacked Cords of Firewood
-	var stack_m := MeshInstance3D.new()
+	# Stacked Cords of Firewood (compound 2-surface mesh)
+	var arr_wood := ArrayMesh.new()
+	var st_wood := SurfaceTool.new()
+
+	st_wood.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_wood.set_material(mat_wood_dark)
 	var stack_box := BoxMesh.new()
 	stack_box.size = Vector3(0.6, 0.45, 0.85)
-	stack_m.mesh = stack_box
-	stack_m.position = Vector3(1.2, 0.22, -0.2)
-	stack_m.material_override = mat_wood_dark
-	area.add_child(stack_m)
+	st_wood.append_from(stack_box, 0, Transform3D(Basis(), Vector3(1.2, 0.22, -0.2)))
+	st_wood.generate_tangents()
+	st_wood.commit(arr_wood)
 
+	st_wood.clear()
+	st_wood.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_wood.set_material(mat_wood)
+	var cyl_l := CylinderMesh.new()
+	cyl_l.top_radius = 0.08
+	cyl_l.bottom_radius = 0.08
+	cyl_l.height = 0.8
+	var rot_log := Basis(Vector3.FORWARD, deg_to_rad(90.0))
 	for log_i in range(3):
-		var f_log := MeshInstance3D.new()
-		var cyl_l := CylinderMesh.new()
-		cyl_l.top_radius = 0.08
-		cyl_l.bottom_radius = 0.08
-		cyl_l.height = 0.8
-		f_log.mesh = cyl_l
-		f_log.rotation.z = deg_to_rad(90.0)
-		f_log.position = Vector3(1.2, 0.5, -0.45 + log_i * 0.25)
-		f_log.material_override = mat_wood
-		area.add_child(f_log)
+		st_wood.append_from(cyl_l, 0, Transform3D(rot_log, Vector3(1.2, 0.5, -0.45 + log_i * 0.25)))
+	st_wood.generate_tangents()
+	st_wood.commit(arr_wood)
+
+	var stack_mi := MeshInstance3D.new()
+	stack_mi.name = "FirewoodStackCompoundMesh"
+	stack_mi.mesh = arr_wood
+	area.add_child(stack_mi)
 
 	return area
 
@@ -534,26 +554,27 @@ static func _assemble_chopping_area(mat_wood: Material, mat_wood_dark: Material,
 static func _assemble_hay_rack(mat_wood: Material) -> Node3D:
 	var rack := Node3D.new()
 
-	# 4 Corner Posts
+	# Compound Timber Frame (4 Corner Posts + Horizontal Rails)
+	var st_rack := SurfaceTool.new()
+	st_rack.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_rack.set_material(mat_wood)
+
+	var box_p := BoxMesh.new()
+	box_p.size = Vector3(0.12, 1.4, 0.12)
 	for sign_x in [-1.0, 1.0]:
 		for sign_z in [-1.0, 1.0]:
-			var post := MeshInstance3D.new()
-			var box_p := BoxMesh.new()
-			box_p.size = Vector3(0.12, 1.4, 0.12)
-			post.mesh = box_p
-			post.position = Vector3(sign_x * 0.85, 0.7, sign_z * 0.5)
-			post.material_override = mat_wood
-			rack.add_child(post)
+			st_rack.append_from(box_p, 0, Transform3D(Basis(), Vector3(sign_x * 0.85, 0.7, sign_z * 0.5)))
 
-	# Horizontal Rails
+	var box_r := BoxMesh.new()
+	box_r.size = Vector3(1.8, 0.08, 0.08)
 	for sign_z in [-1.0, 1.0]:
-		var rail := MeshInstance3D.new()
-		var box_r := BoxMesh.new()
-		box_r.size = Vector3(1.8, 0.08, 0.08)
-		rail.mesh = box_r
-		rail.position = Vector3(0, 1.1, sign_z * 0.5)
-		rail.material_override = mat_wood
-		rack.add_child(rail)
+		st_rack.append_from(box_r, 0, Transform3D(Basis(), Vector3(0, 1.1, sign_z * 0.5)))
+
+	st_rack.generate_tangents()
+	var rack_mi := MeshInstance3D.new()
+	rack_mi.name = "HayRackCompoundMesh"
+	rack_mi.mesh = st_rack.commit()
+	rack.add_child(rack_mi)
 
 	# Hay Mound
 	var hay_m := MeshInstance3D.new()
@@ -579,26 +600,26 @@ static func _create_fence_line(parent: Node3D, from_pos: Vector3, to_pos: Vector
 	fence_seg.position = (from_pos + to_pos) * 0.5
 	fence_seg.rotation.y = atan2(-dir.x, -dir.z)
 
-	# Posts: start, mid, end
-	var post_offsets := [-total_len * 0.5, 0.0, total_len * 0.5]
-	for pz in post_offsets:
-		var post := MeshInstance3D.new()
-		var box_p := BoxMesh.new()
-		box_p.size = Vector3(0.12, 1.3, 0.12)
-		post.mesh = box_p
-		post.position = Vector3(0, 0.65, pz)
-		post.material_override = mat_wood
-		fence_seg.add_child(post)
+	# Compound mesh for 3 posts and 2 split rails in a single MeshInstance3D
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat_wood)
 
-	# 2 Horizontal / Diagonal Split Rails spanning the length
+	var box_p := BoxMesh.new()
+	box_p.size = Vector3(0.12, 1.3, 0.12)
+	for pz in [-total_len * 0.5, 0.0, total_len * 0.5]:
+		st.append_from(box_p, 0, Transform3D(Basis(), Vector3(0, 0.65, pz)))
+
+	var box_r := BoxMesh.new()
+	box_r.size = Vector3(0.08, 0.08, total_len)
 	for r in [0.45, 0.95]:
-		var rail := MeshInstance3D.new()
-		var box_r := BoxMesh.new()
-		box_r.size = Vector3(0.08, 0.08, total_len)
-		rail.mesh = box_r
-		rail.position = Vector3(0, r, 0)
-		rail.material_override = mat_wood
-		fence_seg.add_child(rail)
+		st.append_from(box_r, 0, Transform3D(Basis(), Vector3(0, r, 0)))
+
+	st.generate_tangents()
+	var fence_mi := MeshInstance3D.new()
+	fence_mi.name = "FenceCompoundMesh"
+	fence_mi.mesh = st.commit()
+	fence_seg.add_child(fence_mi)
 
 	# Solid physics collision
 	var col := CollisionShape3D.new()

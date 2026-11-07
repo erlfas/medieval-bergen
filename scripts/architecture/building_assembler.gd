@@ -59,7 +59,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	var door_h: float = 1.95
 
 	# -------------------------------------------------------------
-	# 1. Foundation Stones (Grunnmur - Deep Footings anchored into terrain)
+	# 1. Foundation Stones (Grunnmur - compound mesh)
 	# -------------------------------------------------------------
 	var foundation_coords := [
 		Vector3(-half_w, -0.15, -half_d),
@@ -67,26 +67,22 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 		Vector3(-half_w, -0.15, half_d),
 		Vector3(half_w, -0.15, half_d)
 	]
+	var st_stone := SurfaceTool.new()
+	st_stone.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_stone.set_material(mat_stone)
+	var stone_box := BoxMesh.new()
+	stone_box.size = Vector3(0.72, 0.7, 0.72)
 	for pos in foundation_coords:
-		var stone_mesh := MeshInstance3D.new()
-		var stone_box := BoxMesh.new()
-		stone_box.size = Vector3(0.72, 0.7, 0.72)
-		stone_mesh.mesh = stone_box
-		stone_mesh.material_override = mat_stone
-		stone_mesh.position = pos
-		cabin.add_child(stone_mesh)
+		st_stone.append_from(stone_box, 0, Transform3D(Basis(), pos))
+	st_stone.generate_tangents()
+	var foundation_mi := MeshInstance3D.new()
+	foundation_mi.name = "FoundationStonesCompoundMesh"
+	foundation_mi.mesh = st_stone.commit()
+	cabin.add_child(foundation_mi)
 
 	# -------------------------------------------------------------
-	# 2. Wooden Floor & Floor Collision
+	# 2. Floor Collision
 	# -------------------------------------------------------------
-	var floor_mesh := MeshInstance3D.new()
-	var box_floor := BoxMesh.new()
-	box_floor.size = Vector3(width - 0.2, 0.12, depth - 0.2)
-	floor_mesh.mesh = box_floor
-	floor_mesh.material_override = mat_wood_dark
-	floor_mesh.position = Vector3(0, 0.06, 0)
-	cabin.add_child(floor_mesh)
-
 	var floor_col := CollisionShape3D.new()
 	var floor_shape := BoxShape3D.new()
 	floor_shape.size = Vector3(width, 0.2, depth)
@@ -94,50 +90,74 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	floor_col.position = Vector3(0, 0.0, 0)
 	cabin.add_child(floor_col)
 
-	# Doorway Threshold (Terskel)
-	var threshold := MeshInstance3D.new()
-	var th_box := BoxMesh.new()
-	th_box.size = Vector3(door_w + 0.1, 0.1, 0.35)
-	threshold.mesh = th_box
-	threshold.material_override = mat_wood_dark
-	threshold.position = Vector3(0, 0.05, -half_d)
-	cabin.add_child(threshold)
-
 	# -------------------------------------------------------------
-	# 3. Lafteverk Walls (Stacked horizontal timber logs)
+	# 3. Lafteverk Walls (Stacked horizontal timber logs & Gables - compound mesh)
 	# -------------------------------------------------------------
 	var log_count: int = 3
 	var log_h: float = wall_h / float(log_count)
 	var nov_extension: float = 0.30 # Overhang past corner joints
+	var front_side_w: float = (width - door_w) * 0.5
+	var left_front_center_x: float = -half_w + front_side_w * 0.5
+	var right_front_center_x: float = half_w - front_side_w * 0.5
 
-	# Back Wall (Z = +half_d)
+	var st_wood := SurfaceTool.new()
+	st_wood.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_wood.set_material(mat_wood)
+
+	# Back Wall logs
+	var log_box_back := BoxMesh.new()
+	log_box_back.size = Vector3(width + nov_extension * 2.0, log_h * 0.94, wall_thick)
 	for i in range(log_count):
 		var y_pos: float = (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(width + nov_extension * 2.0, log_h * 0.94, wall_thick)
-		log_m.mesh = log_box
-		log_m.material_override = mat_wood
-		log_m.position = Vector3(0, y_pos, half_d)
-		cabin.add_child(log_m)
+		st_wood.append_from(log_box_back, 0, Transform3D(Basis(), Vector3(0, y_pos, half_d)))
 
+	# Left & Right Wall logs
+	var log_box_side := BoxMesh.new()
+	log_box_side.size = Vector3(wall_thick, log_h * 0.94, depth + nov_extension * 2.0)
+	for i in range(log_count):
+		var y_pos: float = (i + 0.5) * log_h
+		st_wood.append_from(log_box_side, 0, Transform3D(Basis(), Vector3(-half_w, y_pos, 0)))
+		st_wood.append_from(log_box_side, 0, Transform3D(Basis(), Vector3(half_w, y_pos, 0)))
+
+	# Front Left & Right logs
+	var log_box_front := BoxMesh.new()
+	log_box_front.size = Vector3(front_side_w + nov_extension, log_h * 0.94, wall_thick)
+	for i in range(log_count):
+		var y_pos: float = (i + 0.5) * log_h
+		st_wood.append_from(log_box_front, 0, Transform3D(Basis(), Vector3(left_front_center_x - nov_extension * 0.5, y_pos, -half_d)))
+		st_wood.append_from(log_box_front, 0, Transform3D(Basis(), Vector3(right_front_center_x + nov_extension * 0.5, y_pos, -half_d)))
+
+	# Interior Sleeping Bench (Langbenk / Bris)
+	var bench_box := BoxMesh.new()
+	bench_box.size = Vector3(0.75, 0.4, depth * 0.6)
+	st_wood.append_from(bench_box, 0, Transform3D(Basis(), Vector3(half_w - 0.55, 0.26, 0.2)))
+
+	# Gable Ends
+	var ridge_h: float = 3.6
+	var gable_h: float = ridge_h - wall_h
+	for gable_z in [-half_d, half_d]:
+		var gable_steps: int = 2
+		for g in range(gable_steps):
+			var frac: float = float(g + 0.5) / float(gable_steps)
+			var cur_w: float = (width + nov_extension * 2.0) * (1.0 - frac * 0.88)
+			var gy: float = wall_h + (g + 0.5) * (gable_h / float(gable_steps))
+			var gbox := BoxMesh.new()
+			gbox.size = Vector3(cur_w, (gable_h / float(gable_steps)) * 0.95, wall_thick)
+			st_wood.append_from(gbox, 0, Transform3D(Basis(), Vector3(0, gy, gable_z)))
+
+	st_wood.generate_tangents()
+	var walls_mi := MeshInstance3D.new()
+	walls_mi.name = "CabinWallsCompoundMesh"
+	walls_mi.mesh = st_wood.commit()
+	cabin.add_child(walls_mi)
+
+	# Wall Physics Collisions
 	var back_col := CollisionShape3D.new()
 	var back_shape := BoxShape3D.new()
 	back_shape.size = Vector3(width, wall_h, wall_thick)
 	back_col.shape = back_shape
 	back_col.position = Vector3(0, wall_h * 0.5, half_d)
 	cabin.add_child(back_col)
-
-	# Left Wall (X = -half_w)
-	for i in range(log_count):
-		var y_pos: float = (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(wall_thick, log_h * 0.94, depth + nov_extension * 2.0)
-		log_m.mesh = log_box
-		log_m.material_override = mat_wood
-		log_m.position = Vector3(-half_w, y_pos, 0)
-		cabin.add_child(log_m)
 
 	var left_col := CollisionShape3D.new()
 	var left_shape := BoxShape3D.new()
@@ -146,39 +166,12 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	left_col.position = Vector3(-half_w, wall_h * 0.5, 0)
 	cabin.add_child(left_col)
 
-	# Right Wall (X = +half_w)
-	for i in range(log_count):
-		var y_pos: float = (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(wall_thick, log_h * 0.94, depth + nov_extension * 2.0)
-		log_m.mesh = log_box
-		log_m.material_override = mat_wood
-		log_m.position = Vector3(half_w, y_pos, 0)
-		cabin.add_child(log_m)
-
 	var right_col := CollisionShape3D.new()
 	var right_shape := BoxShape3D.new()
 	right_shape.size = Vector3(wall_thick, wall_h, depth)
 	right_col.shape = right_shape
 	right_col.position = Vector3(half_w, wall_h * 0.5, 0)
 	cabin.add_child(right_col)
-
-	# Front Wall (Z = -half_d) with OPEN DOORWAY in center
-	var front_side_w: float = (width - door_w) * 0.5
-	var left_front_center_x: float = -half_w + front_side_w * 0.5
-	var right_front_center_x: float = half_w - front_side_w * 0.5
-
-	# Front Left logs
-	for i in range(log_count):
-		var y_pos: float = (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(front_side_w + nov_extension, log_h * 0.94, wall_thick)
-		log_m.mesh = log_box
-		log_m.material_override = mat_wood
-		log_m.position = Vector3(left_front_center_x - nov_extension * 0.5, y_pos, -half_d)
-		cabin.add_child(log_m)
 
 	var front_left_col := CollisionShape3D.new()
 	var front_l_shape := BoxShape3D.new()
@@ -187,17 +180,6 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	front_left_col.position = Vector3(left_front_center_x, wall_h * 0.5, -half_d)
 	cabin.add_child(front_left_col)
 
-	# Front Right logs
-	for i in range(log_count):
-		var y_pos: float = (i + 0.5) * log_h
-		var log_m := MeshInstance3D.new()
-		var log_box := BoxMesh.new()
-		log_box.size = Vector3(front_side_w + nov_extension, log_h * 0.94, wall_thick)
-		log_m.mesh = log_box
-		log_m.material_override = mat_wood
-		log_m.position = Vector3(right_front_center_x + nov_extension * 0.5, y_pos, -half_d)
-		cabin.add_child(log_m)
-
 	var front_right_col := CollisionShape3D.new()
 	var front_r_shape := BoxShape3D.new()
 	front_r_shape.size = Vector3(front_side_w, wall_h, wall_thick)
@@ -205,16 +187,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	front_right_col.position = Vector3(right_front_center_x, wall_h * 0.5, -half_d)
 	cabin.add_child(front_right_col)
 
-	# Door Lintel (Overstokk above doorway)
 	var lintel_h: float = wall_h - door_h
-	var lintel_m := MeshInstance3D.new()
-	var lintel_box := BoxMesh.new()
-	lintel_box.size = Vector3(door_w + 0.3, lintel_h, wall_thick * 1.05)
-	lintel_m.mesh = lintel_box
-	lintel_m.material_override = mat_wood_dark
-	lintel_m.position = Vector3(0, door_h + lintel_h * 0.5, -half_d)
-	cabin.add_child(lintel_m)
-
 	var lintel_col := CollisionShape3D.new()
 	var lintel_shape := BoxShape3D.new()
 	lintel_shape.size = Vector3(door_w, lintel_h, wall_thick)
@@ -222,45 +195,7 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 	lintel_col.position = Vector3(0, door_h + lintel_h * 0.5, -half_d)
 	cabin.add_child(lintel_col)
 
-	# Door Jamb Posts (Heavy vertical timber frames flanking the door)
-	for jamb_sign in [-1.0, 1.0]:
-		var jamb := MeshInstance3D.new()
-		var jamb_box := BoxMesh.new()
-		jamb_box.size = Vector3(0.14, door_h, wall_thick * 1.1)
-		jamb.mesh = jamb_box
-		jamb.material_override = mat_wood_dark
-		jamb.position = Vector3(jamb_sign * (door_w * 0.5 + 0.05), door_h * 0.5, -half_d)
-		cabin.add_child(jamb)
-
-	# Interior Sleeping Bench (Langbenk / Bris) along right wall
-	var bench := MeshInstance3D.new()
-	var bench_box := BoxMesh.new()
-	bench_box.size = Vector3(0.75, 0.4, depth * 0.6)
-	bench.mesh = bench_box
-	bench.material_override = mat_wood
-	bench.position = Vector3(half_w - 0.55, 0.26, 0.2)
-	cabin.add_child(bench)
-
-	# -------------------------------------------------------------
-	# 4. Gable Ends (Front & Back Triangular Log Gables)
-	# -------------------------------------------------------------
-	var ridge_h: float = 3.6
-	var gable_h: float = ridge_h - wall_h
-
 	for gable_z in [-half_d, half_d]:
-		var gable_steps: int = 2
-		for g in range(gable_steps):
-			var frac: float = float(g + 0.5) / float(gable_steps)
-			var cur_w: float = (width + nov_extension * 2.0) * (1.0 - frac * 0.88)
-			var gy: float = wall_h + (g + 0.5) * (gable_h / float(gable_steps))
-			var gm := MeshInstance3D.new()
-			var gbox := BoxMesh.new()
-			gbox.size = Vector3(cur_w, (gable_h / float(gable_steps)) * 0.95, wall_thick)
-			gm.mesh = gbox
-			gm.material_override = mat_wood
-			gm.position = Vector3(0, gy, gable_z)
-			cabin.add_child(gm)
-
 		var g_col := CollisionShape3D.new()
 		var g_shape := BoxShape3D.new()
 		g_shape.size = Vector3(width * 0.65, gable_h, wall_thick)
@@ -269,96 +204,120 @@ static func assemble_log_cabin(width: float = 5.0, depth: float = 5.0) -> Static
 		cabin.add_child(g_col)
 
 	# -------------------------------------------------------------
-	# 5. Heavy Ridge Beam (Mønsås) & Ceiling Collision
+	# 4. Heavy Timber Framing (Floor, Threshold, Lintel, Jambs, Ridge Beam, Torvvol, Ljore - compound mesh)
 	# -------------------------------------------------------------
-	var ridge_beam := MeshInstance3D.new()
+	var st_dark := SurfaceTool.new()
+	st_dark.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_dark.set_material(mat_wood_dark)
+
+	# Floor
+	var box_floor := BoxMesh.new()
+	box_floor.size = Vector3(width - 0.2, 0.12, depth - 0.2)
+	st_dark.append_from(box_floor, 0, Transform3D(Basis(), Vector3(0, 0.06, 0)))
+
+	# Threshold
+	var th_box := BoxMesh.new()
+	th_box.size = Vector3(door_w + 0.1, 0.1, 0.35)
+	st_dark.append_from(th_box, 0, Transform3D(Basis(), Vector3(0, 0.05, -half_d)))
+
+	# Lintel
+	var lintel_box := BoxMesh.new()
+	lintel_box.size = Vector3(door_w + 0.3, lintel_h, wall_thick * 1.05)
+	st_dark.append_from(lintel_box, 0, Transform3D(Basis(), Vector3(0, door_h + lintel_h * 0.5, -half_d)))
+
+	# Door Jamb Posts
+	var jamb_box := BoxMesh.new()
+	jamb_box.size = Vector3(0.14, door_h, wall_thick * 1.1)
+	for jamb_sign in [-1.0, 1.0]:
+		st_dark.append_from(jamb_box, 0, Transform3D(Basis(), Vector3(jamb_sign * (door_w * 0.5 + 0.05), door_h * 0.5, -half_d)))
+
+	# Ridge Beam
 	var ridge_box := BoxMesh.new()
 	ridge_box.size = Vector3(0.35, 0.35, depth + 1.0)
-	ridge_beam.mesh = ridge_box
-	ridge_beam.material_override = mat_wood_dark
-	ridge_beam.position = Vector3(0, ridge_h + 0.05, 0)
-	cabin.add_child(ridge_beam)
+	st_dark.append_from(ridge_box, 0, Transform3D(Basis(), Vector3(0, ridge_h + 0.05, 0)))
+
+	# Torvvol Eaves Logs
+	var roof_length: float = depth + 0.8
+	var torv_box := BoxMesh.new()
+	torv_box.size = Vector3(0.18, 0.18, roof_length)
+	for side_sign in [-1.0, 1.0]:
+		st_dark.append_from(torv_box, 0, Transform3D(Basis(), Vector3(side_sign * (half_w + 0.38), wall_h + 0.08, 0)))
+
+	# Ljore Skylight Frame
+	var ljore_box := BoxMesh.new()
+	ljore_box.size = Vector3(0.85, 0.3, 0.85)
+	st_dark.append_from(ljore_box, 0, Transform3D(Basis(), Vector3(0, ridge_h + 0.22, 0.1)))
+
+	st_dark.generate_tangents()
+	var frame_mi := MeshInstance3D.new()
+	frame_mi.name = "CabinDarkFrameCompoundMesh"
+	frame_mi.mesh = st_dark.commit()
+	cabin.add_child(frame_mi)
 
 	var ridge_col := CollisionShape3D.new()
 	var rcol_shape := BoxShape3D.new()
 	rcol_shape.size = Vector3(ridge_box.size.x, ridge_box.size.y, ridge_box.size.z)
 	ridge_col.shape = rcol_shape
-	ridge_col.position = ridge_beam.position
+	ridge_col.position = Vector3(0, ridge_h + 0.05, 0)
 	cabin.add_child(ridge_col)
 
 	# -------------------------------------------------------------
-	# 6. Traditional Norwegian Sod Roof (Torvtak)
+	# 5. Traditional Norwegian Sod Roof (Torvtak - compound mesh)
 	# -------------------------------------------------------------
 	var roof_pitch_rad: float = atan2(gable_h, half_w)
 	var roof_slope_len: float = sqrt(pow(half_w + 0.45, 2.0) + pow(gable_h + 0.15, 2.0))
 	var roof_thick: float = 0.28
-	var roof_length: float = depth + 0.8
 
-	# Left Roof Slope (-X)
-	var roof_left := MeshInstance3D.new()
-	var r_box_l := BoxMesh.new()
-	r_box_l.size = Vector3(roof_slope_len, roof_thick, roof_length)
-	roof_left.mesh = r_box_l
-	roof_left.material_override = mat_sod
-	roof_left.position = Vector3(-half_w * 0.5 - 0.1, wall_h + gable_h * 0.5 + 0.12, 0)
-	roof_left.rotation.z = -roof_pitch_rad
-	cabin.add_child(roof_left)
+	var st_sod := SurfaceTool.new()
+	st_sod.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_sod.set_material(mat_sod)
+
+	var r_box_sod := BoxMesh.new()
+	r_box_sod.size = Vector3(roof_slope_len, roof_thick, roof_length)
+
+	# Left Slope
+	var rot_left := Basis(Vector3.FORWARD, -roof_pitch_rad)
+	st_sod.append_from(r_box_sod, 0, Transform3D(rot_left, Vector3(-half_w * 0.5 - 0.1, wall_h + gable_h * 0.5 + 0.12, 0)))
+
+	# Right Slope
+	var rot_right := Basis(Vector3.FORWARD, roof_pitch_rad)
+	st_sod.append_from(r_box_sod, 0, Transform3D(rot_right, Vector3(half_w * 0.5 + 0.1, wall_h + gable_h * 0.5 + 0.12, 0)))
+
+	st_sod.generate_tangents()
+	var roof_mi := MeshInstance3D.new()
+	roof_mi.name = "CabinRoofCompoundMesh"
+	roof_mi.mesh = st_sod.commit()
+	cabin.add_child(roof_mi)
 
 	var roof_l_col := CollisionShape3D.new()
 	var roof_l_shape := BoxShape3D.new()
 	roof_l_shape.size = Vector3(roof_slope_len, roof_thick, roof_length)
 	roof_l_col.shape = roof_l_shape
-	roof_l_col.position = roof_left.position
+	roof_l_col.position = Vector3(-half_w * 0.5 - 0.1, wall_h + gable_h * 0.5 + 0.12, 0)
 	roof_l_col.rotation.z = -roof_pitch_rad
 	cabin.add_child(roof_l_col)
-
-	# Right Roof Slope (+X)
-	var roof_right := MeshInstance3D.new()
-	var r_box_r := BoxMesh.new()
-	r_box_r.size = Vector3(roof_slope_len, roof_thick, roof_length)
-	roof_right.mesh = r_box_r
-	roof_right.material_override = mat_sod
-	roof_right.position = Vector3(half_w * 0.5 + 0.1, wall_h + gable_h * 0.5 + 0.12, 0)
-	roof_right.rotation.z = roof_pitch_rad
-	cabin.add_child(roof_right)
 
 	var roof_r_col := CollisionShape3D.new()
 	var roof_r_shape := BoxShape3D.new()
 	roof_r_shape.size = Vector3(roof_slope_len, roof_thick, roof_length)
 	roof_r_col.shape = roof_r_shape
-	roof_r_col.position = roof_right.position
+	roof_r_col.position = Vector3(half_w * 0.5 + 0.1, wall_h + gable_h * 0.5 + 0.12, 0)
 	roof_r_col.rotation.z = roof_pitch_rad
 	cabin.add_child(roof_r_col)
 
-	# Birch bark strip under turf edge (Never under torv)
+	# Birch bark strip under eaves (compound mesh)
+	var st_birch := SurfaceTool.new()
+	st_birch.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_birch.set_material(mat_birch)
+	var bark_box := BoxMesh.new()
+	bark_box.size = Vector3(0.06, 0.08, roof_length)
 	for side_sign in [-1.0, 1.0]:
-		var bark_strip := MeshInstance3D.new()
-		var bark_box := BoxMesh.new()
-		bark_box.size = Vector3(0.06, 0.08, roof_length)
-		bark_strip.mesh = bark_box
-		bark_strip.material_override = mat_birch
-		bark_strip.position = Vector3(side_sign * (half_w + 0.35), wall_h - 0.04, 0)
-		cabin.add_child(bark_strip)
-
-		# Turf-retaining log along eaves (Torvvol)
-		var torvvol := MeshInstance3D.new()
-		var torv_box := BoxMesh.new()
-		torv_box.size = Vector3(0.18, 0.18, roof_length)
-		torvvol.mesh = torv_box
-		torvvol.material_override = mat_wood_dark
-		torvvol.position = Vector3(side_sign * (half_w + 0.38), wall_h + 0.08, 0)
-		cabin.add_child(torvvol)
-
-	# -------------------------------------------------------------
-	# 7. Smoke Hole / Skylight (Ljore) in Roof
-	# -------------------------------------------------------------
-	var ljore_frame := MeshInstance3D.new()
-	var ljore_box := BoxMesh.new()
-	ljore_box.size = Vector3(0.85, 0.3, 0.85)
-	ljore_frame.mesh = ljore_box
-	ljore_frame.material_override = mat_wood_dark
-	ljore_frame.position = Vector3(0, ridge_h + 0.22, 0.1)
-	cabin.add_child(ljore_frame)
+		st_birch.append_from(bark_box, 0, Transform3D(Basis(), Vector3(side_sign * (half_w + 0.35), wall_h - 0.04, 0)))
+	st_birch.generate_tangents()
+	var bark_mi := MeshInstance3D.new()
+	bark_mi.name = "CabinBirchBarkCompoundMesh"
+	bark_mi.mesh = st_birch.commit()
+	cabin.add_child(bark_mi)
 
 	# -------------------------------------------------------------
 	# 8. Central Stone Hearth (Åre) Fireplace with Rising Smoke
