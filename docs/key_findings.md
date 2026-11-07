@@ -219,3 +219,113 @@ In 3D terrain rendering, displaying unshaded vertex colors or flat fallback mate
   - Farmstead fences, cabins, and tree assets must consolidate geometric primitives into single compound meshes or use MultiMeshInstance3D where possible.
   - Keep total scene `MeshInstance3D` count $< 500$ to maintain a steady 60 FPS and prevent WebGL context destruction.
 
+---
+
+## 14. Compound Primitive Batching Architecture
+
+### The Problem: Node Explosion from Procedural Primitives
+When generating 3D assets procedurally without external glTF models, building structures out of discrete `MeshInstance3D` nodes (logs, corner posts, rails, roof planks, shingles, stone foundations) rapidly bloats the Godot scene tree to $> 1500$ nodes. In WebGL 2.0 / WebAssembly:
+- Each discrete `MeshInstance3D` incurs distinct transform update overhead, culling calculations, and separate WebGL draw calls.
+- Total scene `MeshInstance3D` count initially reached 585 nodes, pushing draw calls toward browser driver limits.
+
+### The Solution: SurfaceTool Primitive Compounding
+Consolidate repeated geometric primitives of the same material into a single `ArrayMesh` via `SurfaceTool`:
+1. **Single-Material Batching:**
+   ```gdscript
+   var st := SurfaceTool.new()
+   st.begin(Mesh.PRIMITIVE_TRIANGLES)
+   st.set_material(mat)
+   var box := BoxMesh.new()
+   box.size = Vector3(w, h, d)
+   for x_pos in positions:
+       st.append_from(box, 0, Transform3D(basis, Vector3(x_pos, y, z)))
+   st.generate_tangents()
+   var compound_mesh := st.commit()
+   ```
+2. **Multi-Material Compound Assemblies:**
+   For composite structures (e.g., stone foundations, tarred wall logs, sod turf roofs), chain multiple `SurfaceTool` commits onto a single shared `ArrayMesh` using `st.commit(shared_array_mesh)`.
+3. **Verified Results:**
+   - Reduced scene `MeshInstance3D` nodes from **585 to 369** (a **37% reduction**).
+   - Total scene draw calls capped at **285**, maintaining a stable 60 FPS in WebGL 2.0.
+
+---
+
+## 15. Historical Fjord Fishing & Stockfish Economy Architecture
+
+### Cultural & Gameplay Context
+In 14th-century Bergen, dried Atlantic cod (*skrei* / stockfish / *tørrfisk*) was the economic lifeblood of the city, traded through Hanseatic League merchants on the Bryggen wharves.
+
+### Technical Implementation
+- **Slot 6 Equipment (`FISHING_LINE`):**
+  - Added Handline & Cod Jig to `EquipmentManager` (`KEY_6`) and the HUD Hotbar.
+  - Implemented an animated wooden spool and trailing line with an iron sinker jig on `BoxManModel`, featuring rhythmic bobbing and jigging arm postures.
+- **Fishing State Machine (`EquipmentManager`):**
+  - `IDLE` $\rightarrow$ `WAITING_FOR_BITE` (jigging with subtle lure action) $\rightarrow$ `HOOKED` (reaction window with audio-visual bite alert) $\rightarrow$ `CATCH`.
+  - Catches are weighted historically (70% Atlantic cod / *torsk*, 30% herring / *sild*).
+- **Interactive Stockfish Drying Racks (`StockfishRackInteractable`):**
+  - Integrated into historical drying racks along the Bryggen quayside.
+  - Allows the settler to hang raw cod with `[E]`; uses a seasonal curing timer (120s) to produce `stockfish`.
+- **Campfire Smoking & Hanseatic Barter:**
+  - Fish can be cooked or smoked at campfires (`CampfireInteractable`) to restore hunger and health.
+  - Hanseatic merchant counters (`MerchantInteractable`) barter 2 stockfish for high-tier medieval goods: 8 iron nails, 1 salt cask, and 2 rye bread loaves.
+
+---
+
+## 16. Traditional Norwegian Bloomery Iron Smelting (*Myrmalm & Blæsterovn*)
+
+### Cultural & Gameplay Context
+Before blast furnaces, medieval Norwegian settlers excavated bog iron ore (*myrmalm*) from wetland hollows and smelted it into workable sponge iron (*jernlupp*) in stone shaft bloomery furnaces (*blæsterovner*) fueled by charcoal and dried peat (*torv*).
+
+### Technical Implementation
+- **Wetland Bog Ore Deposits (`BogOreDeposit`):**
+  - Placed along runoff hollows and boggy stream margins on the Fløyen slopes.
+  - SurfaceTool compound reddish-brown limonite nodules and dark peat turf.
+  - Harvested with `[E]` or pickaxe to yield `bog_iron_ore` and `peat_fuel`.
+- **Campfire Charcoal Making (`CampfireInteractable`):**
+  - Slow-burn carbonization transforms 2 firewood pieces into 2 `charcoal` (*trekol*).
+- **Stone Bloomery Furnace & Forging Anvil (`BloomeryFurnaceInteractable`):**
+  - Stationed at farmsteads: conical stone shaft furnace with clay chimney lining and flat granite forging anvil.
+  - **Smelting Phase:** Consumes 2 bog iron ore + 1 charcoal/peat to smelt a porous `iron_bloom` (*jernlupp*).
+  - **Forging Phase:** Smiths the hot bloom on the anvil to hammer out impurities and produce 8 `iron_nails` (*jernsøm*), closing the resource loop for advanced timber cabin construction.
+
+---
+
+## 17. Multi-Agent Fauna AI: Predator Pack Tactics, Herd Flocking, & Storm Sheltering
+
+### Predator Pack Flanking & Howling (`wolf_ai.gd`)
+- **Pack Role Assignment:** Dynamic assignment of tactical pursuit roles based on relative neighbor IDs: `ALPHA_LEAD`, `FLANK_LEFT` ($+45^\circ$ lateral offset), `FLANK_RIGHT` ($-45^\circ$ lateral offset), and `REAR_AMBUSH` ($+85^\circ$ encirclement).
+- **Acoustic Howl Alert (`alert_pack`):** Upon detecting prey or settler, pack members emit an alert howl every 8s, summoning and orienting all wolves within a 45m radius.
+- **Anti-Crowding Repulsion:** Applied continuous inverse-distance separation forces to prevent pursuit clusters from overlapping.
+- **Solo Wounded Disengagement:** Injured solitary wolves ($< 20$ HP) abandon pursuit and retreat toward mountain altitudes.
+
+### Deer Herd Panic Propagation & Boids Flocking (`deer_ai.gd`)
+- **Acoustic Alarm Broadcasting:** Detection triggers `_broadcast_herd_alarm()`, alerting all herd members within 28m.
+- **Flocking Steering Dynamics:** Three-component vector fusion during stampedes:
+  $$\vec{v}_{\text{flock}} = 0.65\,\vec{v}_{\text{flee}} + 0.25\,\vec{v}_{\text{align}} + 0.15\,\vec{v}_{\text{separate}}$$
+  Guarantees realistic stampede flight without clustering or collision clipping.
+
+### Livestock Weather Awareness & Storm Sheltering (`cow_ai.gd` & `sheep_ai.gd`)
+- **Precipitation Detection:** AI agents periodically sample `SeasonManager` for coastal drizzle, heavy Bergen rain, or winter snow.
+- **Shelter Seeking:** On storm onset, cows and sheep transition to `State.SHELTERING` and navigate toward the nearest building eave or hay rack tagged in group `"shelter"`.
+- **Huddle Posture:** Upon reaching shelter, livestock slow to a stop, tuck their heads, and adopt a subtle synchronized breathing posture until the storm clears.
+
+---
+
+## 18. WebGL 2.0 Build, Packaging, & Asset Synchronization Pipeline
+
+### Invariants for Godot 4 Web Deployments
+1. **Zero Dynamic Script Parsing:** `GDScript.new()` cannot be compiled on WebGL templates; always use `set_script(load(...))` with pre-compiled `.gdc` resources.
+2. **Strict Spatial Rotation Guards:** Always guard `atan2(-dir.x, -dir.z)` against zero-length vectors (`Vector2(dir.x, dir.z).length() > 0.1`) to prevent `NaN` orientation corruption.
+3. **Exact PCK Byte Size Synchronization:**
+   The Web HTML loader requires the exact byte count of `index.pck` declared in `GODOT_CONFIG.fileSizes["index.pck"]` in both `web/index.html` and `web/public/index.html`. Discrepancies cause loading bar stalls or asset unpack aborts.
+   ```bash
+   godot --headless --export-pack "Web" web/public/index.pck
+   stat -c %s web/public/index.pck
+   # Update fileSizes in web/index.html and web/public/index.html
+   cd web && npm run build
+   ```
+4. **Headless Verification Protocol:**
+   - **Editor Script Validation:** `godot --headless --editor --quit` ensures clean class cache rebuild and zero parse errors.
+   - **Offscreen OpenGL3 Frame Render:** Execute via `xvfb-run -a godot --rendering-driver opengl3` to measure draw calls and inspect viewport framebuffers.
+   - **CDP Headless Chromium Verification:** Run headless Chromium with `--use-angle=swiftshader-webgl` and CDP monitoring to verify zero WebGL context losses and zero unhandled JavaScript exceptions.
+
