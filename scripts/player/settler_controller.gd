@@ -18,6 +18,16 @@ signal carrying_state_changed(is_carrying: bool)
 @export var jump_velocity: float = 4.5
 @export var mouse_sensitivity: float = 0.0025
 
+@export_group("Kinematic Movement & Inertia (Stage 1)")
+@export var ground_acceleration: float = 15.0
+@export var ground_deceleration: float = 24.0
+@export var braking_deceleration: float = 34.0
+@export var air_acceleration: float = 5.0
+@export var jump_buffer_time: float = 0.14
+@export var coyote_time: float = 0.12
+@export var fall_gravity_multiplier: float = 1.35
+@export var slope_speed_factor: float = 0.35
+
 @export_group("Camera View")
 @export var is_third_person: bool = true
 @export var target_cam_distance: float = 3.2
@@ -62,12 +72,21 @@ var cam_yaw: float = 0.0
 var cam_pitch: float = deg_to_rad(-8.0)
 var current_cam_distance: float = 3.2
 
+# Stage 1 Kinematic jump buffering & coyote timers
+var _coyote_timer: float = 0.0
+var _jump_buffer_timer: float = 0.0
+
 func _enter_tree() -> void:
 	_ensure_box_man_model()
 
 func _ready() -> void:
 	add_to_group("settler")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+	# CharacterBody3D floor snap and anti-snag slope configuration
+	floor_snap_length = 0.35
+	floor_constant_speed = true
+	floor_max_angle = deg_to_rad(48.0)
 	if get_tree():
 		terrain_generator = get_tree().get_first_node_in_group("terrain_generator") as BergenTerrainGenerator
 
@@ -271,6 +290,17 @@ func _physics_process(delta: float) -> void:
 	if _climb_cooldown > 0.0:
 		_climb_cooldown -= delta
 
+	# Jump buffer timer and coyote timer update
+	if Input.is_action_just_pressed("jump"):
+		_jump_buffer_timer = jump_buffer_time
+	elif _jump_buffer_timer > 0.0:
+		_jump_buffer_timer = maxf(0.0, _jump_buffer_timer - delta)
+
+	if is_on_floor() and not is_swimming and not is_climbing and not is_on_rope:
+		_coyote_timer = coyote_time
+	elif _coyote_timer > 0.0:
+		_coyote_timer = maxf(0.0, _coyote_timer - delta)
+
 	# Direction relative to camera view (Task 1)
 	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
 	var cam_forward := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
@@ -466,36 +496,72 @@ func _physics_process(delta: float) -> void:
 			survival_stats.wetness = minf(100.0, survival_stats.wetness + 25.0 * delta)
 
 	else:
-		# NORMAL GROUND / AIR MOVEMENT (Task 1)
-		if not is_on_floor():
-			velocity.y -= gravity * delta
+		# NORMAL GROUND / AIR MOVEMENT (Stage 1 Kinematic Physics)
+		var on_floor := is_on_floor()
 
-		# Jump
-		if Input.is_action_just_pressed("jump") and is_on_floor():
+		# Snappier gravity curve: heavier fall gravity for physical, responsive jump arcs
+		if not on_floor:
+			var current_gravity := gravity * (fall_gravity_multiplier if velocity.y < 0.0 else 1.0)
+			velocity.y -= current_gravity * delta
+
+		# Coyote time & Jump buffering
+		if _jump_buffer_timer > 0.0 and _coyote_timer > 0.0:
 			var stamina_cost := 16.0 if is_carrying_log else 12.0
 			if survival_stats.consume_stamina(stamina_cost):
 				velocity.y = jump_velocity
+				_jump_buffer_timer = 0.0
+				_coyote_timer = 0.0
 
 		# Sprinting
 		var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0
-		is_sprinting = Input.is_action_pressed("sprint") and is_on_floor() and can_sprint
+		is_sprinting = Input.is_action_pressed("sprint") and on_floor and can_sprint
 		var base_speed := walk_speed * (0.85 if is_carrying_log else 1.0)
 		var speed := sprint_speed if is_sprinting else base_speed
 
-		if is_sprinting:
+		if is_sprinting and direction != Vector3.ZERO:
 			survival_stats.consume_stamina(10.0 * delta)
 
-		if direction:
-			velocity.x = direction.x * speed
-			velocity.z = direction.z * speed
+		# Slope incline speed modulation
+		var slope_mult := 1.0
+		if on_floor:
+			var floor_norm := get_floor_normal()
+			var slope_ang := floor_norm.angle_to(Vector3.UP)
+			if slope_ang > 0.05 and direction != Vector3.ZERO:
+				var slope_h_dir := Vector3(floor_norm.x, 0.0, floor_norm.z).normalized()
+				var uphill_dot := direction.dot(-slope_h_dir)
+				slope_mult = clampf(1.0 + uphill_dot * sin(slope_ang) * slope_speed_factor * (-1.0 if uphill_dot > 0.0 else 0.4), 0.65, 1.15)
 
-			# Smooth character turning with WASD relative to camera view (Task 1)
-			if is_third_person:
-				var target_heading := atan2(-direction.x, -direction.z)
-				rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+		var target_speed := speed * slope_mult
+		var target_horiz := direction * target_speed
+
+		if on_floor:
+			if direction != Vector3.ZERO:
+				# Active direction reversal braking check
+				var curr_h := Vector2(velocity.x, velocity.z)
+				var targ_h := Vector2(target_horiz.x, target_horiz.z)
+				var is_braking := curr_h.length() > 0.8 and curr_h.normalized().dot(targ_h.normalized()) < -0.2
+				var accel_rate := braking_deceleration if is_braking else ground_acceleration
+
+				velocity.x = move_toward(velocity.x, target_horiz.x, accel_rate * delta)
+				velocity.z = move_toward(velocity.z, target_horiz.z, accel_rate * delta)
+
+				# Smooth character turning with WASD relative to camera view
+				if is_third_person:
+					var target_heading := atan2(-direction.x, -direction.z)
+					rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
+			else:
+				# Ground friction deceleration
+				velocity.x = move_toward(velocity.x, 0.0, ground_deceleration * delta)
+				velocity.z = move_toward(velocity.z, 0.0, ground_deceleration * delta)
 		else:
-			velocity.x = move_toward(velocity.x, 0.0, speed)
-			velocity.z = move_toward(velocity.z, 0.0, speed)
+			# Airborne momentum preservation with gentle air steering
+			if direction != Vector3.ZERO:
+				velocity.x = move_toward(velocity.x, target_horiz.x, air_acceleration * delta)
+				velocity.z = move_toward(velocity.z, target_horiz.z, air_acceleration * delta)
+			else:
+				# Subtle air drag
+				velocity.x = move_toward(velocity.x, 0.0, 1.2 * delta)
+				velocity.z = move_toward(velocity.z, 0.0, 1.2 * delta)
 
 	move_and_slide()
 
