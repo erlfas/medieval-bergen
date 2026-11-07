@@ -118,7 +118,16 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	var hay_world_pos := origin + hay_offset
 
 	# -------------------------------------------------------------------------
-	# 7. Split-Rail Wooden Fences (Pasture & Yard Enclosure)
+	# 7. Traditional Bloomery Furnace & Smithing Anvil (Blæsterovn)
+	# -------------------------------------------------------------------------
+	if farm_id == 0 or farm_id == 1:
+		var furnace := BloomeryFurnaceInteractable.new()
+		furnace.name = "BloomeryFurnace_%d" % farm_id
+		furnace.position = Vector3(-6.5, 0.0, -6.5)
+		farm_root.add_child(furnace)
+
+	# -------------------------------------------------------------------------
+	# 8. Split-Rail Wooden Fences (Pasture & Yard Enclosure)
 	# -------------------------------------------------------------------------
 	var fence_root := Node3D.new()
 	fence_root.name = "SplitRailFences"

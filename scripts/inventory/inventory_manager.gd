@@ -22,7 +22,12 @@ var items: Dictionary = {
 	"climbing_rope": 2,
 	"fresh_cod": 0,
 	"fresh_herring": 0,
-	"stockfish": 2
+	"stockfish": 2,
+	"bog_iron_ore": 0,
+	"peat_fuel": 2,
+	"charcoal": 2,
+	"iron_bloom": 0,
+	"iron_nails": 6
 }
 
 func add_resource(resource_id: String, amount: int) -> bool:

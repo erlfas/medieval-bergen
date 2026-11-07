@@ -184,14 +184,21 @@ func on_interact(actor: Node) -> void:
 			equip.arrow_count_updated.emit(equip.arrow_count)
 			actions_taken.append("Spikket 8 jaktpiler")
 
-		# 3. Brew pine-needle tea / warm broth
+		# 3. Char firewood into bloomery smelting charcoal (Trekol)
+		var firewood := inv.get_count("firewood")
+		if firewood >= 4:
+			inv.consume_resources({"firewood": 2})
+			inv.add_resource("charcoal", 2)
+			actions_taken.append("Brente 2 trekol (charcoal) til blæstring")
+
+		# 4. Brew pine-needle tea / warm broth
 		if stats and stats.thirst < 85.0:
 			stats.drink_water(true)
 			stats.warmth = minf(100.0, stats.warmth + 25.0)
 			actions_taken.append("Drakk varm furu-te")
 
 	if actions_taken.is_empty():
-		_show_feedback("Bålet varmer godt! (Trenger rått vilt eller tømmer)")
+		_show_feedback("Bålet varmer godt! (Trenger vilt, fisk, ved eller tømmer)")
 	else:
 		_show_feedback("✓ " + " • ".join(actions_taken))
 

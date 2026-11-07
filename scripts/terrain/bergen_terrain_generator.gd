@@ -361,6 +361,9 @@ func generate_terrain() -> void:
 	# Scatter harvestable trees deterministically across the terrain
 	_scatter_forests()
 
+	# Scatter bog iron ore deposits in wetland basins along mountain streams
+	_scatter_bog_ore_deposits()
+
 	# Generate authentic medieval Bergen farmsteads on fertile lower shelves
 	_generate_farmsteads()
 
@@ -782,3 +785,32 @@ func _scatter_forests() -> void:
 			trees_container.add_child(tree_node)
 			tree_node.global_position = Vector3(tx, ty, tz)
 
+func _scatter_bog_ore_deposits() -> void:
+	var bog_container := get_node_or_null("BogOreDeposits") as Node3D
+	if bog_container:
+		bog_container.queue_free()
+
+	bog_container = Node3D.new()
+	bog_container.name = "BogOreDeposits"
+	add_child(bog_container)
+	bog_container.owner = self
+
+	# 6 historical bog ore locations in the wetland hollows near mountain streams
+	var deposit_locations := [
+		Vector2(45.0, 85.0),
+		Vector2(65.0, 140.0),
+		Vector2(85.0, 195.0),
+		Vector2(110.0, 110.0),
+		Vector2(35.0, 230.0),
+		Vector2(95.0, 60.0)
+	]
+
+	for i in range(deposit_locations.size()):
+		var loc: Vector2 = deposit_locations[i]
+		var gh: float = sample_height(loc.x, loc.y)
+		# Only place in low to medium wetland zones above sea level
+		if gh >= sea_level + 0.8 and gh <= sea_level + 35.0:
+			var deposit := BogOreDeposit.new()
+			deposit.name = "BogDeposit_%d" % i
+			bog_container.add_child(deposit)
+			deposit.global_position = Vector3(loc.x, gh, loc.y)
