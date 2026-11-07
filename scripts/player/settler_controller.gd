@@ -620,9 +620,13 @@ func _grab_rope(rope: ClimbingRope) -> void:
 	is_swimming = false
 	velocity = Vector3.ZERO
 
-func _update_camera(_delta: float) -> void:
+func _update_camera(delta: float) -> void:
 	if not camera or not head:
 		return
+
+	# Smooth FOV zoom when aiming bow
+	var target_fov := 52.0 if (equipment and equipment.is_aiming_bow) else 75.0
+	camera.fov = lerpf(camera.fov, target_fov, delta * 12.0)
 
 	if current_cam_distance < 0.3 or not is_third_person:
 		# First-person view
@@ -636,13 +640,15 @@ func _update_camera(_delta: float) -> void:
 			interact_raycast.global_transform = camera.global_transform
 			interact_raycast.target_position = Vector3(0, 0, -3.5)
 	else:
-		# Third-person view: smooth orbit & spring follow behind character with collision safety
+		# Third-person view: smooth orbit & over-shoulder aiming offset
 		if box_man_model:
 			box_man_model.visible = true
 
 		var pivot_pos := global_position + Vector3(0.0, 1.45, 0.0)
 		var cam_rot := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
-		var desired_offset := cam_rot * Vector3(0.0, cam_height_offset, current_cam_distance)
+		var is_aiming := (equipment and equipment.is_aiming_bow)
+		var shoulder_x := 0.45 if is_aiming else 0.0
+		var desired_offset := cam_rot * Vector3(shoulder_x, cam_height_offset, current_cam_distance)
 		var desired_pos := pivot_pos + desired_offset
 
 		var final_cam_pos := desired_pos

@@ -109,8 +109,12 @@ func _physics_process(delta: float) -> void:
 	if space_state:
 		var query := PhysicsRayQueryParameters3D.create(start_pos, end_pos)
 		var exclude_rids: Array[RID] = []
-		if shooter and shooter is CollisionObject3D:
-			exclude_rids.append((shooter as CollisionObject3D).get_rid())
+		if shooter:
+			if shooter is CollisionObject3D:
+				exclude_rids.append((shooter as CollisionObject3D).get_rid())
+			for child in shooter.get_children():
+				if child is CollisionObject3D:
+					exclude_rids.append(child.get_rid())
 		query.exclude = exclude_rids
 
 		var hit := space_state.intersect_ray(query)

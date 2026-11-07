@@ -199,7 +199,12 @@ func _use_knife(raycast: RayCast3D) -> void:
 		var target := raycast.get_collider()
 		if target:
 			# Check for dead game animal harvesting
-			if target.get("current_state") == 4: # DEAD state in WolfAI / DeerAI
+			var is_dead := false
+			if "current_state" in target:
+				var state_val = target.get("current_state")
+				is_dead = (state_val == 4 or state_val == 5)
+
+			if is_dead:
 				_harvest_animal_corpse(target)
 				return
 
@@ -211,13 +216,23 @@ func _use_knife(raycast: RayCast3D) -> void:
 func _harvest_animal_corpse(corpse: Node) -> void:
 	if not inventory:
 		return
-	if corpse is WolfAI:
+	if corpse is WolfAI or corpse.name.begins_with("Wolf"):
 		inventory.add_resource("wolf_pelt", 1)
-		corpse.queue_free()
-	elif corpse is DeerAI:
+		inventory.add_resource("bone", 2)
+	elif corpse is DeerAI or corpse.name.begins_with("Deer"):
+		inventory.add_resource("raw_venison", 3)
+		inventory.add_resource("deer_hide", 2)
+	elif corpse is RabbitAI or corpse.name.begins_with("Rabbit"):
+		inventory.add_resource("raw_hare", 2)
+		inventory.add_resource("hare_fur", 2)
+	elif corpse.is_in_group("sheep") or corpse.name.begins_with("Sheep"):
+		inventory.add_resource("raw_mutton", 2)
+		inventory.add_resource("sheep_wool", 2)
+	else:
 		inventory.add_resource("raw_venison", 2)
 		inventory.add_resource("deer_hide", 1)
-		corpse.queue_free()
+
+	corpse.queue_free()
 
 ## Slot 4: Bow & Arrow Aiming & Firing
 func start_bow_aim() -> void:

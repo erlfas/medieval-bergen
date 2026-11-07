@@ -28,10 +28,42 @@ extends Control
 var active_style: StyleBoxFlat
 var inactive_style: StyleBoxFlat
 
+var reticle_label: Label
+
 func _ready() -> void:
 	_create_styles()
+	_create_aim_reticle()
 	_find_equipment_manager()
 	_connect_slot_clicks()
+
+func _create_aim_reticle() -> void:
+	reticle_label = Label.new()
+	reticle_label.name = "ArcheryReticle"
+	reticle_label.text = "[ + ]"
+	reticle_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reticle_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	reticle_label.add_theme_font_size_override("font_size", 18)
+	reticle_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8, 0.85))
+	reticle_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	reticle_label.visible = false
+
+	# Position near center of screen
+	reticle_label.set_anchors_preset(Control.PRESET_CENTER)
+	reticle_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	reticle_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+	reticle_label.offset_left = -30
+	reticle_label.offset_right = 30
+	reticle_label.offset_top = -15
+	reticle_label.offset_bottom = 15
+
+	call_deferred("_attach_reticle")
+
+func _attach_reticle() -> void:
+	var hud_layer := get_parent()
+	if hud_layer:
+		hud_layer.add_child(reticle_label)
+	else:
+		add_child(reticle_label)
 
 func _create_styles() -> void:
 	inactive_style = StyleBoxFlat.new()
@@ -112,3 +144,16 @@ func _on_bow_aim_changed(is_aiming: bool, draw_progress: float) -> void:
 	if bow_charge_bar:
 		bow_charge_bar.visible = is_aiming
 		bow_charge_bar.value = draw_progress * 100.0
+
+	if reticle_label:
+		reticle_label.visible = is_aiming
+		if is_aiming:
+			if draw_progress > 0.85:
+				reticle_label.text = "[+]"
+				reticle_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25, 1.0))
+			elif draw_progress > 0.4:
+				reticle_label.text = "[ + ]"
+				reticle_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75, 0.9))
+			else:
+				reticle_label.text = "( + )"
+				reticle_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9, 0.65))

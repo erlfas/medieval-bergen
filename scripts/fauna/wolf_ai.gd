@@ -125,18 +125,22 @@ func _pick_mountain_patrol_target() -> void:
 func _scan_for_fire() -> void:
 	if player_target:
 		# Check if player has lit torch equipped
-		var player_has_torch: bool = player_target.get("is_holding_torch") == true
+		var player_has_torch: bool = (player_target.get("is_holding_torch") == true) or (player_target.get("equipment") and player_target.equipment.current_slot == 5)
 		var dist_to_player := global_position.distance_to(player_target.global_position)
 
 		if player_has_torch and dist_to_player < fire_fear_radius:
 			detect_fire(player_target.global_position)
 			return
 
-	# Check for nearby lit hearths/campfires
-	var hearths := get_tree().get_nodes_in_group("hearth")
-	for h in hearths:
+	# Check for nearby lit hearths / campfires
+	for h in get_tree().get_nodes_in_group("hearth"):
 		if h is Node3D and global_position.distance_to(h.global_position) < fire_fear_radius:
 			detect_fire(h.global_position)
+			return
+
+	for c in get_tree().get_nodes_in_group("campfire"):
+		if c is Node3D and global_position.distance_to(c.global_position) < fire_fear_radius:
+			detect_fire(c.global_position)
 			return
 
 func detect_fire(source_pos: Vector3) -> void:
@@ -164,6 +168,14 @@ func _process_patrol(delta: float) -> void:
 	if player_target and global_position.distance_to(player_target.global_position) < detection_radius:
 		if player_target.global_position.y >= min_mountain_altitude - 10.0:
 			current_state = State.STALK
+	elif not has_fire_threat:
+		# Check for prey (hares) in mountain brush
+		var hares := get_tree().get_nodes_in_group("rabbit")
+		for hare in hares:
+			if hare is Node3D and is_instance_valid(hare) and hare.get("current_state") != 5:
+				if global_position.distance_to(hare.global_position) < 14.0:
+					wander_target = hare.global_position
+					break
 
 func _process_stalk(delta: float) -> void:
 	if not player_target:
