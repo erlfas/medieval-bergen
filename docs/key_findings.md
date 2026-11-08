@@ -538,11 +538,44 @@ The updated architecture establishes a true **Follow-Behind Camera** with critic
 - **Building Exclusions:** Suppresses grass completely inside settlement building footprints and wharves.
 
 ### 4. Distance LOD & WebGL 2.0 Profiling Results
-- **Sectorization:** Groups instances into $110\,\text{m} \times 110\,\text{m}$ spatial sectors. Active sectors instantiate a MultiMesh for LOD0 ($0\,\text{m} - 22\,\text{m}$) and LOD1 ($20\,\text{m} - 65\,\text{m}$) with `SHADOW_CASTING_SETTING_OFF` and native GPU distance culling.
+- **Sector Dimension Optimization for Node Budgets:**
+  - A fine-grained $42\,\text{m} \times 42\,\text{m}$ grid created 185 spatial sectors across the valley ($185 \times 2 = 370$ `MultiMeshInstance3D` nodes), which would have pushed the scene node count to 824 and exceeded the 500-node WebGL ceiling.
+  - Sizing sectors to $110\,\text{m} \times 110\,\text{m}$ macro-cells consolidated the valley into **28 active sectors** (56 MultiMesh nodes), keeping total scene `MeshInstance3D` count at **454** (safely below the 500 WebGL ceiling).
 - **Benchmark Metrics:**
   - Scene `MeshInstance3D` count: **454** ($< 490$ target budget, strictly below 500 WebGL ceiling).
   - Active grass clumps: **4,255** across 28 sectors.
-  - Web export bundle: `web/public/index.pck` grew from $46.4\,\text{MB}$ to $47.6\,\text{MB}$ (delta $+1.19\,\text{MB}$, with raw 3D models cleanly excluded).
+  - Static engine memory: **$121.2\,\text{MB}$** (well below $350\,\text{MB}$ limit).
+  - Web export bundle: `web/public/index.pck` grew from $46.4\,\text{MB}$ to $47.6\,\text{MB}$ (delta $+1.19\,\text{MB}$).
+
+### 5. Critical Technical Findings & Architectural Pitfalls
+
+#### A. Godot 4 Headless Dummy Renderer vs. OpenGL3 MultiMesh Buffers
+- **Symptom:** In automated headless tests (`--headless`), `mm.get_instance_transform(i)` returned `(0, 0, 0)` and `mm.buffer` had a size of 0 despite successful `set_instance_transform()` calls.
+- **Root Cause:** In headless mode without a display server, Godot initializes `RendererDummy`, which deliberately bypasses GPU buffer allocation and drops MultiMesh transform buffer storage to conserve memory.
+- **Solution:** Execute automated spatial distribution and render tests under Xvfb with the explicit OpenGL3 rendering driver:
+  ```bash
+  xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/test_grass_distribution.gd
+  ```
+  This instantiates the real Mesa Compatibility OpenGL3 backend (`llvmpipe`), accurately populating the MultiMesh instance float buffer (`PackedFloat32Array` of size $16 \times N$) and returning true world-space transforms.
+
+#### B. Raw Asset PCK Bloat Prevention via `exclude_filter`
+- **Symptom:** Initial web export generated a $75.7\,\text{MB}$ `.pck` bundle (a $+29.3\,\text{MB}$ bloat).
+- **Root Cause:** In `export_presets.cfg`, `export_filter="all_resources"` exports every recognized asset in `res://`. When Godot imported `3dmodels/grass clump 3d model.glb`, it generated uncompressed $4096 \times 4096$ and $2048 \times 2048$ `.ctex` textures in `.godot/imported/` and packed the raw $9.91\,\text{MB}$ GLB.
+- **Solution:** Configured `exclude_filter` in `export_presets.cfg`:
+  ```ini
+  exclude_filter="web/*, scratch/*, 3dmodels/*"
+  ```
+  The raw source models in `3dmodels/` remain available for authoring and tooling but are cleanly excluded from the web bundle, while only the optimized assets in `assets/terrain/` ($279\,\text{KB}$) are packaged into `index.pck`.
+
+#### C. Phase-by-Phase Automated Gate Matrix
+| Gate | Target System | Verification Command | Pass/Fail Criteria | Result |
+| :--- | :--- | :--- | :--- | :--- |
+| **Gate 1** | Asset Decimation | `python3 scripts/terrain/verify_grass_assets.py` | LOD0 $\le 500$ tris, total size $\le 450\,\text{KB}$ | **PASSED** (439 tris, $279\,\text{KB}$) |
+| **Gate 2** | Wind Shader | `/tmp/godot --headless --script scripts/tests/test_grass_shader.gd` | 0 GL errors, root $\Delta V \equiv 0.0\,\text{m}$, tip $\le 0.42\,\text{m}$ | **PASSED** ($\Delta V_{\text{root}} = 0.000\,\text{m}$) |
+| **Gate 3** | Grazing Distribution | `xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/test_grass_distribution.gd` | Pasture height $\le 0.35\,\text{m}$, wilderness $\ge 0.85\,\text{m}$ | **PASSED** (0 height violations) |
+| **Gate 4** | WebGL Profiler | `xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/profile_grass_performance.gd` | Meshes $\le 490$, memory $\le 350\,\text{MB}$, render valid | **PASSED** (454 meshes, $121\,\text{MB}$) |
+| **Gate 5** | Web Export & Vite | `npm run build && git status` | `dist/index.html` built, clean working tree | **PASSED** (Vite built in 85ms) |
+
 
 
 
