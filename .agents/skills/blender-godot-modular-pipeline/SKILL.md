@@ -1,11 +1,11 @@
 ---
 name: blender-godot-modular-pipeline
-description: Author procedural 3D modular assets in headless Blender (bpy + bmesh), transform coordinates and basis matrices from Blender Z-up to glTF/Godot Y-up, preserve multi-material glTF surfaces, and batch modular .glb pieces into single-draw-call ArrayMeshes in Godot 4 WebGL 2.0 via SurfaceTool.append_from.
+description: Author procedural 3D modular assets in headless Blender (bpy + bmesh), transform coordinates and basis matrices from Blender Z-up to glTF/Godot Y-up, preserve multi-material glTF surfaces, decimate raw high-poly .glb models, and batch modular .glb pieces into single-draw-call ArrayMeshes in Godot 4 WebGL 2.0 via SurfaceTool.append_from.
 ---
 
 # Blender-to-Godot 4 Modular 3D Pipeline (`bpy` + `bmesh` $\rightarrow$ WebGL 2.0)
 
-Use this skill when generating 3D modular architecture, props, foliage, or equipment in headless **Blender (`bpy` + `bmesh`)** and assembling them procedurally in **Godot 4.x (GL Compatibility / WebGL 2.0)** without violating draw-call or `MeshInstance3D` node budgets.
+Use this skill when generating 3D modular architecture, props, foliage, or equipment in headless **Blender (`bpy` + `bmesh`)**, decimating high-poly raw `.glb` models, and assembling them procedurally in **Godot 4.x (GL Compatibility / WebGL 2.0)** without violating draw-call or `MeshInstance3D` node budgets.
 
 ---
 
@@ -13,9 +13,9 @@ Use this skill when generating 3D modular architecture, props, foliage, or equip
 
 ```mermaid
 flowchart TD
-    A["Headless Python venv (bpy + bmesh)"] --> B["Godot-Space Authoring: g_pos(gx, gy, gz) & g_mat(M)"]
-    B --> C["Multi-Material bmesh Faces & UV Projections"]
-    C --> D["glTF 2.0 Binary Export (.glb, export_yup=True)"]
+    A["Headless Python venv (/tmp/bvenv: bpy + bmesh)"] --> B["Import scripts/blender_godot_kit.py"]
+    B --> C["Godot-Space Authoring: add_box, add_hewn_log, add_fieldstone"]
+    C --> D["export_glb() -> Multi-Surface .glb (export_yup=True)"]
     D --> E["Headless Godot Editor Import (--editor --quit)"]
     E --> F["SurfaceTool.append_from() Per-Material Batching"]
     F --> G["Single Multi-Surface ArrayMesh per Building (<500 MeshInstance3D)"]
@@ -25,12 +25,11 @@ flowchart TD
 
 ## 1. Provisioning Headless Blender (`bpy`) in User Space
 
-When running in a container or sandbox without system-wide `blender` installed, install `bpy` into an isolated `uv` virtual environment in `/tmp`:
+When running in a container or sandbox without system-wide `blender` installed, install `bpy` into an isolated `uv` virtual environment in `/tmp/bvenv`:
 
 ```bash
 uv venv /tmp/bvenv
 uv pip install --python /tmp/bvenv/bin/python bpy trimesh pillow numpy
-/tmp/bvenv/bin/python scripts/architecture/generate_laftehytte_modules_blender.py
 ```
 
 > [!TIP]
@@ -38,88 +37,56 @@ uv pip install --python /tmp/bvenv/bin/python bpy trimesh pillow numpy
 
 ---
 
-## 2. Exact Coordinate & Basis Mapping (Blender Z-Up $\leftrightarrow$ Godot Y-Up)
+## 2. Using the Bundled `blender_godot_kit.py` Helper Library
 
-Blender uses a right-handed **Z-up** coordinate system (`+X` right, `+Y` back, `+Z` up). Godot 4 and glTF 2.0 use a right-handed **Y-up** coordinate system (`+X` right, `+Y` up, `+Z` south/back). When exporting with `bpy.ops.export_scene.gltf(..., export_yup=True)`, Blender maps $(x_b, y_b, z_b) \mapsto (x_b, z_b, -y_b)$.
+This skill bundles [`scripts/blender_godot_kit.py`](scripts/blender_godot_kit.py), which handles all Blender Z-up $\leftrightarrow$ Godot Y-up coordinate math, material slot binding, procedural `bmesh` primitives, triplanar box UV projection, and `.glb` exporting.
 
-To author geometry directly in **Godot local coordinates** `(gx, gy, gz)` with zero orientation mismatch or root-node rotation workarounds, apply the inverse orthogonal change-of-basis matrix $C$:
-
-$$C = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 0 & -1 \\ 0 & 1 & 0 \end{bmatrix}, \quad C^{-1} = C^T = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 0 & 1 \\ 0 & -1 & 0 \end{bmatrix}$$
-
-### Drop-In Python Helpers for `bmesh`
+### Quick-Start Example (Creating a New Modular Asset)
 
 ```python
-import math
-from mathutils import Vector, Matrix
+import os
+import sys
 
-C_G2B = Matrix((
-    (1.0, 0.0,  0.0),
-    (0.0, 0.0, -1.0),
-    (0.0, 1.0,  0.0),
-))
-C_B2G = C_G2B.transposed()
+sys.path.append(os.path.abspath(".agents/skills/blender-godot-modular-pipeline/scripts"))
+import blender_godot_kit as bgk
 
-def g_pos(gx: float, gy: float, gz: float) -> Vector:
-    """Convert Godot (X right, Y up, Z south) to Blender (X right, Y north, Z up)."""
-    return Vector((gx, -gz, gy))
+# 1. Reset headless Blender scene & create the 9-material Medieval Bergen palette
+bgk.reset_scene()
+palette = bgk.MaterialPalette.create_medieval_bergen_palette()
+bm = bgk.new_bmesh()
 
-def g_mat(m_godot_3x3: Matrix) -> Matrix:
-    """Convert a 3x3 rotation/scale Matrix defined in Godot axes into Blender axes."""
-    return C_G2B @ m_godot_3x3 @ C_B2G
+# 2. Build geometry directly in Godot coordinates (X right, Y up, Z south)
+# Stone base pier
+bgk.add_fieldstone(bm, center_g=(0.0, 0.20, 0.0), radii_g=(0.35, 0.22, 0.35), mat_idx=palette.idx("stone_foundation"), seed=1)
+# Vertical hand-hewn stave post
+bgk.add_hewn_log(bm, start_g=(0.0, 0.38, 0.0), end_g=(0.0, 2.80, 0.0), radius=0.14, mat_idx=palette.idx("wood_spruce"))
+# Angled wind brace rotated 45 degrees around Godot Z axis
+bgk.add_box(bm, center_g=(0.45, 2.25, 0.0), size_g=(1.10, 0.14, 0.14), mat_idx=palette.idx("wood_dark"), rot_g=bgk.g_rot_z(0.7854))
 
-def g_rot_x(angle_rad: float) -> Matrix:
-    return g_mat(Matrix.Rotation(angle_rad, 3, 'X'))
-
-def g_rot_y(angle_rad: float) -> Matrix:
-    return g_mat(Matrix.Rotation(angle_rad, 3, 'Y'))
-
-def g_rot_z(angle_rad: float) -> Matrix:
-    return g_mat(Matrix.Rotation(angle_rad, 3, 'Z'))
+# 3. Export binary .glb with automatic normals, triplanar box UVs, and material slots
+bgk.export_glb(bm, name="grindverk_stave_post", out_dir="assets/modular_pieces/grindverk", palette=palette)
 ```
+
+### Available Primitives & Helpers in `blender_godot_kit.py`
+| Function / Class | Description |
+| :--- | :--- |
+| `g_pos(gx, gy, gz)` / `g_vec(v)` | Converts Godot `(X right, Y up, Z south)` coordinates to Blender `(X, -Z, Y)` |
+| `g_mat(m_3x3)` / `g_rot_x/y/z(rad)` / `g_euler(...)` | Converts a 3x3 rotation/scale matrix defined in Godot axes into Blender axes via $C \cdot M_{\text{godot}} \cdot C^{-1}$ |
+| `MaterialPalette.create_medieval_bergen_palette()` | Creates the 9 named materials (`wood_spruce`, `wood_dark`, `wood_weathered`, `stone_foundation`, `sod_roof`, `birch_bark`, `iron_hardware`, `window_glass`, `shutter_wood`) |
+| `add_box(bm, center_g, size_g, mat_idx, rot_g, bevel_top)` | Adds an oriented box in Godot space with optional top bevel |
+| `add_hewn_log(bm, start_g, end_g, radius, mat_idx, ...)` | Adds an 8-sided broadaxe-flattened log between any two Godot 3D points with organic wobble and tapered *laftehode* ends |
+| `add_cylinder_g(bm, base_center_g, axis_dir_g, length, ...)` | Adds an oriented cylinder or tapered frustum along any Godot direction vector |
+| `add_fieldstone(bm, center_g, radii_g, mat_idx, seed)` | Adds a faceted gneiss/slate fieldstone block with flat bedding planes |
+| `export_glb(bm, name, out_dir, palette, ...)` | Welds vertices, recalculates outward normals, projects triplanar UVs, binds materials, and exports `out_dir/name.glb` |
+| `decimate_and_export_glb(in_path, out_path, target_tris)` | Imports a high-poly `.glb`, aligns `y_min = 0.0`, applies Collapse Decimation to `target_tris`, and exports a WebGL-ready `.glb` |
 
 ---
 
-## 3. Multi-Material `bmesh` Authoring & glTF Surface Preservation
+## 3. Coordinate Math Reference (Blender Z-Up $\leftrightarrow$ Godot Y-Up)
 
-When a single Blender `Mesh` contains faces assigned to multiple `bpy.data.materials` slots (`face.material_index = mat_idx`), Blender's glTF 2.0 exporter automatically splits the mesh into one glTF primitive (one Godot `ArrayMesh` surface) per used material and preserves the exact Blender material name on `mesh.surface_get_material(s).resource_name`.
+When exporting with `bpy.ops.export_scene.gltf(..., export_yup=True)`, Blender maps $(x_b, y_b, z_b) \mapsto (x_b, z_b, -y_b)$. The inverse orthogonal basis matrix $C$ used by `blender_godot_kit.py` is:
 
-### Blender Export Routine
-
-```python
-def finalize_and_export_glb(bm: bmesh.types.BMesh, name: str, out_dir: str, mat_list: list):
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    mesh = bpy.data.meshes.new(name)
-    bm.to_mesh(mesh)
-    bm.free()
-
-    for mat in mat_list:
-        mesh.materials.append(mat)
-
-    # Smooth-shade organic surfaces or keep flat-shaded architectural facets
-    for poly in mesh.polygons:
-        poly.use_smooth = False
-
-    bpy.ops.object.select_all(action='DESELECT')
-    for obj in list(bpy.data.objects):
-        bpy.data.objects.remove(obj, do_unlink=True)
-
-    obj = bpy.data.objects.new(name, mesh)
-    bpy.context.collection.objects.link(obj)
-    bpy.context.view_layer.objects.active = obj
-    obj.select_set(True)
-
-    filepath = os.path.join(out_dir, f"{name}.glb")
-    bpy.ops.export_scene.gltf(
-        filepath=filepath,
-        export_format='GLB',
-        use_selection=True,
-        export_yup=True,
-        export_apply=True,
-        export_materials='EXPORT',
-        export_normals=True,
-        export_texcoords=True,
-    )
-```
+$$C = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 0 & -1 \\ 0 & 1 & 0 \end{bmatrix}, \quad C^{-1} = C^T = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 0 & 1 \\ 0 & -1 & 0 \end{bmatrix}, \quad M_{\text{blender}} = C \cdot M_{\text{godot}} \cdot C^{-1}$$
 
 ---
 
@@ -189,7 +156,7 @@ func _commit_mat_sts(st_by_mat: Dictionary) -> ArrayMesh:
 ## 5. Headless Godot Import & Web Export Checklist
 
 1. **Guard Raw Third-Party Model Directories (`3dmodels/.gdignore`):**
-   Before running `godot --headless --editor --quit` to import new `.glb` modules in `assets/modular_pieces/`, ensure raw reference folders (like `3dmodels/`) contain a `.gdignore` during the import pass if you do not want Godot to extract embedded `.jpg`/`.png` textures into the working tree.
+   Keep `3dmodels/.gdignore` present so `godot --headless --editor --quit` only imports optimized game assets in `assets/` and does not extract multi-megabyte textures from raw reference models in `3dmodels/`.
 2. **Import `.glb` Modules via Headless Editor:**
    ```bash
    xvfb-run -a /tmp/godot --headless --path . --editor --quit
