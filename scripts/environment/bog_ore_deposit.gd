@@ -113,6 +113,9 @@ func _process(delta: float) -> void:
 				feedback_label.visible = false
 			set_process(false)
 
+func take_damage(_amount: float = 0.0, actor: Node = null) -> void:
+	on_interact(actor)
+
 func on_interact(actor: Node) -> void:
 	if actor == null:
 		return
@@ -121,8 +124,8 @@ func on_interact(actor: Node) -> void:
 		_show_feedback("Myrleiet er tomt. Ny malm feller ut fra grunnvannet over tid.")
 		return
 
-	var inv: InventoryManager = actor.get_node_or_null("InventoryManager")
-	var stats: SurvivalStats = actor.get_node_or_null("SurvivalStats")
+	var inv: Node = actor.get_node_or_null("InventoryManager")
+	var stats: Node = actor.get_node_or_null("SurvivalStats")
 
 	if inv:
 		charges -= 1

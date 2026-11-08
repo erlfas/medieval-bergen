@@ -13,6 +13,8 @@ extends CharacterBody3D
 
 signal carrying_state_changed(is_carrying: bool)
 
+const EquipmentManager = preload("res://scripts/player/equipment_manager.gd")
+
 @export var walk_speed: float = 4.2
 @export var sprint_speed: float = 7.0
 @export var jump_velocity: float = 4.5
@@ -51,10 +53,10 @@ signal carrying_state_changed(is_carrying: bool)
 @onready var head: Node3D = $Head
 @onready var camera: Camera3D = $Head/Camera3D
 @onready var interact_raycast: RayCast3D = $Head/InteractRayCast
-@onready var survival_stats: SurvivalStats = $SurvivalStats
-@onready var inventory: InventoryManager = $InventoryManager
-@onready var player_builder: PlayerBuilder = $PlayerBuilder
-@onready var equipment: EquipmentManager = $EquipmentManager
+@onready var survival_stats: Node = $SurvivalStats
+@onready var inventory: Node = $InventoryManager
+@onready var player_builder: Node = $PlayerBuilder
+@onready var equipment: Node = $EquipmentManager
 
 var box_man_model: Node3D
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -62,7 +64,7 @@ var is_sprinting: bool = false
 var is_holding_torch: bool = false
 var is_carrying_log: bool = false
 var torch_light: OmniLight3D
-var terrain_generator: BergenTerrainGenerator
+var terrain_generator: Node
 
 # State flags for swimming and mountain climbing
 var is_swimming: bool = false
@@ -70,8 +72,9 @@ var is_wading: bool = false
 var is_climbing: bool = false
 var climb_normal: Vector3 = Vector3.BACK
 var is_on_rope: bool = false
-var active_rope: ClimbingRope = null
+var active_rope: Node = null
 var _climb_cooldown: float = 0.0
+var _climb_lost_contact_timer: float = 0.0
 var _ripple_timer: float = 0.0
 
 var cam_yaw: float = 0.0
@@ -127,7 +130,7 @@ func _ready() -> void:
 	floor_constant_speed = true
 	floor_max_angle = deg_to_rad(48.0)
 	if get_tree():
-		terrain_generator = get_tree().get_first_node_in_group("terrain_generator") as BergenTerrainGenerator
+		terrain_generator = get_tree().get_first_node_in_group("terrain_generator")
 
 	_ensure_box_man_model()
 	_ensure_equipment_manager()
@@ -135,7 +138,7 @@ func _ready() -> void:
 
 	# Snap settler vertically to terrain surface
 	if terrain_generator:
-		var ground_h := terrain_generator.sample_height(global_position.x, global_position.z)
+		var ground_h: float = float(terrain_generator.sample_height(global_position.x, global_position.z))
 		global_position.y = maxf(global_position.y, ground_h + 0.1)
 
 	# Configure camera and raycast to be top_level for smooth independent orbit & follow
@@ -143,6 +146,7 @@ func _ready() -> void:
 		camera.top_level = true
 	if interact_raycast:
 		interact_raycast.top_level = true
+		interact_raycast.add_exception(self)
 
 	current_cam_distance = target_cam_distance if is_third_person else 0.0
 	_current_safe_dist = current_cam_distance
@@ -213,7 +217,7 @@ func _spawn_starter_logs() -> void:
 		scene_root.add_child(log_inst)
 		var target_pos: Vector3 = global_position + offset
 		if terrain_generator:
-			var gh := terrain_generator.sample_height(target_pos.x, target_pos.z)
+			var gh: float = float(terrain_generator.sample_height(target_pos.x, target_pos.z))
 			target_pos.y = gh + 0.3
 		log_inst.global_position = target_pos
 		log_inst.rotation.y = randf_range(0.0, TAU)
@@ -349,8 +353,8 @@ func _physics_process(delta: float) -> void:
 	# W: +1.0 (forward), S: -1.0 (backward)
 	var drive_input := Input.get_axis("move_backward", "move_forward")
 
-	var is_aiming := (equipment != null and equipment.is_aiming_bow)
-	var is_strafing := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or is_aiming
+	var is_aiming: bool = (equipment != null and bool(equipment.get("is_aiming_bow")))
+	var is_strafing: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or is_aiming
 
 	# Continuous yaw steering with A/D (allows full 360-degree rotation purely with keyboard)
 	if not is_climbing and not is_on_rope:
@@ -394,21 +398,32 @@ func _physics_process(delta: float) -> void:
 	var water_submergence := water_surface_y - global_position.y
 	var water_column := water_surface_y - ground_h
 
-	if water_submergence > 0.08 and water_column > 0.12:
-		if water_submergence >= 1.05 or not is_on_floor():
-			# Deep swimming
+	if is_swimming:
+		# If already swimming, stay swimming until reaching shallow water where feet touch bottom
+		if water_column < 0.90 and is_on_floor():
+			is_swimming = false
+			is_wading = water_submergence > 0.08
+		else:
 			is_swimming = true
 			is_wading = false
 			is_climbing = false
 			is_on_rope = false
 			active_rope = null
-		else:
-			# Shallow wading
-			is_wading = true
-			is_swimming = false
 	else:
-		is_wading = false
-		is_swimming = false
+		if water_submergence > 0.08 and water_column > 0.12:
+			# Deep swimming engages when water depth > 1.35m or character is submerged > 1.0m
+			if water_column >= 1.35 or water_submergence >= 1.0 or not is_on_floor():
+				is_swimming = true
+				is_wading = false
+				is_climbing = false
+				is_on_rope = false
+				active_rope = null
+			else:
+				is_wading = true
+				is_swimming = false
+		else:
+			is_wading = false
+			is_swimming = false
 
 	# -------------------------------------------------------------
 	# 2. MOUNTAIN CLIFF DETECTION & ROCK CLIMBING ENGAGE (Task 7)
@@ -428,7 +443,7 @@ func _physics_process(delta: float) -> void:
 	# -------------------------------------------------------------
 	if is_on_rope and active_rope and is_instance_valid(active_rope):
 		# CLIMBING ROPE TOOL / RAPPELLING (Task 7)
-		var rope_target := active_rope.get_closest_point(global_position)
+		var rope_target: Vector3 = active_rope.get_closest_point(global_position)
 		global_position.x = lerpf(global_position.x, rope_target.x, delta * 12.0)
 		global_position.z = lerpf(global_position.z, rope_target.z, delta * 12.0)
 
@@ -466,26 +481,36 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector3.ZERO
 
 	elif is_climbing:
-		# Check if cliff contact is maintained - disengage immediately if moving into open air or off cliff
+		# Check if cliff contact is maintained - grace period prevents premature fall on uneven terrain
 		var track_info := _check_steep_cliff()
 		if track_info.is_empty():
-			is_climbing = false
-			_climb_cooldown = 0.25
-			velocity = Vector3.DOWN * 2.0
+			_climb_lost_contact_timer += delta
+			if _climb_lost_contact_timer > 0.35:
+				is_climbing = false
+				_climb_lost_contact_timer = 0.0
+				_climb_cooldown = 0.3
+				velocity = Vector3.DOWN * 2.5
 		else:
+			_climb_lost_contact_timer = 0.0
 			climb_normal = track_info.normal
+			# Wall distance adhesion: maintain snug ~0.42m distance to rock face
+			if track_info.has("position"):
+				var hit_p: Vector3 = track_info.position
+				var ideal_pos := hit_p + climb_normal * 0.42
+				global_position.x = lerpf(global_position.x, ideal_pos.x, delta * 8.0)
+				global_position.z = lerpf(global_position.z, ideal_pos.z, delta * 8.0)
 
-		# FREEFORM ROCK CLIMBING (Task 7)
+		# FREEFORM ROCK CLIMBING
 		# W climbs UP, S climbs DOWN, A climbs LEFT, D climbs RIGHT
 		var cliff_right := Vector3.UP.cross(climb_normal).normalized()
 		var climb_move := Vector3.UP * drive_input - cliff_right * turn_input
 
 		if climb_move != Vector3.ZERO:
 			velocity = climb_move.normalized() * climb_speed
-			survival_stats.consume_stamina(6.5 * delta)
+			survival_stats.consume_stamina(6.0 * delta)
 		else:
 			velocity = Vector3.ZERO
-			survival_stats.consume_stamina(2.0 * delta)
+			survival_stats.consume_stamina(1.5 * delta)
 
 		# Orient settler to face directly into the cliff
 		var target_facing := atan2(-climb_normal.x, -climb_normal.z)
@@ -494,19 +519,22 @@ func _physics_process(delta: float) -> void:
 		# Exhaustion slip if stamina depletes
 		if survival_stats.stamina <= 0.0:
 			is_climbing = false
+			_climb_lost_contact_timer = 0.0
 			_climb_cooldown = 1.0
 			velocity = climb_normal * 1.5 + Vector3.DOWN * 2.0
 
 		# Push off / Jump off cliff face
 		if Input.is_action_just_pressed("jump"):
 			is_climbing = false
+			_climb_lost_contact_timer = 0.0
 			_climb_cooldown = 0.45
 			velocity = climb_normal * 4.2 + Vector3.UP * 3.6
 
-		# Vault onto top ledge if reached
-		if drive_input > 0.2:
-			var ledge_origin := global_position + Vector3(0.0, 1.8, 0.0) - climb_normal * 0.75
-			var ledge_query := PhysicsRayQueryParameters3D.create(ledge_origin, ledge_origin + Vector3.DOWN * 1.4)
+		# Vault/Mantle onto top ledge if reached
+		if drive_input > 0.1:
+			var forward_into_cliff := -climb_normal
+			var ledge_test_origin := global_position + Vector3(0.0, 1.7, 0.0) + forward_into_cliff * 0.75
+			var ledge_query := PhysicsRayQueryParameters3D.create(ledge_test_origin, ledge_test_origin + Vector3.DOWN * 1.8)
 			ledge_query.exclude = [get_rid()]
 			var space_state := get_world_3d().direct_space_state
 			if space_state:
@@ -516,40 +544,43 @@ func _physics_process(delta: float) -> void:
 					if l_norm.angle_to(Vector3.UP) < deg_to_rad(45.0):
 						global_position = ledge_hit.position + Vector3(0.0, 0.1, 0.0)
 						is_climbing = false
+						_climb_lost_contact_timer = 0.0
 						_climb_cooldown = 0.5
 						velocity = Vector3.ZERO
 
 		# Reached ground at base of cliff
 		if drive_input < -0.2 and is_on_floor():
 			is_climbing = false
+			_climb_lost_contact_timer = 0.0
 			_climb_cooldown = 0.2
 
 	elif is_swimming:
-		# SWIMMING MECHANICS (Stage 4 Dynamic Wave Buoyancy)
-		# Buoyancy keeps character afloat dynamically atop undulating waves
-		if global_position.y < water_surface_y:
-			var depth := water_surface_y - global_position.y
-			velocity.y = lerpf(velocity.y, depth * 8.0 + 0.6, delta * 7.0)
-			global_position.y = lerpf(global_position.y, water_surface_y, delta * 5.0)
-		elif global_position.y > water_surface_y + 0.35:
-			velocity.y -= gravity * delta
+		# SWIMMING MECHANICS (Dynamic Wave Buoyancy)
+		# Buoyancy keeps character afloat dynamically with waterline at chest height
+		var target_swim_y := water_surface_y - 1.25
+		if global_position.y < target_swim_y:
+			var depth := target_swim_y - global_position.y
+			velocity.y = lerpf(velocity.y, depth * 7.0 + 0.8, delta * 6.5)
+			global_position.y = lerpf(global_position.y, target_swim_y, delta * 4.5)
+		elif global_position.y > target_swim_y + 0.35:
+			velocity.y -= gravity * delta * 0.70
 		else:
-			velocity.y = lerpf(velocity.y, 0.0, delta * 8.0)
-			global_position.y = lerpf(global_position.y, water_surface_y, delta * 5.0)
+			velocity.y = lerpf(velocity.y, 0.0, delta * 7.0)
+			global_position.y = lerpf(global_position.y, target_swim_y, delta * 4.5)
 
 		# Jump: treading boost or leaping onto shallow shoreline
 		if Input.is_action_just_pressed("jump"):
 			_spawn_water_ripple(Vector3(global_position.x, water_surface_y + 0.02, global_position.z))
-			if ground_h >= water_surface_y - 0.7:
-				velocity.y = 4.4
+			if ground_h >= water_surface_y - 1.1:
+				velocity.y = 4.8
 				if direction != Vector3.ZERO:
-					velocity += direction * 3.2
+					velocity += direction * 3.6
 			else:
-				velocity.y = 2.4
+				velocity.y = 2.6
 
 		# Swim speed & gentle water drag
 		var current_swim_speed := swim_speed
-		var is_swim_sprinting := Input.is_action_pressed("sprint") and (survival_stats != null and survival_stats.stamina > 5.0)
+		var is_swim_sprinting: bool = Input.is_action_pressed("sprint") and (survival_stats != null and float(survival_stats.get("stamina")) > 5.0)
 		if is_swim_sprinting:
 			current_swim_speed = swim_sprint_speed
 			if survival_stats:
@@ -599,7 +630,7 @@ func _physics_process(delta: float) -> void:
 				_coyote_timer = 0.0
 
 		# Sprinting (only when moving forward)
-		var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0 and drive_input > 0.0
+		var can_sprint: bool = not is_carrying_log and (survival_stats != null and float(survival_stats.get("stamina")) > 5.0) and drive_input > 0.0
 		is_sprinting = Input.is_action_pressed("sprint") and on_floor and can_sprint
 		var base_speed := walk_speed * (0.85 if is_carrying_log else 1.0)
 		var speed := base_speed
@@ -688,17 +719,43 @@ func _physics_process(delta: float) -> void:
 	current_cam_distance = lerpf(current_cam_distance, desired_cam_dist, delta * 12.0)
 	_update_camera(delta)
 
-	# Update CarryableLog focus prompt if looking at one
-	_update_focused_log()
+	# Update interactable focus (CarryableLog prompt, HarvestableTree chop tracker & fall angle)
+	_update_focused_interactables()
 
 var _focused_log: Node = null
+var _focused_tree: Node = null
 
-func _update_focused_log() -> void:
+func _update_focused_interactables() -> void:
 	var hit_log: Node = null
+	var hit_tree: Node = null
+
 	if interact_raycast and interact_raycast.is_colliding():
 		var col := interact_raycast.get_collider()
-		if col and col.is_in_group("carryable_log") and col.has_method("set_settler_focus"):
-			hit_log = col
+		if col:
+			if col.is_in_group("carryable_log") and col.has_method("set_settler_focus"):
+				hit_log = col
+			elif col.is_in_group("harvestable_trees") or (col.has_method("chop") and col.has_method("set_settler_focus")):
+				hit_tree = col
+
+	# Proximity check for nearby trees within 3.6m ahead of settler
+	if hit_tree == null and is_inside_tree():
+		var trees := get_tree().get_nodes_in_group("harvestable_trees")
+		var closest_d := 3.6
+		var forward_h := -global_transform.basis.z
+		forward_h.y = 0.0
+		if forward_h.length_squared() > 0.01:
+			forward_h = forward_h.normalized()
+			for t in trees:
+				if t is Node3D and is_instance_valid(t):
+					var to_tree: Vector3 = t.global_position - global_position
+					to_tree.y = 0.0
+					var d := to_tree.length()
+					if d < closest_d:
+						if forward_h.dot(to_tree.normalized()) > 0.35:
+							closest_d = d
+							hit_tree = t
+
+	# Manage log focus
 	if _focused_log != hit_log:
 		if _focused_log and is_instance_valid(_focused_log) and _focused_log.has_method("set_settler_focus"):
 			_focused_log.set_settler_focus(null)
@@ -706,7 +763,15 @@ func _update_focused_log() -> void:
 		if _focused_log and is_instance_valid(_focused_log):
 			_focused_log.set_settler_focus(self)
 
-## Detects steep rocky cliff faces (> 50° slope) ahead of settler
+	# Manage tree focus (shows 10-chop progress tracker and fall angle trajectory indicator)
+	if _focused_tree != hit_tree:
+		if _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("set_settler_focus"):
+			_focused_tree.set_settler_focus(null)
+		_focused_tree = hit_tree
+		if _focused_tree and is_instance_valid(_focused_tree):
+			_focused_tree.set_settler_focus(self)
+
+## Detects steep rocky cliff faces (>= 45° slope) ahead of settler
 func _check_steep_cliff() -> Dictionary:
 	var world_3d := get_world_3d()
 	if not world_3d:
@@ -715,40 +780,45 @@ func _check_steep_cliff() -> Dictionary:
 	if not space_state:
 		return {}
 
-	var chest_origin := global_position + Vector3(0.0, 1.05, 0.0)
 	var forward_dir := -climb_normal if is_climbing else -global_transform.basis.z
+	var ray_origins := [
+		global_position + Vector3(0.0, 1.05, 0.0), # Chest
+		global_position + Vector3(0.0, 1.60, 0.0), # Head / reach
+		global_position + Vector3(0.0, 0.40, 0.0)  # Knees
+	]
 
-	# 1. Forward raycast check - physical contact within arm's reach (1.1m)
-	var query := PhysicsRayQueryParameters3D.create(chest_origin, chest_origin + forward_dir * 1.1)
-	query.exclude = [get_rid()]
-	var hit := space_state.intersect_ray(query)
+	# 1. Multi-point forward raycast check within 1.35m
+	for origin in ray_origins:
+		var query := PhysicsRayQueryParameters3D.create(origin, origin + forward_dir * 1.35)
+		query.exclude = [get_rid()]
+		var hit := space_state.intersect_ray(query)
 
-	if not hit.is_empty():
-		var norm: Vector3 = hit.normal
-		var slope_angle := norm.angle_to(Vector3.UP)
-		if slope_angle >= deg_to_rad(50.0):
-			return {"hit": true, "normal": norm, "position": hit.position, "distance": (hit.position as Vector3).distance_to(chest_origin)}
+		if not hit.is_empty():
+			var norm: Vector3 = hit.normal
+			var slope_angle := norm.angle_to(Vector3.UP)
+			if slope_angle >= deg_to_rad(45.0):
+				return {"hit": true, "normal": norm, "position": hit.position, "distance": (hit.position as Vector3).distance_to(origin)}
 
 	# 2. Physics wall collision check
 	if is_on_wall():
 		var wall_n := get_wall_normal()
-		if wall_n.angle_to(Vector3.UP) >= deg_to_rad(50.0):
+		if wall_n.angle_to(Vector3.UP) >= deg_to_rad(45.0):
 			return {"hit": true, "normal": wall_n, "position": global_position - wall_n * 0.45, "distance": 0.45}
 
-	# 3. Direct terrain slope sampling (ONLY when adjacent to ground surface)
+	# 3. Direct terrain slope sampling (for initial climb latching or when near terrain)
 	if terrain_generator:
 		var px := global_position.x
 		var pz := global_position.z
-		var h_center := terrain_generator.sample_height(px, pz)
-		# Settler must be within touching reach of terrain surface (<= 1.8m vertical)
-		if absf(global_position.y - h_center) < 1.8:
-			var step_dist := 0.75
-			var h_fwd := terrain_generator.sample_height(px + forward_dir.x * step_dist, pz + forward_dir.z * step_dist)
-			var rise := h_fwd - h_center
-			var slope_deg := rad_to_deg(atan2(rise, step_dist))
-			if slope_deg >= 50.0:
+		var h_center: float = float(terrain_generator.sample_height(px, pz))
+		# Allow sampling when on ground or climbing steep contour
+		if absf(global_position.y - h_center) < 2.5 or is_climbing:
+			var step_dist: float = 0.75
+			var h_fwd: float = float(terrain_generator.sample_height(px + forward_dir.x * step_dist, pz + forward_dir.z * step_dist))
+			var rise: float = h_fwd - h_center
+			var slope_deg: float = rad_to_deg(atan2(rise, step_dist))
+			if slope_deg >= 45.0:
 				var estimated_norm := Vector3(-forward_dir.x, 0.25, -forward_dir.z).normalized()
-				return {"hit": true, "normal": estimated_norm, "position": global_position + forward_dir * 0.6, "distance": 0.6}
+				return {"hit": true, "normal": estimated_norm, "position": global_position + forward_dir * 0.55, "distance": 0.55}
 
 	return {}
 
@@ -804,11 +874,11 @@ func _handle_climbing_rope_tool() -> void:
 
 	var rope_script = load("res://scripts/environment/climbing_rope.gd")
 	if rope_script:
-		var rope_inst: ClimbingRope = rope_script.create_rope(anchor_pos, wall_norm, space_state)
+		var rope_inst: Node = rope_script.create_rope(anchor_pos, wall_norm, space_state)
 		scene_root.add_child(rope_inst)
 
 ## Grabs hold of a hanging climbing rope for climbing or rappelling
-func _grab_rope(rope: ClimbingRope) -> void:
+func _grab_rope(rope: Node) -> void:
 	if is_carrying_log:
 		drop_log()
 	is_on_rope = true
@@ -837,7 +907,7 @@ func _update_camera(delta: float) -> void:
 
 		if interact_raycast:
 			interact_raycast.global_transform = camera.global_transform
-			interact_raycast.target_position = Vector3(0, 0, -3.5)
+			interact_raycast.target_position = Vector3(0, 0, -5.0)
 	else:
 		# Third-person view: follow behind character back
 		if box_man_model:
@@ -856,7 +926,7 @@ func _update_camera(delta: float) -> void:
 
 		var pivot_pos := Vector3(global_position.x, _smoothed_pivot_y, global_position.z)
 		var cam_rot := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
-		var is_aiming := (equipment and equipment.is_aiming_bow)
+		var is_aiming: bool = bool(equipment and equipment.get("is_aiming_bow"))
 		var shoulder_x := 0.45 if is_aiming else 0.0
 		var desired_offset := cam_rot * Vector3(shoulder_x, cam_height_offset, current_cam_distance)
 		var desired_pos := pivot_pos + desired_offset
@@ -888,7 +958,7 @@ func _update_camera(delta: float) -> void:
 
 		if interact_raycast:
 			interact_raycast.global_transform = camera.global_transform
-			interact_raycast.target_position = Vector3(0, 0, -4.5)
+			interact_raycast.target_position = Vector3(0, 0, -(current_cam_distance + 5.5))
 
 ## Picks up a physical carryable log into arms
 func pick_up_log(log_node: Node) -> void:
@@ -950,7 +1020,7 @@ func _perform_interaction() -> void:
 		if is_instance_valid(r) and r.has_method("get_closest_point"):
 			var closest_p: Vector3 = r.get_closest_point(global_position)
 			if global_position.distance_to(closest_p) < 2.0:
-				_grab_rope(r as ClimbingRope)
+				_grab_rope(r)
 				return
 
 	# 1. Direct raycast interaction (crosshair target)
@@ -974,7 +1044,29 @@ func _perform_interaction() -> void:
 		pick_up_log(closest_log)
 		return
 
-	# 3. Freshwater stream drinking & backpack reservoir refill
+	# 3. Forgiving proximity interaction for Bog Iron Ore Deposits within 3.2m
+	var bog_ores := get_tree().get_nodes_in_group("bog_ore_deposit")
+	var closest_ore: Node = null
+	var closest_ore_dist: float = 3.2
+	for ore in bog_ores:
+		if ore is Node3D and is_instance_valid(ore):
+			var dist := global_position.distance_to(ore.global_position)
+			if dist < closest_ore_dist:
+				closest_ore_dist = dist
+				closest_ore = ore
+	if closest_ore and closest_ore.has_method("on_interact"):
+		closest_ore.on_interact(self)
+		return
+
+	# 4. Tree chopping with [E] when focused or looking at a tree
+	if _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("chop"):
+		if global_position.distance_to(_focused_tree.global_position) < 3.8:
+			_focused_tree.chop(self)
+			if box_man_model:
+				box_man_model.trigger_chop()
+			return
+
+	# 5. Freshwater stream drinking & backpack reservoir refill
 	if terrain_generator and not is_swimming and terrain_generator.is_freshwater_stream(global_position):
 		survival_stats.drink_water(true)
 		if equipment:
@@ -982,7 +1074,7 @@ func _perform_interaction() -> void:
 		return
 
 	# 4. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
-	if equipment and equipment.current_slot == EquipmentManager.Slot.WATER_BOTTLE:
+	if equipment and int(equipment.get("current_slot")) == 2:
 		equipment.drink_from_reservoir()
 
 func _perform_attack_or_chop() -> void:
@@ -1065,8 +1157,8 @@ func _place_campfire() -> void:
 	if not inventory:
 		return
 
-	var has_stones := inventory.get_count("stone") >= 3
-	var has_wood := inventory.get_count("firewood") >= 2 or inventory.get_count("timber_log") >= 1
+	var has_stones: bool = int(inventory.get_count("stone")) >= 3
+	var has_wood: bool = int(inventory.get_count("firewood")) >= 2 or int(inventory.get_count("timber_log")) >= 1
 
 	if not (has_stones and has_wood):
 		var hud_bar = get_tree().get_first_node_in_group("hud_building_bar")

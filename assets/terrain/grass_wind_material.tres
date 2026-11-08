@@ -8,14 +8,14 @@
 [resource]
 render_priority = 0
 shader = ExtResource("1_kc3da")
-shader_parameter/wind_direction = null
-shader_parameter/wind_speed = null
-shader_parameter/wind_strength = null
-shader_parameter/gust_frequency = null
-shader_parameter/gust_strength = null
-shader_parameter/grass_base_tint = null
-shader_parameter/grass_tip_tint = null
-shader_parameter/roughness_mult = null
+shader_parameter/wind_direction = Vector3(0.707, 0, 0.707)
+shader_parameter/wind_speed = 2.4
+shader_parameter/wind_strength = 0.45
+shader_parameter/gust_frequency = 0.05
+shader_parameter/gust_strength = 0.55
+shader_parameter/grass_base_tint = Color(0.22, 0.38, 0.14, 1)
+shader_parameter/grass_tip_tint = Color(0.44, 0.64, 0.22, 1)
+shader_parameter/roughness_mult = 0.88
 shader_parameter/albedo_texture = ExtResource("2_8ypqe")
 shader_parameter/normal_texture = ExtResource("3_wg4yo")
 shader_parameter/pbr_texture = ExtResource("4_7uv8o")

@@ -277,6 +277,8 @@ static func populate_dense_vegetation(
 		var tree_node := StaticBody3D.new()
 		tree_node.name = "Tree_%d" % choppable_placed
 		tree_node.set_script(harvestable_script)
+		tree_node.collision_layer = 1
+		tree_node.collision_mask = 1
 
 		var is_spruce := (rng.randf() > 0.34) or (ty > 42.0)
 		tree_node.set("tree_type", 1 if is_spruce else 0)
@@ -356,6 +358,13 @@ static func populate_dense_vegetation(
 	_create_multimesh_batch(veg_container, "SpruceForestMultiMesh", spruce_mesh, spruce_xforms)
 	_create_multimesh_batch(veg_container, "PineForestMultiMesh", pine_mesh, pine_xforms)
 	_create_multimesh_batch(veg_container, "BirchForestMultiMesh", birch_mesh, birch_xforms)
+
+	# Add solid physical collisions for canopy trees across playable valley & mountain areas
+	var all_tree_xforms: Array[Transform3D] = []
+	all_tree_xforms.append_array(spruce_xforms)
+	all_tree_xforms.append_array(pine_xforms)
+	all_tree_xforms.append_array(birch_xforms)
+	_add_forest_tree_colliders(veg_container, all_tree_xforms)
 
 	# -------------------------------------------------------------------------
 	# TIER 3: 7,500+ Dense Understory & Valley Vegetation via MultiMeshInstance3D (3 Draw Calls)
@@ -439,4 +448,30 @@ static func _create_multimesh_batch(parent: Node3D, node_name: String, mesh: Mes
 		mm.set_instance_transform(i, xforms[i])
 	mmi.multimesh = mm
 	parent.add_child(mmi)
+
+static func _add_forest_tree_colliders(parent: Node3D, xforms: Array[Transform3D]) -> void:
+	if xforms.is_empty():
+		return
+	var col_container := Node3D.new()
+	col_container.name = "ForestTreeColliders"
+	parent.add_child(col_container)
+
+	var shared_shape := CylinderShape3D.new()
+	shared_shape.radius = 0.42
+	shared_shape.height = 4.5
+
+	for xf in xforms:
+		var pos := xf.origin
+		# Place colliders on trees within walkable valley and hillside regions
+		if pos.y < 0.5 or pos.y > 115.0:
+			continue
+		var sb := StaticBody3D.new()
+		sb.collision_layer = 1
+		sb.collision_mask = 1
+		var cs := CollisionShape3D.new()
+		cs.shape = shared_shape
+		cs.position.y = 2.25
+		sb.add_child(cs)
+		sb.position = pos
+		col_container.add_child(sb)
 

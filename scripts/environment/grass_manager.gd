@@ -210,8 +210,8 @@ static func populate_grass(
 			var sector_xforms: Array[Transform3D] = []
 			var sector_colors: Array[Color] = []
 
-			# Candidate instances per macro sector (~240 clumps per active sector)
-			var candidates := 240
+			# Candidate instances per macro sector (dense lush meadow coverage)
+			var candidates := 1400
 			for c in range(candidates):
 				var px := sx + rng.randf_range(2.0, sector_size - 2.0)
 				var pz := sz + rng.randf_range(2.0, sector_size - 2.0)
@@ -267,12 +267,12 @@ static func _create_sector_multimeshes(
 
 	var count := xforms.size()
 
-	# --- LOD 0: Up-Close 3D Clump (0m to 22m, non-overlapping in Compatibility mode) ---
+	# --- LOD 0: Up-Close 3D Clump (0m to 36m) ---
 	var mmi0 := MultiMeshInstance3D.new()
 	mmi0.name = "GrassLOD0"
 	mmi0.material_override = lod0_mat
 	mmi0.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi0.visibility_range_end = 22.0
+	mmi0.visibility_range_end = 36.0
 	mmi0.visibility_range_end_margin = 0.0
 	mmi0.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
@@ -287,14 +287,14 @@ static func _create_sector_multimeshes(
 	mmi0.multimesh = mm0
 	sector_node.add_child(mmi0)
 
-	# --- LOD 1: Mid-Range Crossed-Quad Billboard (22m to 65m, zero dual-LOD overdraw) ---
+	# --- LOD 1: Mid/Far Range Crossed-Quad Billboard (32m to 150m) ---
 	var mmi1 := MultiMeshInstance3D.new()
 	mmi1.name = "GrassLOD1"
 	mmi1.material_override = lod1_mat
 	mmi1.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi1.visibility_range_begin = 22.0
+	mmi1.visibility_range_begin = 32.0
 	mmi1.visibility_range_begin_margin = 0.0
-	mmi1.visibility_range_end = 65.0
+	mmi1.visibility_range_end = 150.0
 	mmi1.visibility_range_end_margin = 0.0
 	mmi1.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 

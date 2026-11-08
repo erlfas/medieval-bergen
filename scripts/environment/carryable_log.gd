@@ -21,10 +21,14 @@ static var _shared_log_capsule: CapsuleShape3D = null
 static var _shared_log_cyl: CylinderMesh = null
 static var _shared_mat_spruce: StandardMaterial3D = null
 static var _shared_mat_birch: StandardMaterial3D = null
+static var _shared_log_phys_mat: PhysicsMaterial = null
+
+var _rest_timer: float = 0.0
 
 func _ready() -> void:
 	_ensure_setup()
 	set_process(false)
+	set_physics_process(true)
 
 func _ensure_setup() -> void:
 	if mesh_instance != null:
@@ -34,12 +38,20 @@ func _ensure_setup() -> void:
 	add_to_group("carryable_logs")
 	add_to_group("interactable")
 
-	# Physics parameters
-	mass = 16.0
+	# Physics parameters - High friction & angular damp prevents rolling down hills to the sea
+	mass = 24.0
 	contact_monitor = true
 	max_contacts_reported = 2
-	angular_damp = 3.5
-	linear_damp = 1.5
+	angular_damp = 18.0
+	linear_damp = 5.0
+	can_sleep = true
+
+	if _shared_log_phys_mat == null:
+		_shared_log_phys_mat = PhysicsMaterial.new()
+		_shared_log_phys_mat.friction = 1.0
+		_shared_log_phys_mat.rough = true
+		_shared_log_phys_mat.bounce = 0.05
+	physics_material_override = _shared_log_phys_mat
 
 	_setup_collision_and_mesh()
 	_setup_prompt_ui()
@@ -109,6 +121,28 @@ func _process(delta: float) -> void:
 				prompt_label.visible = false
 			set_process(false)
 
+func _physics_process(delta: float) -> void:
+	# 1. Anti-Roll Resting Stabilization:
+	# When log has settled to a near stop on ground/slopes, sleep it so it doesn't slip down into the sea
+	var lin_spd_sq := linear_velocity.length_squared()
+	var ang_spd_sq := angular_velocity.length_squared()
+	if lin_spd_sq < 0.08 and ang_spd_sq < 0.12:
+		_rest_timer += delta
+		if _rest_timer > 0.4:
+			linear_velocity = Vector3.ZERO
+			angular_velocity = Vector3.ZERO
+			sleeping = true
+	else:
+		_rest_timer = 0.0
+
+	# 2. Water Buoyancy: If log touches the sea/river (y <= 0.25), float horizontally
+	if global_position.y < 0.25:
+		var submergence := 0.25 - global_position.y
+		apply_central_force(Vector3.UP * (submergence * 280.0 + 35.0))
+		linear_velocity.x *= 0.94
+		linear_velocity.z *= 0.94
+		angular_velocity *= 0.92
+
 func set_settler_focus(settler: Node) -> void:
 	_ensure_setup()
 	if settler != null:
@@ -135,7 +169,7 @@ func take_damage(_amount: float, actor: Node) -> void:
 
 func collect(actor: Node) -> void:
 	if actor and actor.has_node("InventoryManager"):
-		var inv: InventoryManager = actor.get_node("InventoryManager")
+		var inv: Node = actor.get_node("InventoryManager")
 		if log_type == LogType.SPRUCE:
 			inv.add_resource("timber_log", timber_logs_yield)
 			inv.add_resource("firewood", firewood_yield)
@@ -176,9 +210,6 @@ static func create_log(p_type: LogType = LogType.SPRUCE) -> RigidBody3D:
 	var new_log := RigidBody3D.new()
 	new_log.set_script(script_res)
 	new_log.log_type = p_type
-	new_log.add_to_group("carryable_log")
-	new_log.add_to_group("carryable_logs")
-	new_log.add_to_group("interactable")
-	new_log._setup_collision_and_mesh()
-	new_log._setup_prompt_ui()
+	new_log._ensure_setup()
 	return new_log
+
