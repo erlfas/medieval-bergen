@@ -28,11 +28,15 @@ signal carrying_state_changed(is_carrying: bool)
 @export var fall_gravity_multiplier: float = 1.35
 @export var slope_speed_factor: float = 0.35
 
-@export_group("Camera View")
+@export_group("Follow-Behind Camera & WASD Steering")
 @export var is_third_person: bool = true
 @export var target_cam_distance: float = 3.2
 @export var cam_height_offset: float = 0.45
 @export var character_turn_speed: float = 11.0   ## Smooth character body turning
+@export var steering_speed: float = 3.2          ## Angular yaw speed when steering with A/D (rad/sec, ~183 deg/s)
+@export var reverse_speed: float = 2.6           ## Walk speed when walking backward with S (m/s)
+@export var cam_follow_yaw_speed: float = 10.0   ## Smooth rotational lag for follow-behind camera
+@export var cam_vertical_smooth_speed: float = 14.0 ## Damping for vertical terrain steps & bumps
 
 @export_group("Swimming & Water (Task 2)")
 @export var swim_speed: float = 2.8
@@ -73,6 +77,8 @@ var _ripple_timer: float = 0.0
 var cam_yaw: float = 0.0
 var cam_pitch: float = deg_to_rad(-8.0)
 var current_cam_distance: float = 3.2
+var _smoothed_pivot_y: float = 0.0
+var _current_safe_dist: float = 3.2
 
 # Stage 1 Kinematic jump buffering & coyote timers
 var _coyote_timer: float = 0.0
@@ -136,7 +142,9 @@ func _ready() -> void:
 		interact_raycast.top_level = true
 
 	current_cam_distance = target_cam_distance if is_third_person else 0.0
+	_current_safe_dist = current_cam_distance
 	cam_yaw = rotation.y
+	_smoothed_pivot_y = global_position.y + 1.45
 	_update_camera(0.0)
 
 	# Spawn initial starter carryable logs near settler for immediate testing
@@ -208,15 +216,16 @@ func _spawn_starter_logs() -> void:
 		log_inst.rotation.y = randf_range(0.0, TAU)
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Mouse Look Orbit (Task 1: Mouse orbits camera freely at all times without snapping or fighting input)
+	# Mouse Look & Pitch: vertical look angle and optional mouse yaw steering
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		cam_yaw -= event.relative.x * mouse_sensitivity
 		cam_pitch -= event.relative.y * mouse_sensitivity
 		cam_pitch = clampf(cam_pitch, deg_to_rad(-65.0), deg_to_rad(70.0))
 
+		# Mouse yaw rotates character facing directly; follow-behind camera tracks behind smoothly
+		rotation.y -= event.relative.x * mouse_sensitivity
 		if not is_third_person:
-			rotation.y = cam_yaw
 			head.rotation.x = cam_pitch
+			cam_yaw = rotation.y
 
 	if event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -331,11 +340,37 @@ func _physics_process(delta: float) -> void:
 	elif _coyote_timer > 0.0:
 		_coyote_timer = maxf(0.0, _coyote_timer - delta)
 
-	# Direction relative to camera view (Task 1)
-	var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_backward")
-	var cam_forward := Vector3(-sin(cam_yaw), 0.0, -cos(cam_yaw))
-	var cam_right := Vector3(cos(cam_yaw), 0.0, -sin(cam_yaw))
-	var direction := (cam_right * input_dir.x - cam_forward * input_dir.y).normalized()
+	# WASD Steering & Drive Inputs
+	# A: +1.0 (turn left), D: -1.0 (turn right)
+	var turn_input := Input.get_axis("move_right", "move_left")
+	# W: +1.0 (forward), S: -1.0 (backward)
+	var drive_input := Input.get_axis("move_backward", "move_forward")
+
+	var is_aiming := (equipment != null and equipment.is_aiming_bow)
+	var is_strafing := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) or is_aiming
+
+	# Continuous yaw steering with A/D (allows full 360-degree rotation purely with keyboard)
+	if not is_climbing and not is_on_rope:
+		if is_strafing:
+			# In strafe mode, mouse or heading controls yaw
+			pass
+		elif absf(turn_input) > 0.01:
+			rotation.y += turn_input * steering_speed * delta
+
+	# Calculate movement direction
+	var forward_vec := -global_transform.basis.z
+	var right_vec := global_transform.basis.x
+	var direction := Vector3.ZERO
+
+	if is_strafing:
+		var raw_strafe := (forward_vec * drive_input - right_vec * turn_input)
+		if raw_strafe.length_squared() > 0.001:
+			direction = raw_strafe.normalized()
+	else:
+		if drive_input > 0.01:
+			direction = forward_vec
+		elif drive_input < -0.01:
+			direction = -forward_vec
 
 	var sea_level := 0.0
 	var water_surface_y := sea_level + water_surface_offset
@@ -378,7 +413,7 @@ func _physics_process(delta: float) -> void:
 	if _climb_cooldown <= 0.0 and not is_climbing and not is_swimming and not is_on_rope and not is_carrying_log:
 		var cliff_info := _check_steep_cliff()
 		if not cliff_info.is_empty():
-			var moving_into_cliff := input_dir.y < -0.2
+			var moving_into_cliff := drive_input > 0.2
 			var jump_pressed := Input.is_action_just_pressed("jump")
 			if jump_pressed or moving_into_cliff:
 				is_climbing = true
@@ -394,7 +429,7 @@ func _physics_process(delta: float) -> void:
 		global_position.x = lerpf(global_position.x, rope_target.x, delta * 12.0)
 		global_position.z = lerpf(global_position.z, rope_target.z, delta * 12.0)
 
-		var vert_input := -input_dir.y
+		var vert_input := drive_input
 		if vert_input > 0.1:
 			# Climb UP rope
 			velocity.y = rope_climb_speed
@@ -440,7 +475,7 @@ func _physics_process(delta: float) -> void:
 		# FREEFORM ROCK CLIMBING (Task 7)
 		# W climbs UP, S climbs DOWN, A climbs LEFT, D climbs RIGHT
 		var cliff_right := Vector3.UP.cross(climb_normal).normalized()
-		var climb_move := Vector3.UP * (-input_dir.y) + cliff_right * input_dir.x
+		var climb_move := Vector3.UP * drive_input - cliff_right * turn_input
 
 		if climb_move != Vector3.ZERO:
 			velocity = climb_move.normalized() * climb_speed
@@ -466,7 +501,7 @@ func _physics_process(delta: float) -> void:
 			velocity = climb_normal * 4.2 + Vector3.UP * 3.6
 
 		# Vault onto top ledge if reached
-		if input_dir.y < -0.2:
+		if drive_input > 0.2:
 			var ledge_origin := global_position + Vector3(0.0, 1.8, 0.0) - climb_normal * 0.75
 			var ledge_query := PhysicsRayQueryParameters3D.create(ledge_origin, ledge_origin + Vector3.DOWN * 1.4)
 			ledge_query.exclude = [get_rid()]
@@ -482,7 +517,7 @@ func _physics_process(delta: float) -> void:
 						velocity = Vector3.ZERO
 
 		# Reached ground at base of cliff
-		if input_dir.y > 0.2 and is_on_floor():
+		if drive_input < -0.2 and is_on_floor():
 			is_climbing = false
 			_climb_cooldown = 0.2
 
@@ -522,10 +557,10 @@ func _physics_process(delta: float) -> void:
 		if is_carrying_log:
 			current_swim_speed *= 0.65
 
-		if direction:
+		if direction != Vector3.ZERO:
 			velocity.x = move_toward(velocity.x, direction.x * current_swim_speed, delta * 8.0)
 			velocity.z = move_toward(velocity.z, direction.z * current_swim_speed, delta * 8.0)
-			if is_third_person:
+			if is_third_person and is_strafing:
 				var target_heading := atan2(-direction.x, -direction.z)
 				rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
 
@@ -560,11 +595,15 @@ func _physics_process(delta: float) -> void:
 				_jump_buffer_timer = 0.0
 				_coyote_timer = 0.0
 
-		# Sprinting
-		var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0
+		# Sprinting (only when moving forward)
+		var can_sprint := not is_carrying_log and survival_stats.stamina > 5.0 and drive_input > 0.0
 		is_sprinting = Input.is_action_pressed("sprint") and on_floor and can_sprint
 		var base_speed := walk_speed * (0.85 if is_carrying_log else 1.0)
-		var speed := sprint_speed if is_sprinting else base_speed
+		var speed := base_speed
+		if drive_input > 0.01:
+			speed = sprint_speed if is_sprinting else base_speed
+		elif drive_input < -0.01:
+			speed = reverse_speed
 
 		if is_sprinting and direction != Vector3.ZERO:
 			survival_stats.consume_stamina(10.0 * delta)
@@ -607,8 +646,8 @@ func _physics_process(delta: float) -> void:
 				velocity.x = move_toward(velocity.x, target_horiz.x, accel_rate * delta)
 				velocity.z = move_toward(velocity.z, target_horiz.z, accel_rate * delta)
 
-				# Smooth character turning with WASD relative to camera view
-				if is_third_person:
+				# In strafe mode, character turns to face strafe/aim direction
+				if is_third_person and is_strafing:
 					var target_heading := atan2(-direction.x, -direction.z)
 					rotation.y = lerp_angle(rotation.y, target_heading, delta * character_turn_speed)
 			else:
@@ -776,7 +815,8 @@ func _update_camera(delta: float) -> void:
 	camera.fov = lerpf(camera.fov, target_fov, delta * 10.0)
 
 	if current_cam_distance < 0.3 or not is_third_person:
-		# First-person view
+		# First-person view: aligned with character heading and pitch
+		cam_yaw = rotation.y
 		camera.global_position = head.global_position
 		var fp_rot := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
 		camera.global_basis = fp_rot
@@ -787,20 +827,30 @@ func _update_camera(delta: float) -> void:
 			interact_raycast.global_transform = camera.global_transform
 			interact_raycast.target_position = Vector3(0, 0, -3.5)
 	else:
-		# Third-person view: smooth orbit & over-shoulder aiming offset
+		# Third-person view: follow behind character back
 		if box_man_model:
 			box_man_model.visible = true
 
-		var pivot_pos := global_position + Vector3(0.0, 1.45, 0.0)
+		# Smooth rotational follow behind settler
+		var target_yaw := rotation.y
+		cam_yaw = lerp_angle(cam_yaw, target_yaw, delta * cam_follow_yaw_speed)
+
+		# Vertical elevation smoothing: damp sudden terrain steps
+		var target_pivot_y := global_position.y + 1.45
+		if _smoothed_pivot_y == 0.0:
+			_smoothed_pivot_y = target_pivot_y
+		else:
+			_smoothed_pivot_y = lerpf(_smoothed_pivot_y, target_pivot_y, delta * cam_vertical_smooth_speed)
+
+		var pivot_pos := Vector3(global_position.x, _smoothed_pivot_y, global_position.z)
 		var cam_rot := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
 		var is_aiming := (equipment and equipment.is_aiming_bow)
 		var shoulder_x := 0.45 if is_aiming else 0.0
 		var desired_offset := cam_rot * Vector3(shoulder_x, cam_height_offset, current_cam_distance)
 		var desired_pos := pivot_pos + desired_offset
 
-		var final_cam_pos := desired_pos
-
 		# Raycast check against mountains/terrain/obstacles to prevent clipping
+		var target_safe_dist := current_cam_distance
 		var world_3d := get_world_3d()
 		if world_3d and is_inside_tree():
 			var space_state := world_3d.direct_space_state
@@ -811,9 +861,15 @@ func _update_camera(delta: float) -> void:
 
 				if not hit.is_empty():
 					var hit_dist: float = (hit.position - pivot_pos).length()
-					var safe_dist := maxf(0.45, hit_dist - 0.25)
-					var safe_offset := cam_rot * Vector3(0.0, cam_height_offset * (safe_dist / maxf(current_cam_distance, 0.01)), safe_dist)
-					final_cam_pos = pivot_pos + safe_offset
+					target_safe_dist = maxf(0.45, hit_dist - 0.25)
+
+		# Smooth occlusion distance adjustment (fast in, smooth out)
+		var dist_speed := 22.0 if target_safe_dist < _current_safe_dist else 8.0
+		_current_safe_dist = lerpf(_current_safe_dist, target_safe_dist, delta * dist_speed)
+
+		var safe_ratio := _current_safe_dist / maxf(current_cam_distance, 0.01)
+		var final_offset := cam_rot * Vector3(shoulder_x * safe_ratio, cam_height_offset * safe_ratio, _current_safe_dist)
+		var final_cam_pos := pivot_pos + final_offset
 
 		camera.global_position = final_cam_pos
 		camera.global_basis = cam_rot

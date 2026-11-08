@@ -77,6 +77,7 @@ var flutter_cycle: float = 0.0
 var tread_cycle: float = 0.0
 var climb_cycle: float = 0.0
 var rope_cycle: float = 0.0
+var turn_cycle: float = 0.0
 
 # Stage 2 Procedural Locomotion, Weight & Landing Squash Variables
 var _last_global_y_rot: float = 0.0
@@ -1007,20 +1008,18 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		var target_roll: float = 0.0
 		var target_pitch: float = 0.0
 
-		if is_grounded and horiz_speed > 0.2:
-			var current_y_rot := global_rotation.y
-			var turn_rate := (current_y_rot - _last_global_y_rot) / maxf(delta, 0.001)
-			_last_global_y_rot = current_y_rot
-			turn_rate = wrapf(turn_rate, -PI, PI)
+		var current_y_rot := global_rotation.y
+		var turn_rate := (current_y_rot - _last_global_y_rot) / maxf(delta, 0.001)
+		_last_global_y_rot = current_y_rot
+		turn_rate = wrapf(turn_rate, -PI, PI)
 
+		if is_grounded and horiz_speed > 0.2:
 			# Roll into turn (lean into curve)
 			target_roll = clampf(-turn_rate * 0.22, -deg_to_rad(8.0), deg_to_rad(8.0))
 
 			# Pitch lean forward during sprint and brisk walking
 			var sprint_ratio := clampf((horiz_speed - 3.5) / 3.5, 0.0, 1.0)
 			target_pitch = deg_to_rad(2.0 + 6.0 * sprint_ratio)
-		else:
-			_last_global_y_rot = global_rotation.y
 
 		torso_node.rotation.x = lerp_angle(torso_node.rotation.x, target_pitch, delta * 8.0)
 		torso_node.rotation.y = lerp_angle(torso_node.rotation.y, 0.0, delta * 8.0)
@@ -1038,8 +1037,13 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 
 		if is_grounded and horiz_speed > 0.15:
 			# Walking / Sprinting stride cycle synced to ground velocity
+			# Check forward vs backward direction
+			var forward_vec := -global_transform.basis.z
+			var is_backward := horizontal_velocity.normalized().dot(forward_vec) < -0.2
+			var step_direction := -1.0 if is_backward else 1.0
+
 			var anim_rate := clampf(horiz_speed * 2.2, 4.0, 15.0)
-			walk_cycle += delta * anim_rate
+			walk_cycle += delta * anim_rate * step_direction
 
 			var leg_swing := sin(walk_cycle) * 0.65
 			var arm_swing := sin(walk_cycle) * 0.55
@@ -1055,6 +1059,18 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 			# Torso subtle vertical bobbing
 			torso_node.position.y = base_torso_y + absf(sin(walk_cycle * 2.0)) * 0.035
 			head_node.position.y = base_head_y + absf(sin(walk_cycle * 2.0)) * 0.025
+		elif is_grounded and absf(turn_rate) > 0.35:
+			# Stationary 360-degree turn step shuffle
+			turn_cycle += delta * 7.5
+			var step_shuffle := sin(turn_cycle) * 0.22 * signf(turn_rate)
+			left_leg_pivot.rotation.x = step_shuffle
+			right_leg_pivot.rotation.x = -step_shuffle
+			if is_carrying_log:
+				_apply_log_carry_pose(0.0)
+			else:
+				_apply_item_poses(0.0, delta, false)
+			torso_node.position.y = base_torso_y + absf(sin(turn_cycle)) * 0.015
+			head_node.position.y = base_head_y + absf(sin(turn_cycle)) * 0.01
 		elif not is_grounded:
 			# Airborne / jumping pose
 			walk_cycle = 0.0
