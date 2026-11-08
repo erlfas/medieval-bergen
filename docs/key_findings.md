@@ -75,12 +75,14 @@ Godot 4 Web exports utilize multi-threading and web audio worklets that depend o
 
 ## 4. Locomotion, Swimming, & Mountain Climbing
 
-### Decoupled WASD Turning & Camera Orbit
-- The mouse look orbits freely around the settler pivot (`head` height 1.45m) at all times without fighting player input or snapping back.
-- WASD input steers the character body to face the intended direction of travel relative to the camera gaze:
-  - `W`: Runs forward away from camera.
-  - `S`: Turns 180° around and runs toward camera.
-  - `A` / `D`: Turns 90° left or right.
+### Follow-Behind Camera & Continuous 360° WASD Steering
+- The camera continuously tracks behind the character's back (`rotation.y`) with critically damped rotational lag ($\lambda = 10.0\,\text{s}^{-1}$), eliminating orientation disorientation.
+- WASD input enables continuous 360° steering and natural curvilinear navigation without requiring mouse input:
+  - `W`: Runs forward in the settler's facing direction (`-global_transform.basis.z`).
+  - `S`: Walks backward smoothly (backpedal at $2.6\,\text{m/s}$) while keeping forward posture.
+  - `A` / `D`: Continuously steers character yaw left and right ($3.2\,\text{rad/s}$, allowing full 360° rotation purely with keys).
+  - `W + A` / `W + D`: Carves smooth, natural circular arcs around trees and terrain.
+  - Holding Right Mouse Button or aiming the bow enables lateral strafe mode for tactical precision.
 
 ### Water Swimming Physics
 - Automatically detects water entry (`global_position.y <= sea_level + 0.2`).
@@ -447,4 +449,68 @@ Rather than spawning buildings out of monolithic boxes, all city and farmstead s
 5. **HUD Label Cache & AI Group Scan Throttling (`hud_clock_calendar.gd`, `wolf_ai.gd`):**
    - Cached `_last_hour` and `_last_minute` in `HUDClockCalendar` to avoid 60 Hz string formatting and UI layout thrashing when the clock minute has not changed.
    - Throttled `_scan_for_fire()` in `wolf_ai.gd` from 60 Hz to 5 Hz (`0.20s`), eliminating 92% of per-frame `get_nodes_in_group()` array allocations.
+
+---
+
+## 25. Third-Person Follow-Behind Camera Architecture & Continuous 360° WASD Steering
+
+### 1. Problem Context & Architectural Flaw of Decoupled Orbit
+In early revisions of the third-person camera, camera yaw (`cam_yaw`) was decoupled from character heading (`rotation.y`), driven solely by mouse horizontal delta (`cam_yaw -= relative.x * sens`). Movement direction was calculated in camera space (`direction = cam_right * input.x - cam_forward * input.y`), which created severe gameplay and orientation issues:
+- **Disorienting Screen-Facing Inversion:** Pressing `S` (move backward) caused the character to rotate 180° and run directly toward the camera, exposing their face and blinding the player to forward terrain, wolves, or obstacles.
+- **Inability to Steer with Keyboard Alone:** Pressing `A` or `D` translated the character sideways in camera space across the screen in a straight line. The player could not rotate, steer around obstacles, or navigate 360° without dragging the mouse.
+
+### 2. Follow-Behind Camera Dynamics & Mathematical Specification
+The updated architecture establishes a true **Follow-Behind Camera** with critically damped tracking, terrain elevation smoothing, and asymmetric obstacle avoidance:
+1. **Critically Damped Yaw Lag:**
+   - Target yaw is rigidly anchored to the settler's facing direction:
+     $$\theta_{\text{target}} = \text{rotation.y}$$
+   - Angular lag is filtered using smooth angle interpolation:
+     $$\theta_{\text{cam}, t} = \text{lerp\_angle}(\theta_{\text{cam}, t-1}, \theta_{\text{target}}, \Delta t \times \lambda_{\text{yaw}})$$
+     with $\lambda_{\text{yaw}} = 10.0\,\text{s}^{-1}$. This eliminates jarring camera snaps while preventing disorientation.
+2. **Vertical Elevation Low-Pass Filtering:**
+   - Rugged terrain, rock crags, and wooden building thresholds introduce sharp vertical steps. Rigidly locking camera Y to settler Y causes jarring vertical jitter.
+   - The camera pivot Y tracks settler elevation using an exponential low-pass filter:
+     $$y_{\text{pivot}, t} = \text{lerpf}(y_{\text{pivot}, t-1}, y_{\text{settler}} + 1.45\,\text{m}, \Delta t \times 14.0)$$
+     This absorbs micro-steps and rock bumps while tracking hills and cliff climbs with zero perceptible latency.
+3. **Asymmetric Occlusion & Anti-Clipping:**
+   - Evaluates a raycast query from `pivot_pos` to the desired camera offset, excluding the player's `CharacterBody3D`.
+   - When an obstacle (mountain cliff, boulder, or cabin wall) is struck at distance $d_{\text{hit}}$, target safe distance is clamped:
+     $$d_{\text{safe}} = \max(0.45\,\text{m}, d_{\text{hit}} - 0.25\,\text{m})$$
+   - Uses asymmetric spring damping: rapid pull-in ($\lambda_{\text{in}} = 22.0$) prevents geometry clipping, while gentle push-out ($\lambda_{\text{out}} = 8.0$) avoids jarring snaps when clearing obstacles.
+   - Lateral shoulder offset and height offset scale proportionally with the safe distance ratio $\frac{d_{\text{safe}}}{d_{\text{target}}}$.
+
+### 3. Continuous 360° WASD Steering & Kinematics
+1. **Direct Angular Steering (A / D Keys):**
+   - Axis input: $\alpha_{\text{steer}} = \text{Input.get\_axis}(\text{"move\_right"}, \text{"move\_left"})$ ($+1.0$ for `A` / left, $-1.0$ for `D` / right).
+   - Steering integration:
+     $$\text{rotation.y}_{t} = \text{rotation.y}_{t-1} + \alpha_{\text{steer}} \times \omega_{\text{steer}} \times \Delta t$$
+     with $\omega_{\text{steer}} = 3.2\,\text{rad/s}$ (~$183^\circ/\text{s}$). Holding `A` or `D` continuously rotates the character a full 360° without limits.
+2. **Linear Drive (W / S Keys):**
+   - Forward vector: $\hat{f} = -\text{global\_transform.basis.z}$.
+   - Pressing `W` drives forward along $\hat{f}$ at `walk_speed` ($4.2\,\text{m/s}$) or `sprint_speed` ($7.0\,\text{m/s}$).
+   - Pressing `S` drives backward along $-\hat{f}$ at dedicated `reverse_speed` ($2.6\,\text{m/s}$) while the character maintains forward posture and the camera remains behind.
+3. **Curvilinear Steering Arcs (W + A / W + D):**
+   - Combining forward drive and angular steering executes smooth, continuous circular arcs with turning radius $R = v / \omega \approx 1.31\,\text{m}$, allowing players to effortlessly carve paths around trees, fences, and wharves.
+4. **Tactical Strafe Mode:**
+   - Holding Right Mouse Button (RMB) or aiming the recurve bow enables strafing, switching `A`/`D` to lateral translation ($\pm \hat{r}$) while mouse yaw controls aiming orientation.
+
+### 4. Procedural Locomotion Animation Integration (`box_man_model.gd`)
+1. **In-Place 360° Turn Step Shuffle:**
+   - Measures real-time body yaw rate: $\omega_{\text{yaw}} = \frac{\Delta \theta_{\text{global}}}{\Delta t}$.
+   - When grounded and stationary ($v_{\text{horiz}} \le 0.15\,\text{m/s}$) with $|\omega_{\text{yaw}}| > 0.35\,\text{rad/s}$, triggers an alternating foot-shuffle animation:
+     $$\Delta \text{turn} = \Delta t \times 7.5, \quad \theta_{\text{leg}} = \pm \sin(\text{turn\_cycle}) \times 0.22\,\text{rad} \times \text{sign}(\omega_{\text{yaw}})$$
+     Eliminates "ice-skate sliding" when rotating in place 360°.
+2. **Reversed Stride Cadence for Backward Walking:**
+   - Computes velocity alignment with forward heading: $d = \hat{v} \cdot \hat{f}$.
+   - When $d < -0.2$, the stride animation phase cycle runs in reverse ($\Delta \text{walk} = \Delta t \times \text{anim\_rate} \times (-1)$), stepping backward realistically.
+3. **Curvilinear Torso Banking:**
+   - Torso rolls into turning curves ($\phi_{\text{roll}} = \text{clamp}(-0.22\,\omega_{\text{yaw}}, -8^\circ, +8^\circ)$) while the head counter-stabilizes to keep gaze level with the horizon.
+
+### 5. Automated Headless Verification Pipeline
+- Verified with automated test script in Godot 4.3 using Xvfb with Mesa OpenGL3:
+  - Full 360° rotation completed in 120 frames ($6.40\,\text{rad} \ge 2\pi$).
+  - Camera yaw synchronized behind character back ($|\Delta\text{yaw}| < 0.001\,\text{rad}$).
+  - Forward velocity ($4.17\,\text{m/s}$) and reverse velocity ($2.60\,\text{m/s}$) confirmed.
+  - Camera pivot distance ($3.23\,\text{m}$) verified without collapse.
+
 
