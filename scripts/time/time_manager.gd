@@ -137,9 +137,12 @@ func _update_season(emit_signal: bool) -> void:
 	if emit_signal and prev_season != current_season:
 		season_changed.emit(current_season, get_season_name())
 
+var is_night: bool = false
+
 func _calculate_day_progress() -> void:
 	var total_minutes := float(current_hour * 60 + current_minute) + (current_second_float / 60.0)
 	day_progress = total_minutes / 1440.0
+	is_night = (current_hour < 6 or current_hour >= 21)
 
 func get_season_name() -> String:
 	match current_season:

@@ -89,6 +89,9 @@ func _build_campfire_model() -> void:
 	fire_light.light_energy = 1.8
 	fire_light.omni_range = 9.5
 	fire_light.shadow_enabled = false
+	fire_light.distance_fade_enabled = true
+	fire_light.distance_fade_begin = 28.0
+	fire_light.distance_fade_length = 10.0
 	fire_light.position = Vector3(0.0, 0.45, 0.0)
 	add_child(fire_light)
 
@@ -107,6 +110,8 @@ func _build_campfire_model() -> void:
 	feedback_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	feedback_label.font_size = 20
 	feedback_label.modulate = Color(1.0, 0.92, 0.65)
+	feedback_label.visibility_range_end = 14.0
+	feedback_label.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 	feedback_label.text = "[E] Bål: Stek kjøtt / Spikk piler"
 	add_child(feedback_label)
 
@@ -125,14 +130,6 @@ func _process(delta: float) -> void:
 		feedback_timer -= delta
 		if feedback_timer <= 0.0 and feedback_label:
 			feedback_label.text = "[E] Bål: Stek kjøtt / Spikk piler"
-
-	# Proximity warmth zone for nearby settler
-	var settlers := get_tree().get_nodes_in_group("settler")
-	for s in settlers:
-		if s is Node3D and global_position.distance_to(s.global_position) < warmth_radius:
-			var stats := s.get_node_or_null("SurvivalStats") as SurvivalStats
-			if stats:
-				stats.is_near_fire = true
 
 func on_interact(actor: Node) -> void:
 	if not is_lit:
@@ -163,6 +160,12 @@ func on_interact(actor: Node) -> void:
 			inv.consume_resources({"raw_mutton": mutton})
 			inv.add_resource("roasted_mutton", mutton)
 			actions_taken.append("Stekte %d sauekjøtt" % mutton)
+
+		var beef := inv.get_count("raw_beef")
+		if beef > 0:
+			inv.consume_resources({"raw_beef": beef})
+			inv.add_resource("cooked_beef", beef)
+			actions_taken.append("Stekte %d storfekjøtt" % beef)
 
 		var cod := inv.get_count("fresh_cod")
 		if cod > 0:

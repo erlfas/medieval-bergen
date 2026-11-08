@@ -32,6 +32,9 @@ var is_sheltered: bool = false
 var is_in_rain: bool = false
 var ambient_temperature_celsius: float = 6.0 # Typical Bergen autumn
 
+var _vitals_emit_timer: float = 0.0
+var _is_dead_emitted: bool = false
+
 func _process(delta: float) -> void:
 	_update_vitals(delta)
 
@@ -82,22 +85,31 @@ func _update_vitals(delta: float) -> void:
 		health = maxf(0.0, health - damage_taken)
 
 	if health <= 0.0:
-		health_depleted.emit()
+		if not _is_dead_emitted:
+			_is_dead_emitted = true
+			health_depleted.emit()
+	else:
+		_is_dead_emitted = false
 
 	# 5. Stamina regeneration
 	if stamina < max_stamina:
 		stamina = minf(max_stamina, stamina + stamina_regen_rate * delta)
 
-	vitals_updated.emit(get_vitals_dict())
+	_vitals_emit_timer -= delta
+	if _vitals_emit_timer <= 0.0:
+		_vitals_emit_timer = 0.20
+		vitals_updated.emit(get_vitals_dict())
 
 func drink_water(is_freshwater: bool) -> bool:
 	if not is_freshwater:
 		# Saltwater penalty
 		thirst = maxf(0.0, thirst - 15.0)
 		health = maxf(0.0, health - 5.0)
+		vitals_updated.emit(get_vitals_dict())
 		return false
 	
 	thirst = minf(100.0, thirst + 45.0)
+	vitals_updated.emit(get_vitals_dict())
 	return true
 
 func eat_food(nutrition: float, is_cooked: bool = true) -> void:
@@ -108,6 +120,7 @@ func eat_food(nutrition: float, is_cooked: bool = true) -> void:
 		# Raw meat food poisoning risk
 		hunger = minf(100.0, hunger + nutrition * 0.6)
 		health = maxf(0.0, health - 10.0)
+	vitals_updated.emit(get_vitals_dict())
 
 func consume_stamina(amount: float) -> bool:
 	if stamina >= amount:

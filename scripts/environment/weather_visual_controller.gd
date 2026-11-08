@@ -16,10 +16,12 @@ var precipitation_mesh: MeshInstance3D
 var precip_material: StandardMaterial3D
 var current_weather: int = 0
 var target_fog_density: float = 0.0
-var target_sun_energy: float = 1.2
+var target_sun_multiplier: float = 1.0
+var weather_light_multiplier: float = 1.0
 var camera_ref: Camera3D
 
 func _ready() -> void:
+	add_to_group("weather_controller")
 	if season_manager == null:
 		season_manager = get_tree().get_first_node_in_group("season_manager") as SeasonManager
 	if world_environment == null:
@@ -67,15 +69,15 @@ func _create_precipitation_effect() -> void:
 	add_child(precipitation_mesh)
 
 func _process(delta: float) -> void:
-	# Follow active camera position
-	if camera_ref == null or not is_instance_valid(camera_ref):
-		camera_ref = get_viewport().get_camera_3d()
+	# Smoothly interpolate weather sun dimming multiplier (applied by DayNightCycle)
+	weather_light_multiplier = lerpf(weather_light_multiplier, target_sun_multiplier, delta * 2.0)
 
-	if camera_ref:
-		global_position = camera_ref.global_position
-
-	# Smoothly animate precipitation fall
+	# Follow active camera position when precipitation is visible
 	if precipitation_mesh and precipitation_mesh.visible:
+		if camera_ref == null or not is_instance_valid(camera_ref):
+			camera_ref = get_viewport().get_camera_3d()
+		if camera_ref:
+			global_position = camera_ref.global_position
 		var fall_speed := 16.0 if current_weather != 4 else 4.0 # Faster for rain, slower for snow
 		var pos_y := fmod(Time.get_ticks_msec() * 0.001 * fall_speed, 8.0)
 		precipitation_mesh.position.y = -pos_y
@@ -86,43 +88,40 @@ func _process(delta: float) -> void:
 		if target_fog_density > 0.0001:
 			env.fog_enabled = true
 			env.fog_density = lerpf(env.fog_density, target_fog_density, delta * 1.5)
-		else:
+		elif env.fog_enabled:
 			env.fog_density = lerpf(env.fog_density, 0.0, delta * 2.0)
 			if env.fog_density < 0.0001:
+				env.fog_density = 0.0
 				env.fog_enabled = false
-
-	# Smoothly adjust sun brightness
-	if sun_light:
-		sun_light.light_energy = lerpf(sun_light.light_energy, target_sun_energy, delta * 2.0)
 
 func _on_weather_state_changed(state: int, _state_name: String) -> void:
 	current_weather = state
 	match state:
 		0: # CLEAR
 			target_fog_density = 0.0
-			target_sun_energy = 1.2
+			target_sun_multiplier = 1.0
 			if precipitation_mesh:
 				precipitation_mesh.visible = false
 		1: # OVERCAST_MIST
 			target_fog_density = 0.003
-			target_sun_energy = 0.85
+			target_sun_multiplier = 0.72
 			if precipitation_mesh:
 				precipitation_mesh.visible = false
 		2: # DRIZZLE
 			target_fog_density = 0.0015
-			target_sun_energy = 0.8
+			target_sun_multiplier = 0.65
 			if precipitation_mesh:
 				precipitation_mesh.visible = true
 				precip_material.albedo_color = Color(0.72, 0.78, 0.85, 0.35)
 		3: # HEAVY_RAIN
 			target_fog_density = 0.0025
-			target_sun_energy = 0.65
+			target_sun_multiplier = 0.52
 			if precipitation_mesh:
 				precipitation_mesh.visible = true
 				precip_material.albedo_color = Color(0.75, 0.85, 0.95, 0.60)
 		4: # SNOW
 			target_fog_density = 0.002
-			target_sun_energy = 0.9
+			target_sun_multiplier = 0.75
 			if precipitation_mesh:
 				precipitation_mesh.visible = true
 				precip_material.albedo_color = Color(0.95, 0.96, 1.0, 0.75)

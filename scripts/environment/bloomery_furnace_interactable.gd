@@ -26,6 +26,7 @@ func _ready() -> void:
 	_build_furnace_model()
 	_setup_ui()
 	_update_prompt()
+	set_process(is_smelting)
 
 func _build_furnace_model() -> void:
 	# Materials
@@ -119,6 +120,7 @@ func _setup_ui() -> void:
 	prompt_label.name = "PromptLabel"
 	prompt_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	prompt_label.no_depth_test = true
+	prompt_label.visibility_range_end = 14.0
 	prompt_label.font_size = 20
 	prompt_label.outline_size = 5
 	prompt_label.modulate = Color(1.0, 0.88, 0.55)
@@ -129,6 +131,7 @@ func _setup_ui() -> void:
 	feedback_label.name = "FeedbackLabel"
 	feedback_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	feedback_label.no_depth_test = true
+	feedback_label.visibility_range_end = 14.0
 	feedback_label.font_size = 20
 	feedback_label.outline_size = 5
 	feedback_label.modulate = Color(0.4, 1.0, 0.4)
@@ -155,6 +158,9 @@ func _process(delta: float) -> void:
 			if furnace_light: furnace_light.visible = false
 			_show_feedback("🔥 Blæstring fullført! En glødende jernlupp (iron bloom) er klar til smiing.")
 			_update_prompt()
+
+	if not is_smelting and feedback_timer <= 0.0:
+		set_process(false)
 
 func on_interact(actor: Node) -> void:
 	if actor == null:
@@ -200,6 +206,7 @@ func on_interact(actor: Node) -> void:
 		inv.consume_resources({"bog_iron_ore": 2, fuel_type: 2})
 		is_smelting = true
 		smelt_timer = 0.0
+		set_process(true)
 		if furnace_light: furnace_light.visible = true
 		if stats:
 			stats.consume_stamina(8.0)
@@ -223,3 +230,4 @@ func _show_feedback(msg: String) -> void:
 		feedback_label.text = msg
 		feedback_label.visible = true
 		feedback_timer = 3.8
+		set_process(true)

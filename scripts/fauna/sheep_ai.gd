@@ -32,6 +32,7 @@ var head_pivot: Node3D
 var leg_nodes: Array[Node3D] = []
 var fleece_mesh: MeshInstance3D
 var walk_cycle: float = 0.0
+var _wolf_scan_timer: float = 0.0
 
 func _ready() -> void:
 	add_to_group("fauna")
@@ -75,13 +76,16 @@ func _physics_process(delta: float) -> void:
 			current_state = State.FLEEING
 			state_timer = 4.0
 
-	var wolves := get_tree().get_nodes_in_group("wolf")
-	for w in wolves:
-		if w is Node3D and is_instance_valid(w):
-			if global_position.distance_to(w.global_position) < 14.0:
-				current_state = State.FLEEING
-				state_timer = 6.0
-				break
+	_wolf_scan_timer -= delta
+	if _wolf_scan_timer <= 0.0:
+		_wolf_scan_timer = 0.25
+		var wolves := get_tree().get_nodes_in_group("wolf")
+		for w in wolves:
+			if w is Node3D and is_instance_valid(w) and w.get("current_state") != 4:
+				if global_position.distance_to(w.global_position) < 14.0:
+					current_state = State.FLEEING
+					state_timer = 6.0
+					break
 
 	match current_state:
 		State.GRAZING:

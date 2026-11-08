@@ -204,7 +204,7 @@ func on_interact(actor: Node) -> void:
 		# If player has SurvivalStats, drinking fresh milk is nourishing!
 		if actor.has_node("SurvivalStats"):
 			var stats: SurvivalStats = actor.get_node("SurvivalStats")
-			stats.hunger = minf(stats.max_health, stats.hunger + 15.0)
+			stats.hunger = minf(100.0, stats.hunger + 15.0)
 			stats.thirst = minf(100.0, stats.thirst + 25.0)
 		
 		# Gentle reaction

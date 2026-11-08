@@ -28,6 +28,7 @@ var catalog: Array[BuildingPieceRecipe] = []
 # Materials for ghost preview
 var ghost_mat_valid: StandardMaterial3D
 var ghost_mat_invalid: StandardMaterial3D
+var _current_ghost_mat: StandardMaterial3D = null
 
 func _ready() -> void:
 	_init_catalog()
@@ -52,7 +53,6 @@ func _init_catalog() -> void:
 	r_c_fund.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_c_fund.resource_costs = { "stone": 4, "timber_log": 2 }
 	r_c_fund.dimensions = Vector3(5.0, 0.4, 5.0)
-	r_c_fund.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_1_foundation.glb")
 	catalog.append(r_c_fund)
 
 	# 3. Cabin Stage 2: Lafteverk Timber Walls (Veggløft)
@@ -62,7 +62,6 @@ func _init_catalog() -> void:
 	r_c_walls.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_c_walls.resource_costs = { "timber_log": 4 }
 	r_c_walls.dimensions = Vector3(5.0, 2.2, 5.0)
-	r_c_walls.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_2_walls.glb")
 	catalog.append(r_c_walls)
 
 	# 4. Cabin Stage 3: Gables, Ridge & Sod Roof (Torvtak)
@@ -73,7 +72,6 @@ func _init_catalog() -> void:
 	r_c_roof.resource_costs = { "timber_log": 2, "birch_bark": 4, "turf": 4 }
 	r_c_roof.dimensions = Vector3(5.0, 1.4, 5.0)
 	r_c_roof.provides_shelter = true
-	r_c_roof.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_3_roof.glb")
 	catalog.append(r_c_roof)
 
 	# 5. Cabin Stage 4: Central Stone Hearth & Bench (Åre Ildsted)
@@ -84,7 +82,6 @@ func _init_catalog() -> void:
 	r_c_hearth.resource_costs = { "stone": 4, "firewood": 2 }
 	r_c_hearth.dimensions = Vector3(2.0, 0.6, 2.0)
 	r_c_hearth.is_hearth = true
-	r_c_hearth.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_4_hearth.glb")
 	catalog.append(r_c_hearth)
 
 	# 6. Farmhouse Stone Footing & Mudsill (Modular Single Piece)
@@ -94,7 +91,6 @@ func _init_catalog() -> void:
 	r_stone_footing.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_stone_footing.resource_costs = { "stone": 4 }
 	r_stone_footing.dimensions = Vector3(4.0, 0.4, 0.5)
-	r_stone_footing.custom_scene = load("res://assets/modular_pieces/laftehytte/foundation_plinth_4m.glb")
 	catalog.append(r_stone_footing)
 
 	# 7. Hand-Hewn Floor Plank Bay (Gulvbord)
@@ -104,7 +100,6 @@ func _init_catalog() -> void:
 	r_floor_bay.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_floor_bay.resource_costs = { "timber_log": 2 }
 	r_floor_bay.dimensions = Vector3(4.0, 0.2, 4.0)
-	r_floor_bay.custom_scene = load("res://assets/modular_pieces/laftehytte/floor_plank_bay.glb")
 	catalog.append(r_floor_bay)
 
 	# 8. Solid 8-Course Notched Log Wall (Lafteverk Vegg)
@@ -114,7 +109,6 @@ func _init_catalog() -> void:
 	r_solid_wall.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_solid_wall.resource_costs = { "timber_log": 2 }
 	r_solid_wall.dimensions = Vector3(4.0, 2.28, 0.35)
-	r_solid_wall.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_solid.glb")
 	catalog.append(r_solid_wall)
 
 	# 9. Farmhouse Lafteverk Log Wall Course with Window & Shutters
@@ -124,7 +118,6 @@ func _init_catalog() -> void:
 	r_lafte_wall.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_lafte_wall.resource_costs = { "timber_log": 2 }
 	r_lafte_wall.dimensions = Vector3(4.0, 2.28, 0.35)
-	r_lafte_wall.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_window.glb")
 	catalog.append(r_lafte_wall)
 
 	# 10. Framed Timber Doorway Wall Piece (Jambs, Lintel, Planked Door & Iron Hinges)
@@ -134,7 +127,6 @@ func _init_catalog() -> void:
 	r_door_piece.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_door_piece.resource_costs = { "timber_log": 2, "stone": 1 }
 	r_door_piece.dimensions = Vector3(4.0, 2.28, 0.35)
-	r_door_piece.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_doorway.glb")
 	catalog.append(r_door_piece)
 
 	# 11. Triangular Notched Log Gable (Gavlvegg)
@@ -144,7 +136,6 @@ func _init_catalog() -> void:
 	r_gable.category = BuildingPieceRecipe.BuildingCategory.ROOFING
 	r_gable.resource_costs = { "timber_log": 2 }
 	r_gable.dimensions = Vector3(5.0, 1.4, 0.35)
-	r_gable.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_gable_triangle.glb")
 	catalog.append(r_gable)
 
 	# 12. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
@@ -154,7 +145,6 @@ func _init_catalog() -> void:
 	r_stabbur_pillar.category = BuildingPieceRecipe.BuildingCategory.STOREHOUSE
 	r_stabbur_pillar.resource_costs = { "stone": 2, "timber_log": 1 }
 	r_stabbur_pillar.dimensions = Vector3(0.6, 1.2, 0.6)
-	r_stabbur_pillar.custom_scene = load("res://assets/modular_pieces/laftehytte/foundation_pier.glb")
 	catalog.append(r_stabbur_pillar)
 
 	# 13. Barn Grindverk Post-and-Beam Timber Frame (Posts, Tie Beam & Wind Braces)
@@ -174,7 +164,6 @@ func _init_catalog() -> void:
 	r_sod_roof.resource_costs = { "timber_log": 1, "birch_bark": 2, "turf": 2 }
 	r_sod_roof.dimensions = Vector3(5.0, 1.4, 5.0)
 	r_sod_roof.provides_shelter = true
-	r_sod_roof.custom_scene = load("res://assets/modular_pieces/laftehytte/torvtak_roof_slope.glb")
 	catalog.append(r_sod_roof)
 
 func _init_ghost_materials() -> void:
@@ -286,7 +275,9 @@ func _update_ghost_position_and_validity() -> void:
 	var can_afford := inventory.has_resources(needed_costs) if inventory else true
 	var target_mat := ghost_mat_valid if can_afford else ghost_mat_invalid
 
-	BuildingAssembler.apply_ghost_material_recursive(ghost_root, target_mat)
+	if _current_ghost_mat != target_mat:
+		_current_ghost_mat = target_mat
+		BuildingAssembler.apply_ghost_material_recursive(ghost_root, target_mat)
 
 func _try_place_current_piece() -> void:
 	if not ghost_root or not ghost_root.visible:
@@ -369,6 +360,7 @@ func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
 
 func _update_ghost_mesh() -> void:
 	var recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
+	_current_ghost_mat = null
 
 	# Clean up previous custom ghost node
 	if ghost_custom_node and is_instance_valid(ghost_custom_node):
@@ -410,7 +402,6 @@ func _generate_placeholder_mesh(recipe: BuildingPieceRecipe) -> Mesh:
 	var streams: Dictionary = {}
 	var w := recipe.dimensions.x
 	var h := recipe.dimensions.y
-	var d := recipe.dimensions.z
 
 	if recipe.piece_id == "barn_grindverk_post":
 		var wins: Array[int] = [1]
@@ -418,7 +409,9 @@ func _generate_placeholder_mesh(recipe: BuildingPieceRecipe) -> Mesh:
 
 	if not streams.is_empty():
 		var mi := BuildingAssembler._commit_piece_streams(streams, "PieceMesh")
-		return mi.mesh
+		var mesh_res := mi.mesh
+		mi.free()
+		return mesh_res
 
 	var box := BoxMesh.new()
 	box.size = recipe.dimensions

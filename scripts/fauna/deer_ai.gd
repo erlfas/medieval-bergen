@@ -35,14 +35,19 @@ func receive_herd_alarm(alarm_origin: Vector3) -> void:
 		current_state = State.FLEEING
 		state_timer = randf_range(4.0, 7.0)
 
+var flock_scan_timer: float = 0.0
+var cached_flock_offset: Vector3 = Vector3.ZERO
+
 func _physics_process(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 
 	if current_state == State.DEAD:
+		move_and_slide()
 		return
 
 	alert_cooldown -= delta
+	flock_scan_timer -= delta
 
 	if player_target:
 		var dist := global_position.distance_to(player_target.global_position)
@@ -62,12 +67,15 @@ func _physics_process(delta: float) -> void:
 				state_timer = randf_range(3.0, 7.0)
 
 		State.WANDERING:
-			var dir := (wander_target - global_position).normalized()
+			var to_target := wander_target - global_position
+			to_target.y = 0.0
+			var dist_2d := to_target.length()
+			var dir := to_target / maxf(dist_2d, 0.001)
 			velocity.x = dir.x * walk_speed
 			velocity.z = dir.z * walk_speed
-			if Vector2(dir.x, dir.z).length() > 0.1:
+			if dist_2d > 0.1:
 				rotation.y = atan2(-dir.x, -dir.z)
-			if global_position.distance_to(wander_target) < 1.5 or state_timer <= 0.0:
+			if dist_2d < 1.5 or state_timer <= 0.0:
 				current_state = State.GRAZING
 				state_timer = randf_range(4.0, 8.0)
 
@@ -75,32 +83,36 @@ func _physics_process(delta: float) -> void:
 			_broadcast_herd_alarm()
 
 			var threat := player_target.global_position if player_target else threat_position
-			var flee_dir := (global_position - threat).normalized()
+			var flee_dir := (global_position - threat)
 			flee_dir.y = 0.0
+			if flee_dir.length_squared() > 0.001:
+				flee_dir = flee_dir.normalized()
 
-			# Flocking: Cohesion & Separation from nearby herd deer
-			var align_sum := Vector3.ZERO
-			var sep_sum := Vector3.ZERO
-			var neighbors := 0
+			# Flocking: Cohesion & Separation from nearby herd deer throttled to 5 Hz
+			if flock_scan_timer <= 0.0:
+				flock_scan_timer = 0.20
+				var align_sum := Vector3.ZERO
+				var sep_sum := Vector3.ZERO
+				var neighbors := 0
 
-			for d in get_tree().get_nodes_in_group("deer"):
-				if d != self and is_instance_valid(d) and d is CharacterBody3D and d.get("current_state") != State.DEAD:
-					var dist_d := global_position.distance_to(d.global_position)
-					if dist_d < 18.0:
-						var vel_norm: Vector3 = (d as CharacterBody3D).velocity.normalized()
-						if vel_norm.length_squared() > 0.01:
-							align_sum += vel_norm
-							neighbors += 1
-					if dist_d < 3.2 and dist_d > 0.05:
-						sep_sum += (global_position - d.global_position).normalized() * (3.2 - dist_d)
+				for d in get_tree().get_nodes_in_group("deer"):
+					if d != self and is_instance_valid(d) and d is CharacterBody3D and d.get("current_state") != State.DEAD:
+						var dist_d := global_position.distance_to(d.global_position)
+						if dist_d < 18.0:
+							var vel_norm: Vector3 = (d as CharacterBody3D).velocity.normalized()
+							if vel_norm.length_squared() > 0.01:
+								align_sum += vel_norm
+								neighbors += 1
+						if dist_d < 3.2 and dist_d > 0.05:
+							sep_sum += (global_position - d.global_position).normalized() * (3.2 - dist_d)
 
-			var flock_dir := flee_dir * 0.65
-			if neighbors > 0:
-				flock_dir += (align_sum / float(neighbors)).normalized() * 0.25
-			if sep_sum.length_squared() > 0.01:
-				flock_dir += sep_sum.normalized() * 0.15
+				cached_flock_offset = Vector3.ZERO
+				if neighbors > 0:
+					cached_flock_offset += (align_sum / float(neighbors)).normalized() * 0.25
+				if sep_sum.length_squared() > 0.01:
+					cached_flock_offset += sep_sum.normalized() * 0.15
 
-			flock_dir = flock_dir.normalized()
+			var flock_dir := (flee_dir * 0.65 + cached_flock_offset).normalized()
 			velocity.x = flock_dir.x * run_speed
 			velocity.z = flock_dir.z * run_speed
 
@@ -111,6 +123,8 @@ func _physics_process(delta: float) -> void:
 				current_state = State.GRAZING
 				state_timer = 5.0
 
+	move_and_slide()
+
 func _broadcast_herd_alarm() -> void:
 	if alert_cooldown > 0.0:
 		return
@@ -120,12 +134,11 @@ func _broadcast_herd_alarm() -> void:
 			if global_position.distance_to(d.global_position) < 28.0:
 				d.receive_herd_alarm(global_position)
 
-	move_and_slide()
-
 func _pick_wander_target() -> void:
 	var angle := randf() * 2.0 * PI
 	var dist := randf_range(6.0, 18.0)
-	wander_target = global_position + Vector3(cos(angle) * dist, 0, sin(angle) * dist)
+	var base_pos := global_position if is_inside_tree() else position
+	wander_target = base_pos + Vector3(cos(angle) * dist, 0, sin(angle) * dist)
 
 func take_damage(amount: float, attacker: Node) -> void:
 	if current_state == State.DEAD:

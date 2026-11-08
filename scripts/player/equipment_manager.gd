@@ -238,11 +238,14 @@ func _use_knife(raycast: RayCast3D) -> void:
 	if raycast and raycast.is_colliding():
 		var target := raycast.get_collider()
 		if target:
-			# Check for dead game animal harvesting
+			# Check for dead game animal harvesting using health <= 0 or exact species DEAD state
 			var is_dead := false
-			if "current_state" in target:
-				var state_val = target.get("current_state")
-				is_dead = (state_val == 4 or state_val == 5)
+			if "health" in target and float(target.get("health")) <= 0.0:
+				is_dead = true
+			elif (target is WolfAI or target is DeerAI) and target.get("current_state") == 4:
+				is_dead = true
+			elif (target is SheepAI or target is CowAI or target is RabbitAI) and target.get("current_state") == 5:
+				is_dead = true
 
 			if is_dead:
 				_harvest_animal_corpse(target)
@@ -254,8 +257,9 @@ func _use_knife(raycast: RayCast3D) -> void:
 				target.on_interact(settler)
 
 func _harvest_animal_corpse(corpse: Node) -> void:
-	if not inventory:
+	if not inventory or not is_instance_valid(corpse) or corpse.get_meta("harvested", false):
 		return
+	corpse.set_meta("harvested", true)
 	if corpse is WolfAI or corpse.name.begins_with("Wolf"):
 		inventory.add_resource("wolf_pelt", 1)
 		inventory.add_resource("bone", 2)
@@ -265,9 +269,12 @@ func _harvest_animal_corpse(corpse: Node) -> void:
 	elif corpse is RabbitAI or corpse.name.begins_with("Rabbit"):
 		inventory.add_resource("raw_hare", 2)
 		inventory.add_resource("hare_fur", 2)
-	elif corpse.is_in_group("sheep") or corpse.name.begins_with("Sheep"):
+	elif corpse is SheepAI or corpse.is_in_group("sheep") or corpse.name.begins_with("Sheep"):
 		inventory.add_resource("raw_mutton", 2)
-		inventory.add_resource("sheep_wool", 2)
+		inventory.add_resource("wool_fleece", 2)
+	elif corpse is CowAI or corpse.is_in_group("cow") or corpse.name.begins_with("Cow"):
+		inventory.add_resource("raw_beef", 3)
+		inventory.add_resource("cattle_hide", 2)
 	else:
 		inventory.add_resource("raw_venison", 2)
 		inventory.add_resource("deer_hide", 1)
@@ -327,17 +334,17 @@ func _spawn_arrow_projectile(camera: Camera3D, draw_progress: float) -> void:
 	var scene_root: Node = settler.get_parent() if settler else null
 	if not scene_root:
 		scene_root = get_tree().current_scene if get_tree().current_scene else get_tree().root
-	scene_root.add_child(arrow)
 
-	# Calculate launch position and direction from camera / crosshair
+	# Calculate launch position and direction from camera / crosshair before adding to tree
 	var cam_xform := camera.global_transform if camera else settler.global_transform
 	var forward := -cam_xform.basis.z.normalized()
 	var launch_speed := lerpf(22.0, 48.0, draw_progress)
 
-	arrow.global_position = cam_xform.origin + forward * 0.85 + Vector3(0, -0.05, 0)
+	arrow.position = cam_xform.origin + forward * 0.85 + Vector3(0, -0.05, 0)
 	arrow.set("velocity", forward * launch_speed)
 	arrow.set("damage", lerpf(20.0, 50.0, draw_progress))
 	arrow.set("shooter", settler)
+	scene_root.add_child(arrow)
 
 ## Slot 5: Pine-tar Torch: Warmth, illumination, and wolf deterrence
 func _use_torch(raycast: RayCast3D) -> void:

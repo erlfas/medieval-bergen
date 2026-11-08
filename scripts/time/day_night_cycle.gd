@@ -19,9 +19,12 @@ extends Node3D
 @export var sun_color_twilight: Color = Color(0.40, 0.45, 0.65)
 @export var moon_color: Color = Color(0.65, 0.75, 0.90)
 
+var weather_controller: Node = null
+
 func _ready() -> void:
 	if time_manager == null:
 		time_manager = get_tree().get_first_node_in_group("time_manager") as TimeManager
+	weather_controller = get_tree().get_first_node_in_group("weather_controller")
 
 func _process(_delta: float) -> void:
 	if time_manager:
@@ -51,22 +54,28 @@ func _update_celestial_bodies(progress: float, month: int, day: int) -> void:
 	if sin(hour_angle_rad) > 0.0:
 		azimuth_rad = 2.0 * PI - azimuth_rad
 
+	var weather_mult := 1.0
+	if weather_controller == null and is_inside_tree():
+		weather_controller = get_tree().get_first_node_in_group("weather_controller")
+	if weather_controller and weather_controller.get("weather_light_multiplier") != null:
+		weather_mult = float(weather_controller.get("weather_light_multiplier"))
+
 	# Rotate Sun Light
 	if sun_light:
 		sun_light.rotation = Vector3(-altitude_rad, azimuth_rad, 0.0)
 
-		# Adjust Sun energy & color based on solar altitude
+		# Adjust Sun energy & color based on solar altitude and weather multiplier
 		if altitude_deg > 5.0:
 			# Full day
 			sun_light.visible = true
-			sun_light.light_energy = clampf(sin(altitude_rad) * 1.5, 0.2, 1.3)
+			sun_light.light_energy = clampf(sin(altitude_rad) * 1.5, 0.2, 1.3) * weather_mult
 			sun_light.light_color = sun_color_day
 			sun_light.shadow_enabled = false
 		elif altitude_deg > -4.0:
 			# Sunset / Dawn golden hour & twilight
 			sun_light.visible = true
 			var t := (altitude_deg - (-4.0)) / 9.0
-			sun_light.light_energy = lerpf(0.05, 0.8, t)
+			sun_light.light_energy = lerpf(0.05, 0.8, t) * weather_mult
 			sun_light.light_color = sun_color_sunset.lerp(sun_color_day, t)
 			sun_light.shadow_enabled = false
 		else:

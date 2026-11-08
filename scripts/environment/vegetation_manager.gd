@@ -297,8 +297,8 @@ static func populate_dense_vegetation(
 		col.position.y = 2.1
 		tree_node.add_child(col)
 
+		tree_node.position = Vector3(tx, ty, tz)
 		trees_container.add_child(tree_node)
-		tree_node.global_position = Vector3(tx, ty, tz)
 		choppable_placed += 1
 
 	# -------------------------------------------------------------------------

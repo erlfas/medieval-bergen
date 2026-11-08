@@ -57,72 +57,77 @@ func _build_rope_mesh() -> void:
 	mat_hemp.albedo_color = Color(0.72, 0.60, 0.42) # Warm natural Norwegian hemp rope
 	mat_hemp.roughness = 0.95
 
-	var mat_wood := StandardMaterial3D.new()
-	mat_wood.albedo_color = Color(0.48, 0.34, 0.22)
-	mat_wood.roughness = 0.85
+	var mat_knot := StandardMaterial3D.new()
+	mat_knot.albedo_color = Color(0.62, 0.50, 0.35)
+	mat_knot.roughness = 0.95
 
-	# 1. Top Anchor Stake (iron piton driven into rock)
 	anchor_node = Node3D.new()
 	anchor_node.name = "AnchorNode"
 	anchor_node.position = top_anchor_position
 	add_child(anchor_node)
 
-	# Piton pin
-	var piton_mesh := MeshInstance3D.new()
+	knots_container = Node3D.new()
+	knots_container.name = "Knots"
+	add_child(knots_container)
+
+	var arr_mesh := ArrayMesh.new()
+	var st := SurfaceTool.new()
+
+	# 1. Iron Piton & Ring Surface
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat_iron)
 	var box_pin := BoxMesh.new()
 	box_pin.size = Vector3(0.08, 0.35, 0.08)
-	piton_mesh.mesh = box_pin
-	piton_mesh.material_override = mat_iron
-	piton_mesh.position = Vector3(0.0, 0.1, 0.0)
-	anchor_node.add_child(piton_mesh)
+	st.append_from(box_pin, 0, Transform3D(Basis.IDENTITY, top_anchor_position + Vector3(0.0, 0.1, 0.0)))
 
-	# Forged iron ring
-	var ring_mesh := MeshInstance3D.new()
 	var torus_ring := TorusMesh.new()
 	torus_ring.inner_radius = 0.07
 	torus_ring.outer_radius = 0.12
-	ring_mesh.mesh = torus_ring
-	ring_mesh.rotation_degrees = Vector3(90.0, 0.0, 0.0)
-	ring_mesh.position = Vector3(0.0, 0.22, 0.0)
-	ring_mesh.material_override = mat_iron
-	anchor_node.add_child(ring_mesh)
+	torus_ring.rings = 10
+	torus_ring.ring_segments = 6
+	var ring_basis := Basis.from_euler(Vector3(deg_to_rad(90.0), 0.0, 0.0))
+	st.append_from(torus_ring, 0, Transform3D(ring_basis, top_anchor_position + Vector3(0.0, 0.22, 0.0)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
 
-	# 2. Main Hanging Braided Hemp Rope
-	rope_mesh_instance = MeshInstance3D.new()
-	rope_mesh_instance.name = "RopeMesh"
+	# 2. Main Hanging Braided Hemp Rope Surface
+	st.clear()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat_hemp)
 	var cyl := CylinderMesh.new()
 	cyl.top_radius = rope_radius
 	cyl.bottom_radius = rope_radius
 	cyl.height = rope_length
 	cyl.radial_segments = 10
-	rope_mesh_instance.mesh = cyl
-	rope_mesh_instance.material_override = mat_hemp
-	# Position cylinder midpoint between top and bottom
 	var mid_y := top_anchor_position.y - (rope_length * 0.5)
-	rope_mesh_instance.position = Vector3(top_anchor_position.x, mid_y, top_anchor_position.z)
-	add_child(rope_mesh_instance)
+	st.append_from(cyl, 0, Transform3D(Basis.IDENTITY, Vector3(top_anchor_position.x, mid_y, top_anchor_position.z)))
+	st.generate_tangents()
+	st.commit(arr_mesh)
 
-	# 3. Knots along the rope every 1.6 meters for climbing grip
-	knots_container = Node3D.new()
-	knots_container.name = "Knots"
-	add_child(knots_container)
-
-	var mat_knot := StandardMaterial3D.new()
-	mat_knot.albedo_color = Color(0.62, 0.50, 0.35)
-	mat_knot.roughness = 0.95
-
+	# 3. Knots along the rope every 1.6 meters batched into a single surface
+	st.clear()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat_knot)
+	var sph := SphereMesh.new()
+	sph.radius = rope_radius * 1.8
+	sph.height = rope_radius * 2.8
+	sph.radial_segments = 8
+	sph.rings = 4
 	var knot_spacing := 1.6
 	var current_y := top_anchor_position.y - 1.2
+	var has_knots := false
 	while current_y > (top_anchor_position.y - rope_length + 0.6):
-		var knot := MeshInstance3D.new()
-		var sph := SphereMesh.new()
-		sph.radius = rope_radius * 1.8
-		sph.height = rope_radius * 2.8
-		knot.mesh = sph
-		knot.material_override = mat_knot
-		knot.position = Vector3(top_anchor_position.x, current_y, top_anchor_position.z)
-		knots_container.add_child(knot)
+		st.append_from(sph, 0, Transform3D(Basis.IDENTITY, Vector3(top_anchor_position.x, current_y, top_anchor_position.z)))
+		has_knots = true
 		current_y -= knot_spacing
+	if has_knots:
+		st.generate_tangents()
+		st.commit(arr_mesh)
+
+	rope_mesh_instance = MeshInstance3D.new()
+	rope_mesh_instance.name = "RopeCompoundMesh"
+	rope_mesh_instance.mesh = arr_mesh
+	add_child(rope_mesh_instance)
 
 func _build_collision() -> void:
 	collision_shape = CollisionShape3D.new()
@@ -150,8 +155,10 @@ func get_closest_point(pos: Vector3) -> Vector3:
 
 ## Retrieves / packs up the rope back into the player's inventory
 func retrieve_rope(settler: Node) -> void:
-	if settler and settler.get("inventory"):
-		var inv: InventoryManager = settler.get("inventory")
+	if settler:
+		var inv: InventoryManager = settler.get("inventory") as InventoryManager
+		if inv == null:
+			inv = settler.get_node_or_null("InventoryManager") as InventoryManager
 		if inv:
 			inv.add_resource("climbing_rope", 1)
 	rope_retrieved.emit()

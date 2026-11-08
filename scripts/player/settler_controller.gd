@@ -84,16 +84,19 @@ var _current_safe_dist: float = 3.2
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
 
+static var _shared_ripple_mesh: TorusMesh
+
 func _spawn_water_ripple(pos: Vector3) -> void:
 	if not is_inside_tree():
 		return
 	var ripple := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = 0.20
-	torus.outer_radius = 0.35
-	torus.rings = 16
-	torus.ring_segments = 6
-	ripple.mesh = torus
+	if _shared_ripple_mesh == null:
+		_shared_ripple_mesh = TorusMesh.new()
+		_shared_ripple_mesh.inner_radius = 0.20
+		_shared_ripple_mesh.outer_radius = 0.35
+		_shared_ripple_mesh.rings = 16
+		_shared_ripple_mesh.ring_segments = 6
+	ripple.mesh = _shared_ripple_mesh
 
 	var mat := StandardMaterial3D.new()
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -411,11 +414,11 @@ func _physics_process(delta: float) -> void:
 	# 2. MOUNTAIN CLIFF DETECTION & ROCK CLIMBING ENGAGE (Task 7)
 	# -------------------------------------------------------------
 	if _climb_cooldown <= 0.0 and not is_climbing and not is_swimming and not is_on_rope and not is_carrying_log:
-		var cliff_info := _check_steep_cliff()
-		if not cliff_info.is_empty():
-			var moving_into_cliff := drive_input > 0.2
-			var jump_pressed := Input.is_action_just_pressed("jump")
-			if jump_pressed or moving_into_cliff:
+		var moving_into_cliff := drive_input > 0.2
+		var jump_pressed := Input.is_action_just_pressed("jump")
+		if jump_pressed or moving_into_cliff:
+			var cliff_info := _check_steep_cliff()
+			if not cliff_info.is_empty():
 				is_climbing = true
 				climb_normal = cliff_info.normal
 				velocity = Vector3.ZERO
@@ -685,14 +688,23 @@ func _physics_process(delta: float) -> void:
 	current_cam_distance = lerpf(current_cam_distance, desired_cam_dist, delta * 12.0)
 	_update_camera(delta)
 
-	# Check terrain freshwater stream drinking zone & backpack reservoir refill
-	if terrain_generator:
-		var near_stream := terrain_generator.is_freshwater_stream(global_position)
-		if near_stream and not is_carrying_log and not is_swimming:
-			if Input.is_action_just_pressed("interact"):
-				survival_stats.drink_water(true)
-				if equipment:
-					equipment.refill_reservoir(100.0)
+	# Update CarryableLog focus prompt if looking at one
+	_update_focused_log()
+
+var _focused_log: Node = null
+
+func _update_focused_log() -> void:
+	var hit_log: Node = null
+	if interact_raycast and interact_raycast.is_colliding():
+		var col := interact_raycast.get_collider()
+		if col and col.is_in_group("carryable_log") and col.has_method("set_settler_focus"):
+			hit_log = col
+	if _focused_log != hit_log:
+		if _focused_log and is_instance_valid(_focused_log) and _focused_log.has_method("set_settler_focus"):
+			_focused_log.set_settler_focus(null)
+		_focused_log = hit_log
+		if _focused_log and is_instance_valid(_focused_log):
+			_focused_log.set_settler_focus(self)
 
 ## Detects steep rocky cliff faces (> 50° slope) ahead of settler
 func _check_steep_cliff() -> Dictionary:
@@ -882,10 +894,10 @@ func _update_camera(delta: float) -> void:
 func pick_up_log(log_node: Node) -> void:
 	if is_carrying_log:
 		return
+	if is_holding_torch or (equipment and equipment.current_slot == EquipmentManager.Slot.TORCH):
+		toggle_torch()
 	is_carrying_log = true
 	carrying_state_changed.emit(true)
-	if is_holding_torch:
-		toggle_torch()
 
 	if log_node and is_instance_valid(log_node):
 		log_node.queue_free()
@@ -962,7 +974,14 @@ func _perform_interaction() -> void:
 		pick_up_log(closest_log)
 		return
 
-	# 3. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
+	# 3. Freshwater stream drinking & backpack reservoir refill
+	if terrain_generator and not is_swimming and terrain_generator.is_freshwater_stream(global_position):
+		survival_stats.drink_water(true)
+		if equipment:
+			equipment.refill_reservoir(100.0)
+		return
+
+	# 4. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
 	if equipment and equipment.current_slot == EquipmentManager.Slot.WATER_BOTTLE:
 		equipment.drink_from_reservoir()
 
@@ -992,27 +1011,43 @@ func _try_eat() -> void:
 	if inventory.get_count("cooked_venison") > 0:
 		inventory.consume_resources({"cooked_venison": 1})
 		survival_stats.eat_food(48.0, true)
-	elif inventory.get_count("roasted_hare") > 0:
-		inventory.consume_resources({"roasted_hare": 1})
-		survival_stats.eat_food(35.0, true)
+	elif inventory.get_count("cooked_beef") > 0:
+		inventory.consume_resources({"cooked_beef": 1})
+		survival_stats.eat_food(46.0, true)
 	elif inventory.get_count("roasted_mutton") > 0:
 		inventory.consume_resources({"roasted_mutton": 1})
 		survival_stats.eat_food(42.0, true)
 	elif inventory.get_count("cooked_meat") > 0:
 		inventory.consume_resources({"cooked_meat": 1})
 		survival_stats.eat_food(40.0, true)
+	elif inventory.get_count("cooked_fish") > 0:
+		inventory.consume_resources({"cooked_fish": 1})
+		survival_stats.eat_food(36.0, true)
+	elif inventory.get_count("roasted_hare") > 0:
+		inventory.consume_resources({"roasted_hare": 1})
+		survival_stats.eat_food(35.0, true)
 	elif inventory.get_count("stockfish") > 0:
 		inventory.consume_resources({"stockfish": 1})
 		survival_stats.eat_food(32.0, true)
 	elif inventory.get_count("rye_bread") > 0:
 		inventory.consume_resources({"rye_bread": 1})
 		survival_stats.eat_food(28.0, true)
+	elif inventory.get_count("fresh_milk") > 0:
+		inventory.consume_resources({"fresh_milk": 1})
+		survival_stats.eat_food(18.0, true)
+		survival_stats.drink_water(true)
 	elif inventory.get_count("raw_venison") > 0:
 		inventory.consume_resources({"raw_venison": 1})
 		if survival_stats.is_near_fire:
 			survival_stats.eat_food(45.0, true)
 		else:
 			survival_stats.eat_food(20.0, false)
+	elif inventory.get_count("raw_beef") > 0:
+		inventory.consume_resources({"raw_beef": 1})
+		if survival_stats.is_near_fire:
+			survival_stats.eat_food(44.0, true)
+		else:
+			survival_stats.eat_food(19.0, false)
 	elif inventory.get_count("raw_hare") > 0:
 		inventory.consume_resources({"raw_hare": 1})
 		if survival_stats.is_near_fire:

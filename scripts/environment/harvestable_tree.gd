@@ -209,11 +209,11 @@ func _setup_trajectory_indicator() -> void:
 	arrow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
 	var segment_distances := [1.2, 2.2, 3.2, 4.2, 5.2, 6.2]
-	for d in segment_distances:
+	var shared_seg_box := BoxMesh.new()
+	shared_seg_box.size = Vector3(0.35, 0.05, 0.6)
+	for _d in segment_distances:
 		var marker := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.35, 0.05, 0.6)
-		marker.mesh = box
+		marker.mesh = shared_seg_box
 		marker.material_override = arrow_mat
 		trajectory_indicator.add_child(marker)
 		arrow_markers.append(marker)
@@ -280,12 +280,12 @@ func _setup_trajectory_indicator() -> void:
 	arc_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 
 	var arc_bead_count := 10
+	var shared_bead_sphere := SphereMesh.new()
+	shared_bead_sphere.radius = 0.09
+	shared_bead_sphere.height = 0.18
 	for i in range(arc_bead_count):
 		var bead := MeshInstance3D.new()
-		var sphere := SphereMesh.new()
-		sphere.radius = 0.09
-		sphere.height = 0.18
-		bead.mesh = sphere
+		bead.mesh = shared_bead_sphere
 		bead.material_override = arc_mat
 		trajectory_indicator.add_child(bead)
 		arc_beads.append(bead)
@@ -305,6 +305,12 @@ func _setup_notch() -> void:
 		model_pivot.add_child(notch_mesh)
 	else:
 		add_child(notch_mesh)
+
+var _last_displayed_fall_dir: Vector3 = Vector3.ZERO
+static var _shared_stump_mesh: CylinderMesh = null
+static var _shared_stump_shape: CylinderShape3D = null
+static var _shared_stump_mat_spruce: StandardMaterial3D = null
+static var _shared_stump_mat_birch: StandardMaterial3D = null
 
 func _process(delta: float) -> void:
 	if is_falling or is_felled:
@@ -326,7 +332,8 @@ func _process(delta: float) -> void:
 				var target_dir := away_dir.normalized()
 				fall_direction = fall_direction.slerp(target_dir, delta * 8.0).normalized()
 
-		_update_fall_direction_display()
+		if fall_direction.distance_squared_to(_last_displayed_fall_dir) > 0.0004:
+			_update_fall_direction_display()
 		_update_tracker_orientation()
 
 		if focus_timer <= 0.0:
@@ -370,10 +377,9 @@ func _update_tracker_orientation() -> void:
 		return
 	var cam := get_viewport().get_camera_3d()
 	if cam:
-		var cam_pos := cam.global_position
-		var target := Vector3(cam_pos.x, progress_tracker.global_position.y, cam_pos.z)
-		progress_tracker.look_at(target, Vector3.UP)
-		progress_tracker.rotate_object_local(Vector3.UP, PI)
+		var dir := cam.global_position - progress_tracker.global_position
+		if Vector2(dir.x, dir.z).length_squared() > 0.01:
+			progress_tracker.rotation = Vector3(0.0, atan2(dir.x, dir.z), 0.0)
 
 func _update_progress_display() -> void:
 	if not progress_tracker:
@@ -401,6 +407,7 @@ func _update_fall_direction_display() -> void:
 	if not trajectory_indicator or not trajectory_indicator.visible:
 		return
 
+	_last_displayed_fall_dir = fall_direction
 	var horiz_dir := Vector3(fall_direction.x, 0.0, fall_direction.z).normalized()
 	if horiz_dir.length_squared() < 0.01:
 		horiz_dir = Vector3.FORWARD
@@ -606,30 +613,30 @@ func _spawn_tree_stump() -> void:
 	if not parent:
 		return
 
+	if _shared_stump_mesh == null:
+		_shared_stump_mesh = CylinderMesh.new()
+		_shared_stump_mesh.top_radius = 0.24
+		_shared_stump_mesh.bottom_radius = 0.28
+		_shared_stump_mesh.height = 0.45
+		_shared_stump_shape = CylinderShape3D.new()
+		_shared_stump_shape.radius = 0.26
+		_shared_stump_shape.height = 0.45
+		_shared_stump_mat_spruce = StandardMaterial3D.new()
+		_shared_stump_mat_spruce.albedo_color = Color(0.32, 0.22, 0.14)
+		_shared_stump_mat_birch = StandardMaterial3D.new()
+		_shared_stump_mat_birch.albedo_color = Color(0.88, 0.86, 0.82)
+
 	var stump := StaticBody3D.new()
 	stump.name = "TreeStump_%d" % Time.get_ticks_msec()
 
 	var mesh_inst := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.24
-	cyl.bottom_radius = 0.28
-	cyl.height = 0.45
-	mesh_inst.mesh = cyl
+	mesh_inst.mesh = _shared_stump_mesh
 	mesh_inst.position.y = 0.225
-
-	var mat := StandardMaterial3D.new()
-	if tree_type == TreeType.SPRUCE:
-		mat.albedo_color = Color(0.32, 0.22, 0.14)
-	else:
-		mat.albedo_color = Color(0.88, 0.86, 0.82)
-	mesh_inst.material_override = mat
+	mesh_inst.material_override = _shared_stump_mat_spruce if tree_type == TreeType.SPRUCE else _shared_stump_mat_birch
 	stump.add_child(mesh_inst)
 
 	var col := CollisionShape3D.new()
-	var col_cyl := CylinderShape3D.new()
-	col_cyl.radius = 0.26
-	col_cyl.height = 0.45
-	col.shape = col_cyl
+	col.shape = _shared_stump_shape
 	col.position.y = 0.225
 	stump.add_child(col)
 

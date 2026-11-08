@@ -149,6 +149,7 @@ func _physics_process(delta: float) -> void:
 		if hay_bundle_mesh:
 			hay_bundle_mesh.visible = is_carrying
 		box_man_model.set_carrying_log(is_carrying)
+		box_man_model.set_equipped_item(1 if chore_state == ChoreState.CHOPPING_WOOD else 0)
 		box_man_model.update_animation(delta, horiz_vel, is_on_floor(), false)
 
 	move_and_slide()

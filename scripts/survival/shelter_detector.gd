@@ -24,9 +24,14 @@ func _evaluate_environment() -> void:
 
 	var space_state := get_world_3d().direct_space_state
 	var origin := global_position + Vector3(0, 0.5, 0)
+	var settler: Node = get_parent()
+	var exclude_rids: Array[RID] = []
+	if settler is CollisionObject3D:
+		exclude_rids.append((settler as CollisionObject3D).get_rid())
 
 	# 1. Check Roof Overhead (Raycast straight UP)
 	var up_query := PhysicsRayQueryParameters3D.create(origin, origin + Vector3.UP * ray_distance_up)
+	up_query.exclude = exclude_rids
 	var up_result := space_state.intersect_ray(up_query)
 	var has_roof := not up_result.is_empty()
 
@@ -35,6 +40,7 @@ func _evaluate_environment() -> void:
 	var directions := [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]
 	for dir in directions:
 		var wall_query := PhysicsRayQueryParameters3D.create(origin, origin + dir * ray_distance_walls)
+		wall_query.exclude = exclude_rids
 		var wall_result := space_state.intersect_ray(wall_query)
 		if not wall_result.is_empty():
 			wall_hits += 1
@@ -42,17 +48,13 @@ func _evaluate_environment() -> void:
 	var is_fully_sheltered := has_roof and (wall_hits >= 2)
 	survival_stats.is_sheltered = is_fully_sheltered
 
-	# 3. Check Hearth / Fire Proximity
+	# 3. Check Hearth / Fire Proximity (only lit hearths/campfires count as fire)
 	var near_fire := false
 	var hearths := get_tree().get_nodes_in_group("hearth")
 	for h in hearths:
-		if h is Node3D and global_position.distance_to(h.global_position) <= hearth_warmth_radius:
+		if h is Node3D and h.get("is_lit") != false and global_position.distance_to(h.global_position) <= hearth_warmth_radius:
 			near_fire = true
 			break
 
-	# Settler's lit torch also gives a warmth boost
-	var settler: Node = get_parent()
-	if settler and settler.get("is_holding_torch") == true:
-		near_fire = true
-
 	survival_stats.is_near_fire = near_fire
+	survival_stats.is_holding_torch = (settler != null and settler.get("is_holding_torch") == true)

@@ -573,9 +573,76 @@ The updated architecture establishes a true **Follow-Behind Camera** with critic
 | **Gate 1** | Asset Decimation | `python3 scripts/terrain/verify_grass_assets.py` | LOD0 $\le 500$ tris, total size $\le 450\,\text{KB}$ | **PASSED** (439 tris, $279\,\text{KB}$) |
 | **Gate 2** | Wind Shader | `/tmp/godot --headless --script scripts/tests/test_grass_shader.gd` | 0 GL errors, root $\Delta V \equiv 0.0\,\text{m}$, tip $\le 0.42\,\text{m}$ | **PASSED** ($\Delta V_{\text{root}} = 0.000\,\text{m}$) |
 | **Gate 3** | Grazing Distribution | `xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/test_grass_distribution.gd` | Pasture height $\le 0.35\,\text{m}$, wilderness $\ge 0.85\,\text{m}$ | **PASSED** (0 height violations) |
-| **Gate 4** | WebGL Profiler | `xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/profile_grass_performance.gd` | Meshes $\le 490$, memory $\le 350\,\text{MB}$, render valid | **PASSED** (454 meshes, $121\,\text{MB}$) |
-| **Gate 5** | Web Export & Vite | `npm run build && git status` | `dist/index.html` built, clean working tree | **PASSED** (Vite built in 85ms) |
+| **Gate 4** | WebGL Profiler | `xvfb-run -a /tmp/godot --rendering-driver opengl3 --script scripts/tests/profile_grass_performance.gd` | Meshes $\le 490$, memory $\le 350\,\text{MB}$, render valid | **PASSED** (397 meshes, $121\,\text{MB}$) |
+| **Gate 5** | Web Export & Vite | `npm run build && git status` | `dist/index.html` built, clean working tree | **PASSED** (Vite built cleanly) |
 
+---
 
+## 27. Comprehensive Subagent Bug & Performance Audit (World, Shaders, AI, Survival & UI)
 
+### 1. Audit Methodology & Subagent Architecture
+Two specialized native `research` subagents were dispatched concurrently to perform a line-by-line static and architectural audit across the entire codebase:
+1. **World & Rendering Auditor:** Audited `shaders/`, `scripts/terrain/`, `scripts/environment/`, `scripts/architecture/`, and `scenes/main.tscn` for WebGL 2.0 shader stalls, draw-call proliferation, `MeshInstance3D` / `StaticBody3D` unbatched primitives, idle `_process(delta)` loops, and GPU resource leaks.
+2. **Gameplay, AI & UI Auditor:** Audited `scripts/player/`, `scripts/construction/`, `scripts/fauna/`, `scripts/npc/`, `scripts/survival/`, `scripts/time/`, `scripts/inventory/`, `scripts/items/`, and `scripts/ui/` for state-machine logic defects, physics raycast self-intersection bugs, per-frame `get_nodes_in_group()` array allocations, and HUD signal bottlenecks.
 
+---
+
+### 2. Rendering, Shader & World Generation Optimizations
+
+#### A. Exit RID & ObjectDB Memory Leak in `GrassManager` (`scripts/environment/grass_manager.gd`)
+- **Problem:** `get_lod0_mesh()` and `get_lod1_mesh()` called `lod0_scene.instantiate()` and `lod1_scene.instantiate()` to extract the `ArrayMesh` from the imported `.glb` scenes, but never freed the instantiated root `Node3D` trees. Additionally, `_extract_first_mesh()` only checked direct children. At engine exit, Godot reported leaked GLES3 RIDs (`4 Mesh`, `2 Material`, `1 Shader`, `2 Texture`) and orphan `Node3D`/`MeshInstance3D` instances in `ObjectDB`.
+- **Solution:** Updated `_extract_first_mesh()` to use `root.find_children("*", "MeshInstance3D", true, false)`, duplicate the `Mesh` resource (`mi.mesh.duplicate()`), and immediately call `inst.free()` on both scenes. Also removed the 10-meter dual-LOD overdraw zone (`16m–26m`) by setting `VISIBILITY_RANGE_FADE_DISABLED` with a contiguous handoff at `22.0m`, and reused the pre-evaluated terrain height `profile["y"]` instead of double-sampling `terrain_gen.sample_height()`.
+
+#### B. WebGL 2.0 Backbuffer Copy Elimination & Depth Reconstruction in `shaders/fjord_water.gdshader`
+- **Problem:**
+  1. Declared an unused `uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;`, forcing the Compatibility renderer to copy the full-resolution color framebuffer and generate mipmaps every frame.
+  2. Reconstructed view-space depth assuming $[0, 1]$ Vulkan NDC depth (`vec3(SCREEN_UV * 2.0 - 1.0, depth_raw)`), whereas WebGL 2.0 / OpenGL Compatibility uses $[-1, 1]$ clip-space $Z$, corrupting shoreline foam and Beer-Lambert depth absorption.
+  3. Mixed model-space `NORMAL` in `vertex()` with world-space normal map perturbations in `fragment()`.
+- **Solution:** Removed `screen_texture`, switched `depth_texture` to `filter_nearest`, reconstructed NDC depth with `depth_raw * 2.0 - 1.0`, and transformed micro-ripple normals into view space via `mat3(VIEW_MATRIX) * world_ripple`.
+
+#### C. Conditional Triplanar Texture Gating in `shaders/bergen_terrain.gdshader`
+- **Problem:** Every terrain pixel unconditionally executed **13 texture lookups** (2 grass, 2 scree, 6 triplanar rock albedo+normal, 3 macro/detail noise), even across flat valley meadows where `rock_weight == 0.0` and `scree_weight == 0.0`.
+- **Solution:** Computed `slope`, `scree_weight`, and `rock_weight` prior to texture sampling and gated the grass (`rock_weight < 0.999`), scree (`scree_weight > 0.001`), and 6 triplanar rock lookups (`rock_weight > 0.001`), cutting fragment texture fetches from **13 down to 5 (-61.5%)** across valley floors.
+
+#### D. Squared-Distance Pad Culling in `BergenTerrainGenerator.sample_height()` (`scripts/terrain/bergen_terrain_generator.gd`)
+- **Problem:** `sample_height(x, z)` is called $>150,000$ times during world generation and iterated through all 9 `_settlement_pads` computing `Vector2(x - px, z - pz).length()` (`sqrt()`) on every iteration ($>1.35\,\text{M}$ `sqrt` calls).
+- **Solution:** Replaced the distance check with `dist_sq < out_r * out_r` and only computed `sqrt(dist_sq)` when the sample actually falls inside a settlement pad's blending radius ($<5\%$ of queries).
+
+#### E. Multi-Surface Mesh & Collider Consolidation in `FarmsteadGenerator`, `BuildingAssembler` & `ClimbingRope`
+- **Problem:**
+  - `FarmsteadGenerator` created individual `MeshInstance3D` and `StaticBody3D` nodes for every well stone, crop row, hay pole, and split-rail fence segment (79 nodes across the 4 farmsteads).
+  - `ClimbingRope` spawned up to **26 separate `MeshInstance3D` nodes** per deployed rope (piton, ring, rope cylinder, and 23 knot spheres).
+  - `HarvestableTree` allocated new `BoxMesh`/`SphereMesh` resources per trajectory dot and called `sample_height()` 8 times per frame in `_process()`.
+- **Solution:**
+  - Consolidated `_assemble_stone_well()`, `_assemble_crop_patch()`, `_assemble_chopping_area()`, `_assemble_hay_rack()`, and `SplitRailFences` into single multi-surface `ArrayMesh` nodes per structure and 1 compound `StaticBody3D` per fence enclosure, reducing scene `MeshInstance3D` count from **454 down to 397 (-57 nodes)** and `StaticBody3D` count by **20 nodes**.
+  - Batched `ClimbingRope` into a single multi-surface `ArrayMesh` (`RopeCompoundMesh`, **26 `MeshInstance3D`s $\to$ 1**).
+  - Cached `_last_displayed_fall_dir` in `HarvestableTree` so trajectory terrain sampling only runs when `fall_direction` changes, and guarded `progress_tracker.look_at()` against vertical collinearity.
+  - Disabled idle `_process(delta)` loops on `BogOreDeposit`, `BloomeryFurnaceInteractable`, `StockfishRackInteractable`, and `CarryableLog` until actively interacting/smelting/drying, and added `visibility_range_end = 14.0` to all 3D `Label3D` prompts.
+
+---
+
+### 3. Gameplay, Fauna AI, Survival & UI Bug Fixes
+
+| Subsystem / File | Bug / Bottleneck Identified | Root Cause | Resolution |
+| :--- | :--- | :--- | :--- |
+| **`DeerAI`** (`scripts/fauna/deer_ai.gd`) | Deer completely frozen during `GRAZING` and `WANDERING`; only moved 1 frame every $3.5\,\text{s}$ when `FLEEING`. | `move_and_slide()` was accidentally indented inside `_broadcast_herd_alarm()`, which returns early when `alert_cooldown > 0.0`. | Moved `move_and_slide()` to the end of `_physics_process(delta)`, zeroed `to_target.y = 0.0` in `WANDERING`, and throttled `get_nodes_in_group("deer")` flocking scans to $5\,\text{Hz}$. |
+| **`EquipmentManager`** (`scripts/player/equipment_manager.gd`) | Attacking a fleeing rabbit or sheltering sheep/cow with the Hunting Knife (`[3]`) instantly deleted the live animal and harvested it as a corpse. | `_use_knife()` checked `state_val == 4 or state_val == 5`, assuming `DEAD` was 4 or 5 across all species, but `State.FLEEING == 4` in `RabbitAI` and `State.SHELTERING == 4` in `SheepAI`/`CowAI`. | Checked `target.get("health") <= 0.0` and exact per-species `DEAD` enum values; guarded `_harvest_animal_corpse()` against double-harvesting; fixed sheep wool resource ID (`"wool_fleece"`) and added cow harvesting (`"raw_beef"`, `"cattle_hide"`). |
+| **`ArrowProjectile`** (`scripts/items/arrow_projectile.gd`) | Firing an arrow duplicated all 5 arrow `MeshInstance3D` children on impact and could despawn early when embedded. | Reparenting via `remove_child()` + `add_child()` in `_on_impact()` re-triggered `_ready()` $\to$ `_build_arrow_model()`, and `elapsed_time` was not reset on impact. | Guarded `_build_arrow_model()` with `if shaft_mesh != null: return`, cached static arrow meshes/materials across all projectiles, reset `elapsed_time = 0.0` on impact, and configured arrow transform before `add_child()`. |
+| **`ShelterDetector`** (`scripts/survival/shelter_detector.gd`) | Holding a torch (`[5]` / `[F]`) allowed players to cook/eat raw meat anywhere with `[H]` and granted full hearth warmth ($+8/\text{s}$); shelter raycasts could hit the player's own capsule. | Line 56 set `survival_stats.is_near_fire = true` when holding a torch instead of `survival_stats.is_holding_torch = true`, and raycasts lacked `query.exclude`. | Excluded player `CollisionObject3D` RID on all 5 shelter raycasts, set `survival_stats.is_holding_torch` separately from `is_near_fire`, and verified `h.get("is_lit") != false` on hearths. |
+| **`WeatherVisualController` & `DayNightCycle`** (`scripts/environment/weather_visual_controller.gd`, `scripts/time/day_night_cycle.gd`) | Sun remained bright at midnight ($0.35 - 1.25$ energy) during clear or cloudy weather. | Both scripts overwrote `sun_light.light_energy` every frame in `_process(delta)`, with `WeatherVisualController` clobbering `DayNightCycle`'s night curve. | `WeatherVisualController` now interpolates `weather_light_multiplier`, which `DayNightCycle` multiplies onto its solar elevation energy curve. |
+| **`TimeManager` & `FarmerAI`** (`scripts/time/time_manager.gd`, `scripts/npc/farmer_ai.gd`) | Farmers never sought shelter by the hearth at night and held an axe while tending crops, carrying hay, and warming hands. | `FarmerAI` checked `time_manager.get("is_night")`, which did not exist on `TimeManager`, and `BoxManModel` defaulted to `equipped_slot = 1` (Axe). | Added `is_night` property to `TimeManager` (`current_hour < 6 or current_hour >= 21`) and updated `FarmerAI` to equip the axe only during `ChoreState.CHOPPING_WOOD`. |
+| **`SettlerController`** (`scripts/player/settler_controller.gd`) | Torch remained lit while carrying a log; `_check_steep_cliff()` ran 1 raycast + 2 height samples every frame even when standing still; `"cooked_beef"`, `"cooked_fish"`, `"fresh_milk"`, and `"raw_beef"` could not be eaten with `[H]`. | `pick_up_log()` set `is_carrying_log = true` before calling `toggle_torch()`, which immediately returned early if `is_carrying_log` was true. | Called `toggle_torch()` before setting `is_carrying_log = true`, gated `_check_steep_cliff()` behind forward movement or jump input, added all missing food items to `_try_eat()`, and cached a static `TorusMesh` for water ripples. |
+| **`PlayerBuilder` & `BuildingPieceRecipe`** (`scripts/construction/player_builder.gd`, `scripts/construction/building_piece_recipe.gd`) | Livestock fled to bare stone pillars/walls during storms; 12 `.glb` scenes were eagerly loaded into `custom_scene` at startup and never used; ghost material tree walk ran every physics tick. | `provides_shelter` defaulted to `true` on `BuildingPieceRecipe`, and `apply_ghost_material_recursive()` was called unconditionally at $60\,\text{Hz}$. | Defaulted `provides_shelter = false` (enabled only on roofs and full cabins), removed unused `custom_scene` loads, cached `_current_ghost_mat`, and implemented `HUDBuildingBar._show_placement_error()`. |
+
+---
+
+### 4. Before vs. After Benchmark Summary
+| Metric | Before Audit | After Audit | Delta / Improvement |
+| :--- | :--- | :--- | :--- |
+| **Scene `MeshInstance3D` Nodes** | 454 | **397** | **-57 nodes (-12.6%)**, well below 500 WebGL ceiling |
+| **Farmstead Fence `StaticBody3D` Nodes** | 24 | **4** | **-20 physics bodies (-83.3%)** |
+| **`ClimbingRope` `MeshInstance3D`s per Rope** | 26 | **1** | **-96.2% draw calls per rope** |
+| **Terrain Fragment Texture Lookups (Valley)** | 13 / px | **5 / px** | **-61.5% texture bandwidth** |
+| **Water Shader Fullscreen Backbuffer Copy** | 1 per frame (+ mipmaps) | **0** | **Eliminated unused `hint_screen_texture` stall** |
+| **Fauna & Survival Group Array Allocations** | ~660 / sec (`60 Hz`) | **~45 / sec (`4–5 Hz`)** | **-93.2% GDScript array/dictionary churn** |
+| **Exit RID & ObjectDB Leaks** | 9 RIDs + 8 Objects | **0 RIDs, 0 Objects** | **100% clean engine shutdown** |

@@ -17,8 +17,14 @@ var col_shape: CollisionShape3D
 var is_focused: bool = false
 var focus_cooldown: float = 0.0
 
+static var _shared_log_capsule: CapsuleShape3D = null
+static var _shared_log_cyl: CylinderMesh = null
+static var _shared_mat_spruce: StandardMaterial3D = null
+static var _shared_mat_birch: StandardMaterial3D = null
+
 func _ready() -> void:
 	_ensure_setup()
+	set_process(false)
 
 func _ensure_setup() -> void:
 	if mesh_instance != null:
@@ -39,14 +45,27 @@ func _ensure_setup() -> void:
 	_setup_prompt_ui()
 
 func _setup_collision_and_mesh() -> void:
+	if _shared_log_capsule == null:
+		_shared_log_capsule = CapsuleShape3D.new()
+		_shared_log_capsule.radius = 0.22
+		_shared_log_capsule.height = 1.6
+		_shared_log_cyl = CylinderMesh.new()
+		_shared_log_cyl.top_radius = 0.20
+		_shared_log_cyl.bottom_radius = 0.22
+		_shared_log_cyl.height = 1.55
+		_shared_log_cyl.radial_segments = 12
+		_shared_mat_spruce = StandardMaterial3D.new()
+		_shared_mat_spruce.albedo_color = Color(0.38, 0.25, 0.15)
+		_shared_mat_spruce.roughness = 0.88
+		_shared_mat_birch = StandardMaterial3D.new()
+		_shared_mat_birch.albedo_color = Color(0.88, 0.86, 0.82)
+		_shared_mat_birch.roughness = 0.75
+
 	# Horizontal capsule collision shape
 	if not has_node("CollisionShape3D"):
 		col_shape = CollisionShape3D.new()
 		col_shape.name = "CollisionShape3D"
-		var capsule := CapsuleShape3D.new()
-		capsule.radius = 0.22
-		capsule.height = 1.6
-		col_shape.shape = capsule
+		col_shape.shape = _shared_log_capsule
 		# Align capsule horizontally along local Z axis
 		col_shape.rotation.x = deg_to_rad(90.0)
 		add_child(col_shape)
@@ -57,24 +76,10 @@ func _setup_collision_and_mesh() -> void:
 	if not has_node("LogMesh"):
 		mesh_instance = MeshInstance3D.new()
 		mesh_instance.name = "LogMesh"
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.20
-		cyl.bottom_radius = 0.22
-		cyl.height = 1.55
-		cyl.radial_segments = 12
-		mesh_instance.mesh = cyl
+		mesh_instance.mesh = _shared_log_cyl
 		# Align mesh horizontally
 		mesh_instance.rotation.x = deg_to_rad(90.0)
-
-		# Material: Rich wood bark with rustic Norwegian timber finish
-		var mat := StandardMaterial3D.new()
-		if log_type == LogType.SPRUCE:
-			mat.albedo_color = Color(0.38, 0.25, 0.15) # Spruce bark
-			mat.roughness = 0.88
-		else:
-			mat.albedo_color = Color(0.88, 0.86, 0.82) # Birch bark
-			mat.roughness = 0.75
-		mesh_instance.material_override = mat
+		mesh_instance.material_override = _shared_mat_spruce if log_type == LogType.SPRUCE else _shared_mat_birch
 		add_child(mesh_instance)
 	else:
 		mesh_instance = get_node("LogMesh")
@@ -102,22 +107,28 @@ func _process(delta: float) -> void:
 			is_focused = false
 			if prompt_label:
 				prompt_label.visible = false
+			set_process(false)
 
 func set_settler_focus(settler: Node) -> void:
 	_ensure_setup()
 	if settler != null:
 		is_focused = true
 		focus_cooldown = 0.35
+		set_process(true)
 		if prompt_label:
 			prompt_label.visible = true
 	else:
 		is_focused = false
 		if prompt_label:
 			prompt_label.visible = false
+		set_process(false)
 
 func on_interact(actor: Node) -> void:
 	_ensure_setup()
-	collect(actor)
+	if actor and actor.has_method("pick_up_log") and actor.get("is_carrying_log") == false:
+		actor.pick_up_log(self)
+	else:
+		collect(actor)
 
 func take_damage(_amount: float, actor: Node) -> void:
 	on_interact(actor)

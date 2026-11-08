@@ -21,5 +21,5 @@ enum BuildingCategory {
 # Sockets provided on this piece for subsequent pieces to snap to
 @export var snap_offset: Vector3 = Vector3(0, 1.2, 0)
 @export var dimensions: Vector3 = Vector3(4.0, 1.2, 0.3)
-@export var provides_shelter: bool = true
+@export var provides_shelter: bool = false
 @export var is_hearth: bool = false

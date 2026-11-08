@@ -22,12 +22,14 @@ func _ready() -> void:
 	_setup_labels()
 	_update_prompt()
 	_update_fish_mesh()
+	set_process(hanging_cod > 0)
 
 func _setup_labels() -> void:
 	prompt_label = Label3D.new()
 	prompt_label.name = "PromptLabel"
 	prompt_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	prompt_label.no_depth_test = true
+	prompt_label.visibility_range_end = 14.0
 	prompt_label.font_size = 20
 	prompt_label.outline_size = 5
 	prompt_label.modulate = Color(1.0, 0.92, 0.65)
@@ -38,6 +40,7 @@ func _setup_labels() -> void:
 	feedback_label.name = "FeedbackLabel"
 	feedback_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	feedback_label.no_depth_test = true
+	feedback_label.visibility_range_end = 14.0
 	feedback_label.font_size = 20
 	feedback_label.outline_size = 5
 	feedback_label.modulate = Color(0.4, 1.0, 0.4)
@@ -60,6 +63,9 @@ func _process(delta: float) -> void:
 			dried_stockfish += 1
 			_update_prompt()
 			_update_fish_mesh()
+
+	if hanging_cod <= 0 and feedback_timer <= 0.0:
+		set_process(false)
 
 func on_interact(actor: Node) -> void:
 	if actor == null:
@@ -90,6 +96,7 @@ func on_interact(actor: Node) -> void:
 		var to_hang := mini(player_cod, space)
 		inv.consume_resources({"fresh_cod": to_hang})
 		hanging_cod += to_hang
+		set_process(true)
 		_show_feedback("✓ Hengte %d fersk torsk til tørking i sjøbrisen." % to_hang)
 		_update_prompt()
 		_update_fish_mesh()
@@ -118,3 +125,4 @@ func _show_feedback(msg: String) -> void:
 		feedback_label.text = msg
 		feedback_label.visible = true
 		feedback_timer = 3.5
+		set_process(true)

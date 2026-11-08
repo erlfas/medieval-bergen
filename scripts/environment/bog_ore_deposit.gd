@@ -19,6 +19,7 @@ func _ready() -> void:
 	_build_deposit_geometry()
 	_setup_ui()
 	_update_prompt()
+	set_process(false)
 
 func _build_deposit_geometry() -> void:
 	# Materials
@@ -85,6 +86,7 @@ func _setup_ui() -> void:
 	prompt_label.name = "PromptLabel"
 	prompt_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	prompt_label.no_depth_test = true
+	prompt_label.visibility_range_end = 14.0
 	prompt_label.font_size = 20
 	prompt_label.outline_size = 5
 	prompt_label.modulate = Color(0.95, 0.82, 0.55)
@@ -95,6 +97,7 @@ func _setup_ui() -> void:
 	feedback_label.name = "FeedbackLabel"
 	feedback_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	feedback_label.no_depth_test = true
+	feedback_label.visibility_range_end = 14.0
 	feedback_label.font_size = 20
 	feedback_label.outline_size = 5
 	feedback_label.modulate = Color(0.4, 1.0, 0.4)
@@ -105,8 +108,10 @@ func _setup_ui() -> void:
 func _process(delta: float) -> void:
 	if feedback_timer > 0.0:
 		feedback_timer -= delta
-		if feedback_timer <= 0.0 and feedback_label:
-			feedback_label.visible = false
+		if feedback_timer <= 0.0:
+			if feedback_label:
+				feedback_label.visible = false
+			set_process(false)
 
 func on_interact(actor: Node) -> void:
 	if actor == null:
@@ -145,3 +150,4 @@ func _show_feedback(msg: String) -> void:
 		feedback_label.text = msg
 		feedback_label.visible = true
 		feedback_timer = 3.5
+		set_process(true)

@@ -143,6 +143,8 @@ func _on_arrows_updated(count: int) -> void:
 		label_arrows.text = "%d Pil" % count
 		label_arrows.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85) if count > 0 else Color(1.0, 0.3, 0.3))
 
+var _last_reticle_tier: int = -1
+
 func _on_bow_aim_changed(is_aiming: bool, draw_progress: float) -> void:
 	if bow_charge_bar:
 		bow_charge_bar.visible = is_aiming
@@ -151,15 +153,20 @@ func _on_bow_aim_changed(is_aiming: bool, draw_progress: float) -> void:
 	if reticle_label:
 		reticle_label.visible = is_aiming
 		if is_aiming:
-			if draw_progress > 0.85:
-				reticle_label.text = "[+]"
-				reticle_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25, 1.0))
-			elif draw_progress > 0.4:
-				reticle_label.text = "[ + ]"
-				reticle_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75, 0.9))
-			else:
-				reticle_label.text = "( + )"
-				reticle_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9, 0.65))
+			var tier := 2 if draw_progress > 0.85 else (1 if draw_progress > 0.4 else 0)
+			if tier != _last_reticle_tier:
+				_last_reticle_tier = tier
+				if tier == 2:
+					reticle_label.text = "[+]"
+					reticle_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25, 1.0))
+				elif tier == 1:
+					reticle_label.text = "[ + ]"
+					reticle_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.75, 0.9))
+				else:
+					reticle_label.text = "( + )"
+					reticle_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9, 0.65))
+		else:
+			_last_reticle_tier = -1
 
 func _on_fishing_state_changed(state: int, message: String) -> void:
 	if label_fishing:
@@ -177,7 +184,11 @@ func _on_fishing_state_changed(state: int, message: String) -> void:
 	if reticle_label and equipment_manager and equipment_manager.current_slot == EquipmentManager.Slot.FISHING_LINE:
 		if state == 2: # HOOKED
 			reticle_label.visible = true
-			reticle_label.text = "[ NAPP! KLIKK! ]"
+			reticle_label.text = message if not message.is_empty() else "[ NAPP! KLIKK! ]"
 			reticle_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.1, 1.0))
+		elif not message.is_empty():
+			reticle_label.visible = true
+			reticle_label.text = message
+			reticle_label.add_theme_color_override("font_color", Color(0.85, 0.95, 1.0, 0.9))
 		elif not equipment_manager.is_aiming_bow:
 			reticle_label.visible = false

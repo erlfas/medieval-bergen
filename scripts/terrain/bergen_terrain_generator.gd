@@ -182,9 +182,12 @@ func sample_height(x: float, z: float) -> float:
 	for pad in _settlement_pads:
 		var px: float = pad["x"]
 		var pz: float = pad["z"]
-		var dist := Vector2(x - px, z - pz).length()
 		var out_r: float = pad["outer_radius"]
-		if dist < out_r:
+		var dx := x - px
+		var dz := z - pz
+		var dist_sq := dx * dx + dz * dz
+		if dist_sq < out_r * out_r:
+			var dist := sqrt(dist_sq)
 			var in_r: float = pad["inner_radius"]
 			var target_y: float = pad["target_y"]
 			var w: float = 1.0 - smoothstep(in_r, out_r, dist)
@@ -481,17 +484,17 @@ func _generate_bryggen_waterfront() -> void:
 			old_cf1.free()
 		var cf_bryggen: Node3D = campfire_script.new()
 		cf_bryggen.name = "BryggenCampfire"
+		cf_bryggen.position = Vector3(68.0, sample_height(68.0, 88.0) + 0.1, 88.0)
 		add_child(cf_bryggen)
-		cf_bryggen.global_position = Vector3(68.0, sample_height(68.0, 88.0) + 0.1, 88.0)
 
 		var old_cf2 := get_node_or_null("StarterCampfire")
 		if old_cf2:
 			old_cf2.free()
 		var cf_starter: Node3D = campfire_script.new()
 		cf_starter.name = "StarterCampfire"
-		add_child(cf_starter)
 		var sy := sample_height(148.0, 146.0)
-		cf_starter.global_position = Vector3(148.0, sy, 146.0)
+		cf_starter.position = Vector3(148.0, sy, 146.0)
+		add_child(cf_starter)
 
 func _create_terrain_material() -> Material:
 	if terrain_shader != null:
@@ -696,10 +699,10 @@ func _scatter_wildlife() -> void:
 				wolf.set("mountain_home", Vector3(p_center.x, sample_height(p_center.x, p_center.z), p_center.z))
 				wolf.set("min_mountain_altitude", 80.0)
 
+				wolf.position = Vector3(wx, wy, wz)
 				wildlife_container.add_child(wolf)
 				wolf.add_to_group("wolf")
 				wolf.add_to_group("fauna")
-				wolf.global_position = Vector3(wx, wy, wz)
 				wolf_total += 1
 
 	# 2. Docile Norwegian Cattle (Cows grazing inside/adjacent to valley farm pastures)
@@ -716,11 +719,11 @@ func _scatter_wildlife() -> void:
 		cow.set("home_position", fc)
 		cow.set("pasture_radius", 18.0)
 
+		cow.position = Vector3(cx, cy, cz)
 		wildlife_container.add_child(cow)
 		cow.add_to_group("cow")
 		cow.add_to_group("fauna")
 		cow.add_to_group("livestock")
-		cow.global_position = Vector3(cx, cy, cz)
 		cow_total += 1
 
 	# 3. Old Norwegian Short-Tail Sheep (Villsau grazing on valley meadows near farms)
@@ -745,11 +748,11 @@ func _scatter_wildlife() -> void:
 		]
 		sheep.set("fleece_color", fleece_variations[farm_idx % fleece_variations.size()])
 
+		sheep.position = Vector3(sx, sy, sz)
 		wildlife_container.add_child(sheep)
 		sheep.add_to_group("sheep")
 		sheep.add_to_group("fauna")
 		sheep.add_to_group("livestock")
-		sheep.global_position = Vector3(sx, sy, sz)
 		sheep_total += 1
 
 	# 4. Norwegian Mountain Hares (Rabbits hopping in perimeter brush outside farms)
@@ -769,10 +772,10 @@ func _scatter_wildlife() -> void:
 		rabbit.set("home_position", Vector3(rx, ry, rz))
 		rabbit.set("roam_radius", 25.0)
 
+		rabbit.position = Vector3(rx, ry, rz)
 		wildlife_container.add_child(rabbit)
 		rabbit.add_to_group("rabbit")
 		rabbit.add_to_group("fauna")
-		rabbit.global_position = Vector3(rx, ry, rz)
 		rabbit_total += 1
 
 	# 5. Red Deer (Peaceful herbivores grazing in lower valley & woods)
@@ -815,8 +818,8 @@ func _scatter_wildlife() -> void:
 			col.position.y = 0.9
 			deer.add_child(col)
 
+			deer.position = Vector3(dx, dy, dz)
 			wildlife_container.add_child(deer)
-			deer.global_position = Vector3(dx, dy, dz)
 
 func _ensure_terrain_collision(mesh: ArrayMesh) -> void:
 	for child in terrain_mesh_instance.get_children():
@@ -867,5 +870,5 @@ func _scatter_bog_ore_deposits() -> void:
 		if gh >= sea_level + 0.8 and gh <= sea_level + 35.0:
 			var deposit := BogOreDeposit.new()
 			deposit.name = "BogDeposit_%d" % i
+			deposit.position = Vector3(loc.x, gh, loc.y)
 			bog_container.add_child(deposit)
-			deposit.global_position = Vector3(loc.x, gh, loc.y)

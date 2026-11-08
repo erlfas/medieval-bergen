@@ -26,6 +26,8 @@ var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity") *
 var player_target: Node3D
 var ears_pivot: Node3D
 var head_pivot: Node3D
+var _wolf_scan_timer: float = 0.0
+var _last_threat_pos: Vector3 = Vector3.ZERO
 
 func _ready() -> void:
 	add_to_group("fauna")
@@ -37,6 +39,7 @@ func _ready() -> void:
 		player_target = get_tree().get_first_node_in_group("settler") as Node3D
 	_pick_wander_target()
 	state_timer = randf_range(2.0, 5.0)
+	_wolf_scan_timer = randf_range(0.0, 0.25)
 	if get_node_or_null("VisualModel") == null:
 		_build_rabbit_mesh()
 
@@ -49,9 +52,10 @@ func _physics_process(delta: float) -> void:
 		return
 
 	state_timer -= delta
+	_wolf_scan_timer -= delta
 
 	# Check for threats (settler or wolf)
-	var threat_pos := Vector3.ZERO
+	var threat_pos := _last_threat_pos
 	var has_threat := false
 
 	if player_target:
@@ -59,14 +63,17 @@ func _physics_process(delta: float) -> void:
 		if dist < 12.0:
 			has_threat = true
 			threat_pos = player_target.global_position
+			_last_threat_pos = threat_pos
 
-	if not has_threat:
+	if not has_threat and _wolf_scan_timer <= 0.0:
+		_wolf_scan_timer = 0.25
 		var wolves := get_tree().get_nodes_in_group("wolf")
 		for w in wolves:
-			if w is Node3D and is_instance_valid(w):
+			if w is Node3D and is_instance_valid(w) and w.get("current_state") != 4:
 				if global_position.distance_to(w.global_position) < 18.0:
 					has_threat = true
 					threat_pos = w.global_position
+					_last_threat_pos = threat_pos
 					break
 
 	if has_threat and current_state != State.FLEEING:

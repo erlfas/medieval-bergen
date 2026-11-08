@@ -40,10 +40,7 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	var mat_wood_dark := BuildingAssembler.get_shared_material("wood_dark")
 	var mat_stone := BuildingAssembler.get_shared_material("stone_foundation")
 	var mat_sod := BuildingAssembler.get_shared_material("sod_roof")
-
-	var mat_soil := StandardMaterial3D.new()
-	mat_soil.albedo_color = Color(0.22, 0.17, 0.12) # Rich tilled valley humus
-	mat_soil.roughness = 0.98
+	var mat_soil := BuildingAssembler.get_shared_material("soil_humus")
 
 	# -------------------------------------------------------------------------
 	# 1. Main Timber Farmhouse (Piece-Built Blender Laftehytte Årestue with Windows, Shutters & Hearth)
@@ -133,10 +130,11 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 
 	# -------------------------------------------------------------------------
 	# 9. Terrain-Conforming Split-Rail Wooden Fences (Skigard Enclosure)
+	#    Batched into 1 StaticBody3D and 1 compound MeshInstance3D per farmstead
 	# -------------------------------------------------------------------------
-	var fence_root := Node3D.new()
-	fence_root.name = "SplitRailFences"
-	farm_root.add_child(fence_root)
+	var fence_body := StaticBody3D.new()
+	fence_body.name = "SplitRailFences"
+	farm_root.add_child(fence_body)
 
 	var nw := _place_on_valley_plain(origin, Vector2(-15.5, -13.0), terrain_generator)
 	var ne := _place_on_valley_plain(origin, Vector2(14.5, -13.0), terrain_generator)
@@ -145,11 +143,14 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	var gate_r := _place_on_valley_plain(origin, Vector2(2.8, 14.5), terrain_generator)
 	var gate_l := _place_on_valley_plain(origin, Vector2(-2.8, 14.5), terrain_generator)
 
-	_create_fence_line(fence_root, nw, ne, mat_wood_dark)
-	_create_fence_line(fence_root, ne, se, mat_wood_dark)
-	_create_fence_line(fence_root, se, gate_r, mat_wood_dark)
-	_create_fence_line(fence_root, gate_l, sw, mat_wood_dark)
-	_create_fence_line(fence_root, sw, nw, mat_wood_dark)
+	var fence_streams: Dictionary = {}
+	var st_fence := BuildingAssembler._get_stream(fence_streams, "wood_dark")
+	_append_fence_segment(fence_body, st_fence, nw, ne)
+	_append_fence_segment(fence_body, st_fence, ne, se)
+	_append_fence_segment(fence_body, st_fence, se, gate_r)
+	_append_fence_segment(fence_body, st_fence, gate_l, sw)
+	_append_fence_segment(fence_body, st_fence, sw, nw)
+	fence_body.add_child(BuildingAssembler._commit_piece_streams(fence_streams, "FenceCompoundMesh"))
 
 	return farm_root
 
@@ -228,65 +229,29 @@ static func _assemble_stabbur(w: float, d: float, _mat_wood: Material, _mat_wood
 	return stabbur
 
 ## Stone Well with Timber Gantry, Rope, and Wooden Bucket (Freshwater source)
-static func _assemble_stone_well(mat_stone: Material, mat_wood: Material) -> StaticBody3D:
+static func _assemble_stone_well(_mat_stone: Material, _mat_wood: Material) -> StaticBody3D:
 	var well := FarmWellInteractable.new()
 	well.add_to_group("stone_well")
 	well.add_to_group("freshwater")
 
-	var curb := MeshInstance3D.new()
-	var cyl_curb := CylinderMesh.new()
-	cyl_curb.top_radius = 1.0
-	cyl_curb.bottom_radius = 1.08
-	cyl_curb.height = 1.15
-	curb.mesh = cyl_curb
-	curb.position.y = 0.28
-	curb.material_override = mat_stone
-	well.add_child(curb)
+	var streams: Dictionary = {}
+	var st_stone := BuildingAssembler._get_stream(streams, "stone_foundation")
+	var st_wood := BuildingAssembler._get_stream(streams, "wood_dark")
+	var st_water := BuildingAssembler._get_stream(streams, "well_water")
 
-	var water_surf := MeshInstance3D.new()
-	var cyl_water := CylinderMesh.new()
-	cyl_water.top_radius = 0.72
-	cyl_water.bottom_radius = 0.72
-	cyl_water.height = 0.05
-	water_surf.mesh = cyl_water
-	water_surf.position.y = 0.35
-	var mat_w := StandardMaterial3D.new()
-	mat_w.albedo_color = Color(0.12, 0.28, 0.36, 0.9)
-	mat_w.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat_w.roughness = 0.1
-	water_surf.material_override = mat_w
-	well.add_child(water_surf)
+	BuildingAssembler._append_cyl_piece(st_stone, 1.0, 1.08, 1.15, Vector3(0, 0.28, 0), Vector3.ZERO, 12)
+	BuildingAssembler._append_cyl_piece(st_water, 0.72, 0.72, 0.05, Vector3(0, 0.35, 0), Vector3.ZERO, 8)
 
-	var st_gantry := SurfaceTool.new()
-	st_gantry.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_gantry.set_material(mat_wood)
-
-	var box_post := BoxMesh.new()
-	box_post.size = Vector3(0.14, 2.0, 0.14)
 	for sign_x in [-1.0, 1.0]:
-		st_gantry.append_from(box_post, 0, Transform3D(Basis(), Vector3(sign_x * 0.88, 1.25, 0)))
+		BuildingAssembler._append_box_piece(st_wood, Vector3(0.14, 2.0, 0.14), Vector3(sign_x * 0.88, 1.25, 0))
+	BuildingAssembler._append_box_piece(st_wood, Vector3(2.0, 0.14, 0.14), Vector3(0, 2.2, 0))
 
-	var box_beam := BoxMesh.new()
-	box_beam.size = Vector3(2.0, 0.14, 0.14)
-	st_gantry.append_from(box_beam, 0, Transform3D(Basis(), Vector3(0, 2.2, 0)))
-
-	var box_r := BoxMesh.new()
-	box_r.size = Vector3(2.1, 0.08, 0.85)
 	for sign_z in [-1.0, 1.0]:
-		var basis_r := Basis(Vector3.RIGHT, sign_z * deg_to_rad(30.0))
-		st_gantry.append_from(box_r, 0, Transform3D(basis_r, Vector3(0, 2.45, sign_z * 0.35)))
+		BuildingAssembler._append_box_piece(st_wood, Vector3(2.1, 0.08, 0.85), Vector3(0, 2.45, sign_z * 0.35), Vector3(sign_z * deg_to_rad(30.0), 0, 0))
 
-	var cyl_b := CylinderMesh.new()
-	cyl_b.top_radius = 0.18
-	cyl_b.bottom_radius = 0.14
-	cyl_b.height = 0.32
-	st_gantry.append_from(cyl_b, 0, Transform3D(Basis(), Vector3(0.18, 0.95, 0.1)))
+	BuildingAssembler._append_cyl_piece(st_wood, 0.18, 0.14, 0.32, Vector3(0.18, 0.95, 0.1))
 
-	st_gantry.generate_tangents()
-	var gantry_mi := MeshInstance3D.new()
-	gantry_mi.name = "WellGantryCompoundMesh"
-	gantry_mi.mesh = st_gantry.commit()
-	well.add_child(gantry_mi)
+	well.add_child(BuildingAssembler._commit_piece_streams(streams, "WellCompoundMesh"))
 
 	var col := CollisionShape3D.new()
 	var cyl_col := CylinderShape3D.new()
@@ -298,93 +263,41 @@ static func _assemble_stone_well(mat_stone: Material, mat_wood: Material) -> Sta
 
 	return well
 
-## Crop Patches with Rows of Cabbage, Barley, and Turnips
-static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_wood: Material) -> StaticBody3D:
+## Crop Patches with Rows of Cabbage, Barley, and Turnips (Single multi-surface MeshInstance3D)
+static func _assemble_crop_patch(w: float, d: float, _mat_soil: Material, _mat_wood: Material) -> StaticBody3D:
 	var patch := FarmCropInteractable.new()
 	patch.add_to_group("crop_patch")
 
-	var bed := MeshInstance3D.new()
-	var box_bed := BoxMesh.new()
-	box_bed.size = Vector3(w, 0.32, d)
-	bed.mesh = box_bed
-	bed.position.y = 0.0
-	bed.material_override = mat_soil
-	patch.add_child(bed)
+	var streams: Dictionary = {}
+	var st_soil := BuildingAssembler._get_stream(streams, "soil_humus")
+	var st_wood := BuildingAssembler._get_stream(streams, "wood_dark")
+	var st_cab := BuildingAssembler._get_stream(streams, "crop_cabbage")
+	var st_barley := BuildingAssembler._get_stream(streams, "crop_barley")
+	var st_turnip := BuildingAssembler._get_stream(streams, "crop_turnip")
 
-	var st_borders := SurfaceTool.new()
-	st_borders.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_borders.set_material(mat_wood)
+	BuildingAssembler._append_box_piece(st_soil, Vector3(w, 0.32, d), Vector3.ZERO)
 
-	var box_bz := BoxMesh.new()
-	box_bz.size = Vector3(w + 0.2, 0.24, 0.15)
 	for sign_z in [-1.0, 1.0]:
-		st_borders.append_from(box_bz, 0, Transform3D(Basis(), Vector3(0, 0.06, sign_z * (d * 0.5 + 0.07))))
-
-	var box_bx := BoxMesh.new()
-	box_bx.size = Vector3(0.15, 0.24, d)
+		BuildingAssembler._append_box_piece(st_wood, Vector3(w + 0.2, 0.24, 0.15), Vector3(0, 0.06, sign_z * (d * 0.5 + 0.07)))
 	for sign_x in [-1.0, 1.0]:
-		st_borders.append_from(box_bx, 0, Transform3D(Basis(), Vector3(sign_x * (w * 0.5 + 0.07), 0.06, 0)))
+		BuildingAssembler._append_box_piece(st_wood, Vector3(0.15, 0.24, d), Vector3(sign_x * (w * 0.5 + 0.07), 0.06, 0))
 
-	st_borders.generate_tangents()
-	var borders_mi := MeshInstance3D.new()
-	borders_mi.name = "CropBordersCompoundMesh"
-	borders_mi.mesh = st_borders.commit()
-	patch.add_child(borders_mi)
-
-	var mat_cabbage := StandardMaterial3D.new()
-	mat_cabbage.albedo_color = Color(0.35, 0.58, 0.24)
-	mat_cabbage.roughness = 0.7
-
-	var mat_barley := StandardMaterial3D.new()
-	mat_barley.albedo_color = Color(0.82, 0.72, 0.38)
-	mat_barley.roughness = 0.9
-
-	var mat_turnip := StandardMaterial3D.new()
-	mat_turnip.albedo_color = Color(0.24, 0.46, 0.20)
-	mat_turnip.roughness = 0.8
-
-	var st_cab := SurfaceTool.new()
-	st_cab.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_cab.set_material(mat_cabbage)
 	var sph := SphereMesh.new()
 	sph.radius = 0.22
 	sph.height = 0.35
+	sph.radial_segments = 8
+	sph.rings = 4
 	for cx in range(-1, 2):
 		st_cab.append_from(sph, 0, Transform3D(Basis(), Vector3(cx * 1.6, 0.25, -1.4)))
-	st_cab.generate_tangents()
-	var cab_mi := MeshInstance3D.new()
-	cab_mi.name = "CabbageCompoundMesh"
-	cab_mi.mesh = st_cab.commit()
-	patch.add_child(cab_mi)
 
-	var st_barley := SurfaceTool.new()
-	st_barley.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_barley.set_material(mat_barley)
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.05
-	cyl.bottom_radius = 0.04
-	cyl.height = 0.75
 	for bx in range(-2, 3):
-		var rot_b := Basis(Vector3.FORWARD, deg_to_rad(sin(bx * 1.5) * 8.0))
-		st_barley.append_from(cyl, 0, Transform3D(rot_b, Vector3(bx * 1.1, 0.45, 0.0)))
-	st_barley.generate_tangents()
-	var barley_mi := MeshInstance3D.new()
-	barley_mi.name = "BarleyCompoundMesh"
-	barley_mi.mesh = st_barley.commit()
-	patch.add_child(barley_mi)
+		var rot_b := Vector3(0, 0, deg_to_rad(sin(bx * 1.5) * 8.0))
+		BuildingAssembler._append_cyl_piece(st_barley, 0.05, 0.04, 0.75, Vector3(bx * 1.1, 0.45, 0.0), rot_b)
 
-	var st_turnip := SurfaceTool.new()
-	st_turnip.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_turnip.set_material(mat_turnip)
-	var box_t := BoxMesh.new()
-	box_t.size = Vector3(0.28, 0.35, 0.28)
 	for tx in range(-1, 2):
-		st_turnip.append_from(box_t, 0, Transform3D(Basis(), Vector3(tx * 1.5, 0.24, 1.4)))
-	st_turnip.generate_tangents()
-	var turnip_mi := MeshInstance3D.new()
-	turnip_mi.name = "TurnipCompoundMesh"
-	turnip_mi.mesh = st_turnip.commit()
-	patch.add_child(turnip_mi)
+		BuildingAssembler._append_box_piece(st_turnip, Vector3(0.28, 0.35, 0.28), Vector3(tx * 1.5, 0.24, 1.4))
+
+	patch.add_child(BuildingAssembler._commit_piece_streams(streams, "CropPatchCompoundMesh"))
 
 	var col := CollisionShape3D.new()
 	var box_col := BoxShape3D.new()
@@ -395,29 +308,23 @@ static func _assemble_crop_patch(w: float, d: float, mat_soil: Material, mat_woo
 
 	return patch
 
-## Chopping Block, Wedge Axe, and Firewood Stacks
-static func _assemble_chopping_area(mat_wood: Material, mat_wood_dark: Material, mat_stone: Material) -> Node3D:
-	var area := Node3D.new()
+## Chopping Block, Wedge Axe, and Firewood Stacks (Single multi-surface MeshInstance3D)
+static func _assemble_chopping_area(_mat_wood: Material, _mat_wood_dark: Material, _mat_stone: Material) -> Node3D:
+	var area := StaticBody3D.new()
 
-	var stump_body := StaticBody3D.new()
-	var stump := MeshInstance3D.new()
-	var cyl_stump := CylinderMesh.new()
-	cyl_stump.top_radius = 0.35
-	cyl_stump.bottom_radius = 0.42
-	cyl_stump.height = 0.75
-	stump.mesh = cyl_stump
-	stump.position.y = 0.375
-	stump.material_override = mat_wood_dark
-	stump_body.add_child(stump)
+	var streams: Dictionary = {}
+	var st_dark := BuildingAssembler._get_stream(streams, "wood_dark")
+	var st_stone := BuildingAssembler._get_stream(streams, "stone_foundation")
+	var st_wood := BuildingAssembler._get_stream(streams, "wood_spruce")
 
-	var axe_head := MeshInstance3D.new()
-	var box_axe := BoxMesh.new()
-	box_axe.size = Vector3(0.04, 0.15, 0.18)
-	axe_head.mesh = box_axe
-	axe_head.position = Vector3(0, 0.82, 0)
-	axe_head.rotation.x = deg_to_rad(15.0)
-	axe_head.material_override = mat_stone
-	stump_body.add_child(axe_head)
+	BuildingAssembler._append_cyl_piece(st_dark, 0.35, 0.42, 0.75, Vector3(0, 0.375, 0))
+	BuildingAssembler._append_box_piece(st_stone, Vector3(0.04, 0.15, 0.18), Vector3(0, 0.82, 0), Vector3(deg_to_rad(15.0), 0, 0))
+	BuildingAssembler._append_box_piece(st_dark, Vector3(0.6, 0.45, 0.85), Vector3(1.2, 0.22, -0.2))
+
+	for log_i in range(3):
+		BuildingAssembler._append_cyl_piece(st_wood, 0.08, 0.08, 0.8, Vector3(1.2, 0.5, -0.45 + log_i * 0.25), Vector3(0, 0, deg_to_rad(90.0)))
+
+	area.add_child(BuildingAssembler._commit_piece_streams(streams, "ChoppingAreaCompoundMesh"))
 
 	var col := CollisionShape3D.new()
 	var cyl_col := CylinderShape3D.new()
@@ -425,80 +332,32 @@ static func _assemble_chopping_area(mat_wood: Material, mat_wood_dark: Material,
 	cyl_col.height = 0.8
 	col.shape = cyl_col
 	col.position.y = 0.4
-	stump_body.add_child(col)
-	area.add_child(stump_body)
-
-	var arr_wood := ArrayMesh.new()
-	var st_wood := SurfaceTool.new()
-
-	st_wood.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_wood.set_material(mat_wood_dark)
-	var stack_box := BoxMesh.new()
-	stack_box.size = Vector3(0.6, 0.45, 0.85)
-	st_wood.append_from(stack_box, 0, Transform3D(Basis(), Vector3(1.2, 0.22, -0.2)))
-	st_wood.generate_tangents()
-	st_wood.commit(arr_wood)
-
-	st_wood.clear()
-	st_wood.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_wood.set_material(mat_wood)
-	var cyl_l := CylinderMesh.new()
-	cyl_l.top_radius = 0.08
-	cyl_l.bottom_radius = 0.08
-	cyl_l.height = 0.8
-	var rot_log := Basis(Vector3.FORWARD, deg_to_rad(90.0))
-	for log_i in range(3):
-		st_wood.append_from(cyl_l, 0, Transform3D(rot_log, Vector3(1.2, 0.5, -0.45 + log_i * 0.25)))
-	st_wood.generate_tangents()
-	st_wood.commit(arr_wood)
-
-	var stack_mi := MeshInstance3D.new()
-	stack_mi.name = "FirewoodStackCompoundMesh"
-	stack_mi.mesh = arr_wood
-	area.add_child(stack_mi)
+	area.add_child(col)
 
 	return area
 
-## Hay Storage & Animal Feeder Rack
-static func _assemble_hay_rack(mat_wood: Material) -> Node3D:
+## Hay Storage & Animal Feeder Rack (Single multi-surface MeshInstance3D)
+static func _assemble_hay_rack(_mat_wood: Material) -> Node3D:
 	var rack := Node3D.new()
 
-	var st_rack := SurfaceTool.new()
-	st_rack.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st_rack.set_material(mat_wood)
+	var streams: Dictionary = {}
+	var st_wood := BuildingAssembler._get_stream(streams, "wood_dark")
+	var st_hay := BuildingAssembler._get_stream(streams, "hay_straw")
 
-	var box_p := BoxMesh.new()
-	box_p.size = Vector3(0.12, 1.4, 0.12)
 	for sign_x in [-1.0, 1.0]:
 		for sign_z in [-1.0, 1.0]:
-			st_rack.append_from(box_p, 0, Transform3D(Basis(), Vector3(sign_x * 0.85, 0.7, sign_z * 0.5)))
+			BuildingAssembler._append_box_piece(st_wood, Vector3(0.12, 1.4, 0.12), Vector3(sign_x * 0.85, 0.7, sign_z * 0.5))
 
-	var box_r := BoxMesh.new()
-	box_r.size = Vector3(1.8, 0.08, 0.08)
 	for sign_z in [-1.0, 1.0]:
-		st_rack.append_from(box_r, 0, Transform3D(Basis(), Vector3(0, 1.1, sign_z * 0.5)))
+		BuildingAssembler._append_box_piece(st_wood, Vector3(1.8, 0.08, 0.08), Vector3(0, 1.1, sign_z * 0.5))
 
-	st_rack.generate_tangents()
-	var rack_mi := MeshInstance3D.new()
-	rack_mi.name = "HayRackCompoundMesh"
-	rack_mi.mesh = st_rack.commit()
-	rack.add_child(rack_mi)
+	BuildingAssembler._append_box_piece(st_hay, Vector3(1.6, 0.85, 0.9), Vector3(0, 0.45, 0))
 
-	var hay_m := MeshInstance3D.new()
-	var box_h := BoxMesh.new()
-	box_h.size = Vector3(1.6, 0.85, 0.9)
-	hay_m.mesh = box_h
-	hay_m.position = Vector3(0, 0.45, 0)
-	var mat_hay := StandardMaterial3D.new()
-	mat_hay.albedo_color = Color(0.78, 0.68, 0.35)
-	mat_hay.roughness = 0.95
-	hay_m.material_override = mat_hay
-	rack.add_child(hay_m)
-
+	rack.add_child(BuildingAssembler._commit_piece_streams(streams, "HayRackCompoundMesh"))
 	return rack
 
-## Creates a split-rail fence line between two terrain-snapped points
-static func _create_fence_line(parent: Node3D, from_pos: Vector3, to_pos: Vector3, mat_wood: Material) -> void:
+## Appends a split-rail fence segment into the farmstead's unified fence SurfaceTool stream and StaticBody3D
+static func _append_fence_segment(fence_body: StaticBody3D, st: SurfaceTool, from_pos: Vector3, to_pos: Vector3) -> void:
 	var span_vec := to_pos - from_pos
 	var horiz_vec := Vector3(span_vec.x, 0.0, span_vec.z)
 	var total_len := horiz_vec.length()
@@ -506,40 +365,24 @@ static func _create_fence_line(parent: Node3D, from_pos: Vector3, to_pos: Vector
 		return
 	var dir := horiz_vec.normalized()
 	var dy := to_pos.y - from_pos.y
+	var mid_pos := (from_pos + to_pos) * 0.5
+	var yaw := atan2(-dir.x, -dir.z)
+	var seg_xform := Transform3D(Basis(Vector3.UP, yaw), mid_pos)
 
-	var fence_seg := StaticBody3D.new()
-	fence_seg.position = (from_pos + to_pos) * 0.5
-	fence_seg.rotation.y = atan2(-dir.x, -dir.z)
-
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_material(mat_wood)
-
-	var box_p := BoxMesh.new()
-	box_p.size = Vector3(0.13, 1.45, 0.13)
 	for frac in [-0.5, -0.25, 0.0, 0.25, 0.5]:
 		var pz: float = frac * total_len
 		var py: float = -frac * dy + 0.58
-		st.append_from(box_p, 0, Transform3D(Basis(), Vector3(0, py, pz)))
+		var world_post_pos := seg_xform * Vector3(0, py, pz)
+		BuildingAssembler._append_box_piece(st, Vector3(0.13, 1.45, 0.13), world_post_pos, Vector3(0, yaw, 0))
 
 	var pitch_x := atan2(dy, total_len)
-	var rail_basis := Basis(Vector3.RIGHT, pitch_x)
-	var box_r := BoxMesh.new()
-	box_r.size = Vector3(0.08, 0.08, total_len + 0.1)
 	for r in [0.42, 0.92]:
-		st.append_from(box_r, 0, Transform3D(rail_basis, Vector3(0, r, 0)))
-
-	st.generate_tangents()
-	var fence_mi := MeshInstance3D.new()
-	fence_mi.name = "FenceCompoundMesh"
-	fence_mi.mesh = st.commit()
-	fence_seg.add_child(fence_mi)
+		var world_rail_pos := seg_xform * Vector3(0, r, 0)
+		BuildingAssembler._append_box_piece(st, Vector3(0.08, 0.08, total_len + 0.1), world_rail_pos, Vector3(pitch_x, yaw, 0))
 
 	var col := CollisionShape3D.new()
 	var box_c := BoxShape3D.new()
 	box_c.size = Vector3(0.3, 1.2, total_len)
 	col.shape = box_c
-	col.position.y = 0.6
-	fence_seg.add_child(col)
-
-	parent.add_child(fence_seg)
+	col.transform = seg_xform * Transform3D(Basis.IDENTITY, Vector3(0, 0.6, 0))
+	fence_body.add_child(col)

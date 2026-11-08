@@ -168,3 +168,8 @@ func _update_quest_tracker() -> void:
 		text += "* Trykk [C] for Byggebok (How to build guide)"
 
 	label_quest_status.text = text
+
+func _show_placement_error(msg: String) -> void:
+	if label_quest_status:
+		label_quest_status.text = "⚠️ " + msg
+		get_tree().create_timer(3.5).timeout.connect(_update_quest_tracker)

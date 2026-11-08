@@ -24,8 +24,7 @@ uniform float water_metallic : hint_range(0.0, 1.0) = 0.12;
 
 uniform sampler2D wave_normal1 : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D wave_normal2 : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
-uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
+uniform sampler2D depth_texture : hint_depth_texture, filter_nearest;
 
 varying vec3 v_world_pos;
 varying float v_wave_height;
@@ -54,19 +53,19 @@ void vertex() {
 	VERTEX.y += wave_h;
 	v_wave_height = wave_h;
 
-	// Analytic wave normal derivatives
+	// Analytic wave normal derivatives (model space; Godot transforms NORMAL to view space)
 	float dw_dx = (cos(phase1) * dir1.x * k1 * 0.55 + cos(phase2) * dir2.x * k2 * 0.30 + cos(phase3) * dir3.x * k3 * 0.15) * wave_amplitude;
 	float dw_dz = (cos(phase1) * dir1.y * k1 * 0.55 + cos(phase2) * dir2.y * k2 * 0.30 + cos(phase3) * dir3.y * k3 * 0.15) * wave_amplitude;
 	vec3 wave_normal = normalize(vec3(-dw_dx, 1.0, -dw_dz));
-	NORMAL = (MODEL_NORMAL_MATRIX * wave_normal);
+	NORMAL = wave_normal;
 
 	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
-	// Reconstruct linear eye depth from depth texture
+	// Reconstruct linear eye depth from depth texture (WebGL 2.0 / GL Compatibility uses [-1, 1] NDC Z)
 	float depth_raw = texture(depth_texture, SCREEN_UV).r;
-	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth_raw);
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth_raw * 2.0 - 1.0);
 	vec4 view_pos = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
 	view_pos.xyz /= view_pos.w;
 	float linear_depth = -view_pos.z;
@@ -77,13 +76,14 @@ void fragment() {
 	vec3 water_col = mix(shallow_color.rgb, deep_color.rgb, depth_factor);
 	float water_alpha = mix(shallow_color.a, deep_color.a, depth_factor);
 
-	// Dual scrolling micro-ripple normal maps
+	// Dual scrolling micro-ripple normal maps transformed into view space
 	vec2 uv_scroll1 = v_world_pos.xz * 0.06 + vec2(TIME * 0.025, TIME * 0.015);
 	vec2 uv_scroll2 = v_world_pos.xz * 0.11 - vec2(TIME * 0.018, TIME * 0.030);
 	vec3 n1 = texture(wave_normal1, uv_scroll1).rgb * 2.0 - 1.0;
 	vec3 n2 = texture(wave_normal2, uv_scroll2).rgb * 2.0 - 1.0;
-	vec3 ripple_normal = normalize(NORMAL + (n1.xzy + n2.xzy) * 0.35);
-	NORMAL = ripple_normal;
+	vec3 world_ripple = vec3(n1.x + n2.x, 0.0, n1.y + n2.y) * 0.35;
+	vec3 view_ripple = mat3(VIEW_MATRIX) * world_ripple;
+	NORMAL = normalize(NORMAL + view_ripple);
 
 	// Shoreline & contact foam
 	float foam_edge = 1.0 - smoothstep(0.0, foam_distance, water_depth);

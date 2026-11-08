@@ -19,10 +19,18 @@ static func get_lod0_mesh() -> Mesh:
 	var lod0_scene = load("res://assets/terrain/grass_clump_lod0.glb") as PackedScene
 	if lod0_scene != null:
 		var inst = lod0_scene.instantiate()
-		var mi: MeshInstance3D = inst.find_child("*", true, false) as MeshInstance3D
+		var mi: MeshInstance3D = null
+		if inst is MeshInstance3D:
+			mi = inst as MeshInstance3D
+		else:
+			var children := inst.find_children("*", "MeshInstance3D", true, false)
+			if not children.is_empty():
+				mi = children[0] as MeshInstance3D
 		if mi != null and mi.mesh != null:
-			_cached_lod0_mesh = mi.mesh
+			_cached_lod0_mesh = mi.mesh.duplicate()
+			inst.free()
 			return _cached_lod0_mesh
+		inst.free()
 
 	# Procedural fallback if asset not yet imported
 	var st := SurfaceTool.new()
@@ -44,10 +52,18 @@ static func get_lod1_mesh() -> Mesh:
 	var lod1_scene = load("res://assets/terrain/grass_clump_lod1.glb") as PackedScene
 	if lod1_scene != null:
 		var inst = lod1_scene.instantiate()
-		var mi: MeshInstance3D = inst.find_child("*", true, false) as MeshInstance3D
+		var mi: MeshInstance3D = null
+		if inst is MeshInstance3D:
+			mi = inst as MeshInstance3D
+		else:
+			var children := inst.find_children("*", "MeshInstance3D", true, false)
+			if not children.is_empty():
+				mi = children[0] as MeshInstance3D
 		if mi != null and mi.mesh != null:
-			_cached_lod1_mesh = mi.mesh
+			_cached_lod1_mesh = mi.mesh.duplicate()
+			inst.free()
 			return _cached_lod1_mesh
+		inst.free()
 
 	# Procedural crossed-quad fallback
 	var st := SurfaceTool.new()
@@ -73,6 +89,7 @@ static func evaluate_grass_profile(
 ) -> Dictionary:
 	var result := {
 		"valid": false,
+		"y": 0.0,
 		"height": 0.65,
 		"scale_xz": 0.65,
 		"color": Color.WHITE,
@@ -80,6 +97,7 @@ static func evaluate_grass_profile(
 	}
 
 	var y := terrain_gen.sample_height(x, z)
+	result["y"] = y
 
 	# Water & high crag culling
 	if y < 1.0 or y > 105.0:
@@ -202,7 +220,7 @@ static func populate_grass(
 				if not prof["valid"]:
 					continue
 
-				var py := terrain_gen.sample_height(px, pz)
+				var py: float = prof["y"]
 				var h_s: float = prof["height"]
 				var w_s: float = prof["scale_xz"]
 				var yaw: float = prof["yaw"]
@@ -249,14 +267,14 @@ static func _create_sector_multimeshes(
 
 	var count := xforms.size()
 
-	# --- LOD 0: Up-Close 3D Clump (0m to 22m) ---
+	# --- LOD 0: Up-Close 3D Clump (0m to 22m, non-overlapping in Compatibility mode) ---
 	var mmi0 := MultiMeshInstance3D.new()
 	mmi0.name = "GrassLOD0"
 	mmi0.material_override = lod0_mat
 	mmi0.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mmi0.visibility_range_end = 22.0
-	mmi0.visibility_range_end_margin = 4.0
-	mmi0.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	mmi0.visibility_range_end_margin = 0.0
+	mmi0.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
 	var mm0 := MultiMesh.new()
 	mm0.transform_format = MultiMesh.TRANSFORM_3D
@@ -269,16 +287,16 @@ static func _create_sector_multimeshes(
 	mmi0.multimesh = mm0
 	sector_node.add_child(mmi0)
 
-	# --- LOD 1: Mid-Range Crossed-Quad Billboard (20m to 65m) ---
+	# --- LOD 1: Mid-Range Crossed-Quad Billboard (22m to 65m, zero dual-LOD overdraw) ---
 	var mmi1 := MultiMeshInstance3D.new()
 	mmi1.name = "GrassLOD1"
 	mmi1.material_override = lod1_mat
 	mmi1.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mmi1.visibility_range_begin = 20.0
-	mmi1.visibility_range_begin_margin = 4.0
+	mmi1.visibility_range_begin = 22.0
+	mmi1.visibility_range_begin_margin = 0.0
 	mmi1.visibility_range_end = 65.0
-	mmi1.visibility_range_end_margin = 8.0
-	mmi1.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	mmi1.visibility_range_end_margin = 0.0
+	mmi1.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
 	var mm1 := MultiMesh.new()
 	mm1.transform_format = MultiMesh.TRANSFORM_3D

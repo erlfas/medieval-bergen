@@ -341,6 +341,30 @@ static func get_shared_material(key: String) -> StandardMaterial3D:
 		"shutter_wood":
 			mat.albedo_color = Color(0.32, 0.22, 0.14) # Oiled oak window shutters & door leaves
 			mat.roughness = 0.85
+		"fire_embers":
+			mat.albedo_color = Color(1.0, 0.45, 0.12)
+			mat.emission_enabled = true
+			mat.emission = Color(1.0, 0.55, 0.15)
+			mat.emission_energy_multiplier = 2.8
+		"soil_humus":
+			mat.albedo_color = Color(0.22, 0.17, 0.12) # Rich tilled valley humus
+			mat.roughness = 0.98
+		"well_water":
+			mat.albedo_color = Color(0.12, 0.28, 0.36, 0.9)
+			mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mat.roughness = 0.1
+		"crop_cabbage":
+			mat.albedo_color = Color(0.35, 0.58, 0.24)
+			mat.roughness = 0.7
+		"crop_barley":
+			mat.albedo_color = Color(0.82, 0.72, 0.38)
+			mat.roughness = 0.9
+		"crop_turnip":
+			mat.albedo_color = Color(0.24, 0.46, 0.20)
+			mat.roughness = 0.8
+		"hay_straw":
+			mat.albedo_color = Color(0.78, 0.68, 0.35)
+			mat.roughness = 0.95
 		_:
 			mat.albedo_color = Color(0.42, 0.28, 0.16)
 			mat.roughness = 0.88
@@ -905,6 +929,10 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0, spec: Dic
 		var st_wood := _get_stream(streams, "wood_spruce")
 		_append_box_piece(st_wood, Vector3(0.76, 0.42, depth * 0.56), Vector3(half_w - 0.56, 0.25, 0.25))
 
+	# Batch glowing hearth embers directly into cabin multi-surface mesh
+	var st_embers := _get_stream(streams, "fire_embers")
+	_append_box_piece(st_embers, Vector3(0.76, 0.12, 0.76), Vector3(0, 0.20, 0.2))
+
 	var compound_mi := _commit_piece_streams(streams, "CabinPieceAssemblyMesh")
 	cabin.add_child(compound_mi)
 
@@ -922,25 +950,12 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0, spec: Dic
 	_add_box_collider(cabin, Vector3(front_side_w, wall_h, wall_thick), Vector3(right_front_x, wall_h * 0.5, -half_d))
 	_add_box_collider(cabin, Vector3(door_w, lintel_h, wall_thick), Vector3(0, door_h + lintel_h * 0.5, -half_d))
 
-	# 6. Central Stone Hearth (Åre) Glowing Embers & Warm Firelight
+	# 6. Central Stone Hearth (Åre) Warm Firelight
 	var hearth := Node3D.new()
 	hearth.name = "CentralHearth"
 	hearth.add_to_group("hearth")
 	hearth.position = Vector3(0, 0.14, 0.2)
 	cabin.add_child(hearth)
-
-	var embers := MeshInstance3D.new()
-	var emb_box := BoxMesh.new()
-	emb_box.size = Vector3(0.76, 0.12, 0.76)
-	embers.mesh = emb_box
-	var mat_fire := StandardMaterial3D.new()
-	mat_fire.albedo_color = Color(1.0, 0.45, 0.12)
-	mat_fire.emission_enabled = true
-	mat_fire.emission = Color(1.0, 0.55, 0.15)
-	mat_fire.emission_energy_multiplier = 2.8
-	embers.material_override = mat_fire
-	embers.position = Vector3(0, 0.06, 0)
-	hearth.add_child(embers)
 
 	var fire_light := OmniLight3D.new()
 	fire_light.name = "HearthFireLight"
@@ -948,6 +963,9 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0, spec: Dic
 	fire_light.light_energy = 1.8
 	fire_light.omni_range = 9.5
 	fire_light.shadow_enabled = false
+	fire_light.distance_fade_enabled = true
+	fire_light.distance_fade_begin = 28.0
+	fire_light.distance_fade_length = 8.0
 	fire_light.position = Vector3(0, 0.65, 0)
 	hearth.add_child(fire_light)
 

@@ -39,8 +39,9 @@ var wander_target: Vector3 = Vector3.ZERO
 func _ready() -> void:
 	add_to_group("wolf")
 	add_to_group("fauna")
-	if mountain_home == Vector3(320.0, 110.0, 200.0) and global_position.y > 50.0:
-		mountain_home = global_position
+	var pos := global_position if is_inside_tree() else position
+	if mountain_home == Vector3(320.0, 110.0, 200.0) and pos.y > 50.0:
+		mountain_home = pos
 	if get_tree():
 		player_target = get_tree().get_first_node_in_group("settler") as CharacterBody3D
 	_pick_mountain_patrol_target()
@@ -152,12 +153,12 @@ func _scan_for_fire() -> void:
 
 	# Check for nearby lit hearths / campfires
 	for h in get_tree().get_nodes_in_group("hearth"):
-		if h is Node3D and global_position.distance_to(h.global_position) < fire_fear_radius:
+		if h is Node3D and h.get("is_lit") != false and global_position.distance_to(h.global_position) < fire_fear_radius:
 			detect_fire(h.global_position)
 			return
 
 	for c in get_tree().get_nodes_in_group("campfire"):
-		if c is Node3D and global_position.distance_to(c.global_position) < fire_fear_radius:
+		if c is Node3D and c.get("is_lit") != false and global_position.distance_to(c.global_position) < fire_fear_radius:
 			detect_fire(c.global_position)
 			return
 
@@ -166,7 +167,12 @@ func detect_fire(source_pos: Vector3) -> void:
 	has_fire_threat = true
 	current_state = State.FLEE_FIRE
 
+var _prey_scan_timer: float = 0.0
+var _sep_scan_timer: float = 0.0
+var _cached_sep: Vector3 = Vector3.ZERO
+
 func _process_patrol(delta: float) -> void:
+	_prey_scan_timer -= delta
 	var dir := (wander_target - global_position)
 	dir.y = 0.0
 	var dist := dir.length()
@@ -186,7 +192,8 @@ func _process_patrol(delta: float) -> void:
 	if player_target and global_position.distance_to(player_target.global_position) < detection_radius:
 		if player_target.global_position.y >= min_mountain_altitude - 10.0:
 			current_state = State.STALK
-	elif not has_fire_threat:
+	elif not has_fire_threat and _prey_scan_timer <= 0.0:
+		_prey_scan_timer = 0.25
 		# Check for prey (hares) in mountain brush
 		var hares := get_tree().get_nodes_in_group("rabbit")
 		for hare in hares:
@@ -262,16 +269,19 @@ func _process_stalk(delta: float) -> void:
 			_:
 				flank_dir = to_target
 
-		# Anti-crowding separation from packmates
-		var sep := Vector3.ZERO
-		for w in get_tree().get_nodes_in_group("wolf"):
-			if w != self and is_instance_valid(w) and w is Node3D:
-				var d_w := global_position.distance_to(w.global_position)
-				if d_w < 2.8 and d_w > 0.05:
-					sep += (global_position - w.global_position).normalized() * (2.8 - d_w)
+		# Anti-crowding separation from packmates throttled to 5 Hz
+		_sep_scan_timer -= delta
+		if _sep_scan_timer <= 0.0:
+			_sep_scan_timer = 0.20
+			_cached_sep = Vector3.ZERO
+			for w in get_tree().get_nodes_in_group("wolf"):
+				if w != self and is_instance_valid(w) and w is Node3D and w.get("current_state") != State.DEAD:
+					var d_w := global_position.distance_to(w.global_position)
+					if d_w < 2.8 and d_w > 0.05:
+						_cached_sep += (global_position - w.global_position).normalized() * (2.8 - d_w)
 
-		if sep.length_squared() > 0.01:
-			flank_dir = (flank_dir + sep * 0.45).normalized()
+		if _cached_sep.length_squared() > 0.01:
+			flank_dir = (flank_dir + _cached_sep * 0.45).normalized()
 
 		velocity.x = flank_dir.x * chase_speed
 		velocity.z = flank_dir.z * chase_speed
