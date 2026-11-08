@@ -428,6 +428,14 @@ func generate_terrain() -> void:
 	# Scatter wildlife & livestock across distinct ecosystem zones
 	_scatter_wildlife()
 
+	# Scatter high-performance multi-tier grass with biotic sheep grazing
+	_scatter_grass()
+
+func _scatter_grass() -> void:
+	var grass_mgr = load("res://scripts/environment/grass_manager.gd")
+	if grass_mgr:
+		grass_mgr.populate_grass(self, _settlement_pads, world_seed)
+
 func _generate_bryggen_waterfront() -> void:
 	var bryggen_container := get_node_or_null("BryggenWaterfront") as Node3D
 	if bryggen_container:

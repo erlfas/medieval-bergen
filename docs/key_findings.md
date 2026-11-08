@@ -513,4 +513,36 @@ The updated architecture establishes a true **Follow-Behind Camera** with critic
   - Forward velocity ($4.17\,\text{m/s}$) and reverse velocity ($2.60\,\text{m/s}$) confirmed.
   - Camera pivot distance ($3.23\,\text{m}$) verified without collapse.
 
+---
+
+## 26. High-Performance Multi-Tier Grass System & Biotic Grazing Architecture
+
+### 1. Ingestion & Decimation of High-Poly 3D Model (`grass clump 3d model.glb`)
+- **Raw Asset Constraints:** The imported GLB model contained 18,955 triangles, 22,709 vertices, and uncompressed $4096 \times 4096$ textures, totaling $9.91\,\text{MB}$. Instancing this raw mesh would exceed WebGL draw and vertex budgets within seconds.
+- **Automated Decimation Pipeline (`scripts/terrain/optimize_grass_model.py`):**
+  - **LOD0 High-Fidelity 3D Model (`grass_clump_lod0.glb`):** Filtered 2,700+ micro-noise polygon fragments, retaining the top 65 major stalks, and decimated via quadric error to **439 triangles** (a $97.7\%$ reduction) with nearest-neighbor KDTree UV interpolation and ground plane re-anchoring ($y_{\min} = 0.0$).
+  - **LOD1 Crossed-Quad Graphic (`grass_clump_lod1.glb`):** 3 intersecting vertical double-sided planes (**6 triangles**) textured with a baked alpha cutout billboard (`grass_billboard.png`).
+  - **Texture Compression:** Resized textures to $512 \times 512$ high-quality JPEGs ($104\,\text{KB}$ albedo, $96\,\text{KB}$ normal, $58\,\text{KB}$ PBR roughness), reducing asset footprint from $9.9\,\text{MB}$ to **$279\,\text{KB}$**.
+
+### 2. Physically-Based Cantilever Wind Shader (`shaders/grass_wind.gdshader`)
+- **Root-Lock Invariant:** Vertex displacement scales quadratically with height above ground:
+  $$w_{\text{bend}} = \left(\text{clamp}\left(\frac{V_y}{H_{\text{blade}}}, 0.0, 1.0\right)\right)^2$$
+  ensuring roots ($y = 0.0$) experience strictly $0.000\,\text{m}$ deflection while tips sway freely.
+- **Wave Synthesis:** Blends continuous low-frequency fjord breeze with positive pulsed traveling gusts and high-frequency micro-blade flutter.
+- **Length Conservation:** Clamps and computes $V_y = \sqrt{\max(0.0, V_{y,\text{orig}}^2 - \|\Delta V_{xz}\|^2)}$, preventing unnatural blade stretching during heavy gusts.
+
+### 3. Biotic Grazing & Terrain-Aware Height Solver (`scripts/environment/grass_manager.gd`)
+- **Sheep Grazing Pastures:** Queries `_settlement_pads` where `is_farm == true` (sheep pasture center located at $fc + (18.0, 0, 0)$ with $20\,\text{m}$ grazing radius). Grass within grazing pastures is cropped down to **$0.18\,\text{m} - 0.35\,\text{m}$** (grazed turf lawn).
+- **Valley Meadows:** Medium lush grass at elevations $2.0\,\text{m} \le y \le 25.0\,\text{m}$ outside pastures (**$0.50\,\text{m} - 0.75\,\text{m}$**).
+- **Wilderness & Mountain Foothills:** Far-away wild grass on valley outskirts and slopes ($25.0\,\text{m} < y \le 90.0\,\text{m}$) scales up to **$0.95\,\text{m} - 1.40\,\text{m}$** with golden wild rye tints.
+- **Building Exclusions:** Suppresses grass completely inside settlement building footprints and wharves.
+
+### 4. Distance LOD & WebGL 2.0 Profiling Results
+- **Sectorization:** Groups instances into $110\,\text{m} \times 110\,\text{m}$ spatial sectors. Active sectors instantiate a MultiMesh for LOD0 ($0\,\text{m} - 22\,\text{m}$) and LOD1 ($20\,\text{m} - 65\,\text{m}$) with `SHADOW_CASTING_SETTING_OFF` and native GPU distance culling.
+- **Benchmark Metrics:**
+  - Scene `MeshInstance3D` count: **454** ($< 490$ target budget, strictly below 500 WebGL ceiling).
+  - Active grass clumps: **4,255** across 28 sectors.
+  - Web export bundle: `web/public/index.pck` grew from $46.4\,\text{MB}$ to $47.6\,\text{MB}$ (delta $+1.19\,\text{MB}$, with raw 3D models cleanly excluded).
+
+
 

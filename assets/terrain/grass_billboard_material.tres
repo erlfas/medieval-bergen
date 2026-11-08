@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3]
+
+[ext_resource type="Shader" path="res://shaders/grass_wind.gdshader" id="1_40jgu"]
+[ext_resource type="Texture2D" path="res://assets/terrain/grass_billboard.png" id="2_billboard"]
+[ext_resource type="Texture2D" path="res://assets/terrain/grass_clump_normal.jpg" id="3_07un6"]
+[ext_resource type="Texture2D" path="res://assets/terrain/grass_clump_pbr.jpg" id="4_u3apj"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_40jgu")
+shader_parameter/wind_direction = Vector3(0.707, 0, 0.707)
+shader_parameter/wind_speed = 2.2
+shader_parameter/wind_strength = 0.35
+shader_parameter/gust_frequency = 0.045
+shader_parameter/gust_strength = 0.45
+shader_parameter/grass_base_tint = Color(0.22, 0.38, 0.14, 1)
+shader_parameter/grass_tip_tint = Color(0.44, 0.64, 0.22, 1)
+shader_parameter/roughness_mult = 0.88
+shader_parameter/albedo_texture = ExtResource("2_billboard")
+shader_parameter/normal_texture = ExtResource("3_07un6")
+shader_parameter/pbr_texture = ExtResource("4_u3apj")
