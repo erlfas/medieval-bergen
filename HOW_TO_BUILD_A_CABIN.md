@@ -68,8 +68,11 @@ A 14th-century Bergen dwelling (*årestue*) was designed to withstand extreme mo
 
 | Key | Action |
 |---|---|
-| **[W, A, S, D]** | Walk & Navigate |
-| **[Shift]** | Sprint (consumes stamina; disabled when carrying heavy logs) |
+| **[W]** | Walk / Run forward in facing direction |
+| **[S]** | Walk backward smoothly (backpedal at 2.6 m/s) |
+| **[A, D]** | Steer & turn 360° continuously (carve walking arcs with W+A / W+D) |
+| **[Right-Click (Hold)]** | Tactical strafe mode (A/D strafes laterally) |
+| **[Shift]** | Sprint forward (consumes stamina; disabled when carrying logs) |
 | **[E]** | Chop Tree / Pick Up Log / Drink Freshwater / Interact |
 | **[G]** | Drop Carried Log on Ground |
 | **[B]** | Toggle Build Mode |
