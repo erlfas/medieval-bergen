@@ -40,5 +40,6 @@ To regenerate all `.glb` modules after editing the Blender script:
 python3 scripts/architecture/generate_laftehytte_modules_blender.py
 ```
 
-For full technical details on the coordinate mapping, `bmesh` geometry generation, material surface binding, and `SurfaceTool` draw-call batching, see [`BLENDER_LAFTEHYTTE_PIPELINE.md`](../../BLENDER_LAFTEHYTTE_PIPELINE.md).
+For full architectural and algorithmic details on how the Laftehytte is assembled piece-by-piece, see [`PROCEDURAL_LAFTEHYTTE_BUILDING.md`](../../PROCEDURAL_LAFTEHYTTE_BUILDING.md).
+For technical details on the coordinate mapping, `bmesh` geometry generation, material surface binding, and `SurfaceTool` draw-call batching, see [`BLENDER_LAFTEHYTTE_PIPELINE.md`](../../BLENDER_LAFTEHYTTE_PIPELINE.md).
 
