@@ -177,6 +177,9 @@ The procedures developed and refined during this project have been formalized in
    - **Scope:** WebGL resource budgeting, checking GPU draw calls, MeshInstance counts, JS heap memory pressure, and canvas rendering states.
 5. **`procedural-terrain-pbr-pipeline`**:
    - **Scope:** Procedural seamless spectral fractal ($1/f^\beta$ FFT) texture synthesis for organic terrain PBR materials, WebGL 2.0-compliant spatial shader authoring, and SurfaceTool tangent space configuration.
+6. **`blender-godot-modular-pipeline`**:
+   - **Scope:** Headless Blender (`bpy` + `bmesh`) procedural 3D asset generation, exact Z-up to glTF/Godot Y-up coordinate & basis transformation ($M_{\text{blender}} = C \cdot M_{\text{godot}} \cdot C^{-1}$), multi-material glTF surface binding, and `SurfaceTool.append_from()` draw-call batching for piece-by-piece procedural world assembly under the WebGL 2.0 `< 500 MeshInstance3D` budget.
+
 
 ---
 
@@ -646,3 +649,42 @@ Two specialized native `research` subagents were dispatched concurrently to perf
 | **Water Shader Fullscreen Backbuffer Copy** | 1 per frame (+ mipmaps) | **0** | **Eliminated unused `hint_screen_texture` stall** |
 | **Fauna & Survival Group Array Allocations** | ~660 / sec (`60 Hz`) | **~45 / sec (`4–5 Hz`)** | **-93.2% GDScript array/dictionary churn** |
 | **Exit RID & ObjectDB Leaks** | 9 RIDs + 8 Objects | **0 RIDs, 0 Objects** | **100% clean engine shutdown** |
+
+---
+
+## 28. Headless Blender (`bpy` + `bmesh`) Modular *Laftehytte* Kit & Piece-by-Piece World Assembly
+
+### 1. Coordinate System & Basis Transformation (`bpy` Z-Up $\leftrightarrow$ glTF / Godot Y-Up)
+- **Root Cause of Orientation Mismatches:** Blender uses a right-handed **Z-up** coordinate system (`+X` right, `+Y` back, `+Z` up), whereas glTF 2.0 and Godot 4 use a right-handed **Y-up** coordinate system (`+X` right, `+Y` up, `+Z` south/back). When exporting with `bpy.ops.export_scene.gltf(..., export_yup=True)`, Blender applies the orthogonal basis transformation $(x_g, y_g, z_g) = (x_b, z_b, -y_b)$.
+- **Exact Inverse Mapping (`scripts/architecture/generate_laftehytte_modules_blender.py`):**
+  All modular dimensions are authored directly in Godot local space `(gx, gy, gz)` and mapped into `bmesh` via the orthogonal matrix $C$:
+  $$C = \begin{bmatrix} 1 & 0 & 0 \\ 0 & 0 & -1 \\ 0 & 1 & 0 \end{bmatrix}, \quad \vec{p}_{\text{blender}} = \begin{bmatrix} x_{\text{godot}} \\ -z_{\text{godot}} \\ y_{\text{godot}} \end{bmatrix}, \quad M_{\text{blender}} = C \cdot M_{\text{godot}} \cdot C^{-1}$$
+  This guarantees 1-to-1 coordinate, pivot, and orientation matching inside Godot 4 without root-node rotation hacks.
+
+### 2. 16-Piece Historical *Laftehytte / Årestue* `.glb` Kit (`assets/modular_pieces/laftehytte/`)
+Generated via headless Blender 5.0 (`bpy` + `bmesh`, totaling $1.66\,\text{MB}$ across 16 `.glb` files):
+1. **Atomic Modules (12):**
+   - `foundation_pier.glb` — 3-course stacked Bergen gneiss & slate foundation pier (*Grunnmurstein*, $0.64\,\text{m} \times 0.61\,\text{m} \times 0.64\,\text{m}$).
+   - `foundation_plinth_4m.glb` — Recessed dry-stone rubble skirt + chamfered tarred mudsill beam (*Svillstokk*, $4.0\,\text{m}$ bay span).
+   - `floor_plank_bay.glb` — Transverse sub-floor joists (*Gulvbjelker*) + hand-planed spruce floorboards (*Gulvbord*, $4.0\,\text{m} \times 4.0\,\text{m}$).
+   - `laft_log_4m.glb` — Single hand-hewn octagonal spruce log (*Laftestokk*) with corner saddle notches (*Nov / Lafteknute*) and beveled end-grain (*Laftehode*).
+   - `laft_wall_solid.glb` — 8-course interlocking notched *Lafteverk* log wall ($4.0\,\text{m}$ bay span + $0.30\,\text{m}$ corner overhang) with tarred moss chinking (*Mosefar*).
+   - `laft_wall_window.glb` — 8-course notched log wall split around a recessed medieval mullioned window (*Vinduskarm*), crown glass pane, and open storm shutters (*Vinduslemmer*) with wrought-iron strap hinges.
+   - `laft_wall_doorway.glb` — 8-course notched log wall with carved portal jambs (*Dørstolper*), overhead lintel & rain hood (*Dørbislag*), low-profile stepped welcome stone ($\le 0.10\,\text{m}$ per rise for smooth `CharacterBody3D` entry), and open planked door (*Dørblad*) with wrought-iron strap hinges.
+   - `laft_gable_triangle.glb` — 6-course tapered triangular log gable (*Gavlvegg*, $5.0\,\text{m}$ span $\times 1.40\,\text{m}$ rise) with purlin notches.
+   - `torvtak_roof_slope.glb` — Raftered roof slope (*Sperretak*) with exposed spruce rafters, side purlin (*Ås*), white birch bark underlayment (*Never*), eaves retaining log (*Torvvol*), dark-tarred wooden hook brackets (*Torvhald*), and stepped living sod turf courses (*Torvtak*).
+   - `ljore_smoke_vent.glb` — Central ridge beam (*Mønsås*), turf ridge crest (*Mønskam*), crossed gable bargeboards (*Vindski*), and rooftop smoke-vent skylight frame (*Ljore*).
+   - `are_central_hearth.glb` — Raised 12-stone slate curb ring (*Åre Ildsted*), dark ash bed, crossed charwood logs, and wrought-iron kettle trivet.
+   - `langbenk_sleeping_bench.glb` — Interior wall-mounted spruce sleeping bench (*Langbenk / Bris*) with carved trestles and headrest bolster.
+2. **Composite Stage Modules (4):**
+   - `stage_1_foundation.glb`, `stage_2_walls.glb`, `stage_3_roof.glb`, and `stage_4_hearth.glb` ($5.0\,\text{m} \times 5.0\,\text{m}$ standard footprint).
+
+### 3. Multi-Material Surface Binding & WebGL 2.0 `SurfaceTool` Batching (`scripts/architecture/building_assembler.gd`)
+- **Material Preservation:** Blender exports one glTF primitive (`ArrayMesh` surface) per assigned material (`wood_spruce`, `wood_dark`, `wood_weathered`, `stone_foundation`, `sod_roof`, `birch_bark`, `iron_hardware`, `window_glass`, `shutter_wood`). `_resolve_blender_surface_material()` maps each surface's `resource_name` to the shared procedural noise-bumped `StandardMaterial3D` dictionary.
+- **Draw-Call Consolidation (`_append_blender_module`):**
+  Stamping 25–35 modular pieces per cabin as separate `MeshInstance3D` nodes across 11 world structures would add $>300$ extra draw calls and breach the `< 500 MeshInstance3D` WebGL 2.0 ceiling. Instead, `_append_blender_module()` stamps each `.glb` module's surfaces via `SurfaceTool.append_from(mesh, surface_idx, xform)` into per-material `SurfaceTool` streams and commits **one multi-surface `ArrayMesh` per building**:
+  - **4 Valley Farmstead *Årestuer*** and **4 Elevated *Stabbur* Storehouses** (`scripts/architecture/farmstead_generator.gd`) with deterministic per-farmstead footprint/window/bench variations.
+  - **3 Outlying *Laftehytte* Cabins** (`scripts/terrain/bergen_terrain_generator.gd`): `Settler_Starter_Laftehytte` at `(135, 5.84, 141)`, `Sandviken_Fisker_Laftehytte` at `(86, 2.17, -65)`, and `Floyen_Skogshytte_Laftehytte` at `(168, 4.82, 62)`.
+  - **14 Player Builder Recipes** (`scripts/construction/player_builder.gd`): Complete cabin, 4 progressive stages, and 9 individual modular pieces wired to the Blender `.glb` meshes for both ghost previews and placed `StaticBody3D` assemblies.
+- **Verified Scene Budget:** Total active scene `MeshInstance3D` count is **397** ($< 500$ WebGL 2.0 budget) with **0** script, shader, or WebGL errors.
+
