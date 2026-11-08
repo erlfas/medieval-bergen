@@ -30,15 +30,269 @@ var _rng: RandomNumberGenerator
 # Cached shared materials for WebGL batch efficiency
 static var _shared_materials: Dictionary = {}
 
+# Cached Blender-generated .glb modular meshes from res://assets/modular_pieces/laftehytte/
+static var _laftehytte_module_meshes: Dictionary = {}
+
+const LAFTEHYTTE_MODULE_PATHS: Dictionary = {
+	"foundation_pier": "res://assets/modular_pieces/laftehytte/foundation_pier.glb",
+	"foundation_plinth_4m": "res://assets/modular_pieces/laftehytte/foundation_plinth_4m.glb",
+	"floor_plank_bay": "res://assets/modular_pieces/laftehytte/floor_plank_bay.glb",
+	"laft_log_4m": "res://assets/modular_pieces/laftehytte/laft_log_4m.glb",
+	"laft_wall_solid": "res://assets/modular_pieces/laftehytte/laft_wall_solid.glb",
+	"laft_wall_window": "res://assets/modular_pieces/laftehytte/laft_wall_window.glb",
+	"laft_wall_doorway": "res://assets/modular_pieces/laftehytte/laft_wall_doorway.glb",
+	"laft_gable_triangle": "res://assets/modular_pieces/laftehytte/laft_gable_triangle.glb",
+	"torvtak_roof_slope": "res://assets/modular_pieces/laftehytte/torvtak_roof_slope.glb",
+	"ljore_smoke_vent": "res://assets/modular_pieces/laftehytte/ljore_smoke_vent.glb",
+	"are_central_hearth": "res://assets/modular_pieces/laftehytte/are_central_hearth.glb",
+	"langbenk_sleeping_bench": "res://assets/modular_pieces/laftehytte/langbenk_sleeping_bench.glb",
+	"stage_1_foundation": "res://assets/modular_pieces/laftehytte/stage_1_foundation.glb",
+	"stage_2_walls": "res://assets/modular_pieces/laftehytte/stage_2_walls.glb",
+	"stage_3_roof": "res://assets/modular_pieces/laftehytte/stage_3_roof.glb",
+	"stage_4_hearth": "res://assets/modular_pieces/laftehytte/stage_4_hearth.glb",
+}
+
 func _ready() -> void:
 	_rng = RandomNumberGenerator.new()
 	_rng.seed = lot_seed
+
+## Loads and caches the ArrayMesh from a Blender-authored Laftehytte .glb module
+static func get_laftehytte_module_mesh(module_key: String) -> ArrayMesh:
+	if _laftehytte_module_meshes.has(module_key):
+		return _laftehytte_module_meshes[module_key]
+
+	var res_path: String = LAFTEHYTTE_MODULE_PATHS.get(module_key, "")
+	if res_path.is_empty() or not ResourceLoader.exists(res_path):
+		return null
+
+	var packed := load(res_path) as PackedScene
+	if packed == null:
+		return null
+
+	var inst := packed.instantiate()
+	var found_mesh: ArrayMesh = null
+	if inst is MeshInstance3D and inst.mesh is ArrayMesh:
+		found_mesh = inst.mesh.duplicate() as ArrayMesh
+	else:
+		for child in inst.find_children("*", "MeshInstance3D", true, false):
+			if child is MeshInstance3D and child.mesh is ArrayMesh:
+				found_mesh = child.mesh.duplicate() as ArrayMesh
+				break
+	inst.free()
+
+	if found_mesh != null:
+		# Bind shared BuildingAssembler materials by surface material name for unified batching
+		for s in range(found_mesh.get_surface_count()):
+			var surf_mat := found_mesh.surface_get_material(s)
+			var mat_key := surf_mat.resource_name if surf_mat != null and not surf_mat.resource_name.is_empty() else "wood_spruce"
+			found_mesh.surface_set_material(s, get_shared_material(mat_key))
+		_laftehytte_module_meshes[module_key] = found_mesh
+
+	return found_mesh
+
+## Appends all material surfaces of a Blender-authored .glb module into the batched SurfaceTool streams
+static func _append_blender_module(streams: Dictionary, module_key: String, xform: Transform3D) -> bool:
+	var mod_mesh := get_laftehytte_module_mesh(module_key)
+	if mod_mesh == null:
+		return false
+
+	for s in range(mod_mesh.get_surface_count()):
+		var surf_mat := mod_mesh.surface_get_material(s)
+		var mat_key := "wood_spruce"
+		if surf_mat != null:
+			for k in _shared_materials.keys():
+				if _shared_materials[k] == surf_mat:
+					mat_key = k
+					break
+			if mat_key == "wood_spruce" and not surf_mat.resource_name.is_empty():
+				mat_key = surf_mat.resource_name
+		var st := _get_stream(streams, mat_key)
+		st.append_from(mod_mesh, s, xform)
+	return true
+
+static func _make_module_transform(pos: Vector3, yaw: float = 0.0, scale_vec: Vector3 = Vector3.ONE) -> Transform3D:
+	var basis := Basis(Vector3.UP, yaw).scaled(scale_vec)
+	return Transform3D(basis, pos)
+
+## Assembles a Laftehytte Foundation piece-by-piece from Blender .glb modules:
+## - Corner & intermediate `foundation_pier.glb` stones
+## - 4 perimeter `foundation_plinth_4m.glb` rubble skirts & mudsills
+## - Interior `floor_plank_bay.glb` joists & hand-hewn floorboards
+static func _append_laftehytte_foundation_modules(streams: Dictionary, width: float, depth: float, pier_depth_below: float = 0.45) -> bool:
+	if get_laftehytte_module_mesh("foundation_pier") == null:
+		return false
+
+	var half_w := width * 0.5
+	var half_d := depth * 0.5
+	var y_scale := pier_depth_below / 0.45
+
+	var x_steps := maxi(2, int(round(width / 2.5)) + 1)
+	var z_steps := maxi(2, int(round(depth / 2.5)) + 1)
+
+	for ix in range(x_steps):
+		var px := -half_w + float(ix) / float(x_steps - 1) * width
+		_append_blender_module(streams, "foundation_pier", _make_module_transform(Vector3(px, 0.0, -half_d), 0.0, Vector3(1.0, y_scale, 1.0)))
+		_append_blender_module(streams, "foundation_pier", _make_module_transform(Vector3(px, 0.0, half_d), 0.0, Vector3(1.0, y_scale, 1.0)))
+
+	for iz in range(1, z_steps - 1):
+		var pz := -half_d + float(iz) / float(z_steps - 1) * depth
+		_append_blender_module(streams, "foundation_pier", _make_module_transform(Vector3(-half_w, 0.0, pz), 0.0, Vector3(1.0, y_scale, 1.0)))
+		_append_blender_module(streams, "foundation_pier", _make_module_transform(Vector3(half_w, 0.0, pz), 0.0, Vector3(1.0, y_scale, 1.0)))
+
+	# 4 Perimeter Plinth & Mudsill Modules (foundation_plinth_4m.glb is 4.0m wide)
+	_append_blender_module(streams, "foundation_plinth_4m", _make_module_transform(Vector3(0.0, 0.0, -half_d), 0.0, Vector3(width / 4.0, y_scale, 1.0)))
+	_append_blender_module(streams, "foundation_plinth_4m", _make_module_transform(Vector3(0.0, 0.0, half_d), PI, Vector3(width / 4.0, y_scale, 1.0)))
+	_append_blender_module(streams, "foundation_plinth_4m", _make_module_transform(Vector3(-half_w, 0.0, 0.0), deg_to_rad(-90.0), Vector3(depth / 4.0, y_scale, 1.0)))
+	_append_blender_module(streams, "foundation_plinth_4m", _make_module_transform(Vector3(half_w, 0.0, 0.0), deg_to_rad(90.0), Vector3(depth / 4.0, y_scale, 1.0)))
+
+	# Interior Floor Plank Bay Module (floor_plank_bay.glb is 4.0m x 4.0m)
+	_append_blender_module(streams, "floor_plank_bay", _make_module_transform(Vector3.ZERO, 0.0, Vector3(width / 4.0, 1.0, depth / 4.0)))
+	return true
+
+## Assembles the 4 interlocking Lafteverk walls piece-by-piece from Blender .glb modules:
+## - Front portal doorway wall (`laft_wall_doorway.glb`)
+## - Rear & side walls (`laft_wall_window.glb` or `laft_wall_solid.glb`)
+static func _append_laftehytte_wall_modules(
+	streams: Dictionary,
+	width: float,
+	depth: float,
+	base_y: float = 0.0,
+	wall_h: float = 2.28,
+	back_has_window: bool = true,
+	left_has_window: bool = true,
+	right_has_window: bool = true
+) -> bool:
+	if get_laftehytte_module_mesh("laft_wall_doorway") == null:
+		return false
+
+	var half_w := width * 0.5
+	var half_d := depth * 0.5
+	var h_scale := wall_h / 2.28
+
+	# Front wall (-Z): Carved Portal Doorway Wall Module
+	_append_blender_module(
+		streams,
+		"laft_wall_doorway",
+		_make_module_transform(Vector3(0.0, base_y, -half_d), 0.0, Vector3(width / 4.0, h_scale, 1.0))
+	)
+
+	# Rear wall (+Z): Window or Solid Log Wall Module
+	var back_mod := "laft_wall_window" if back_has_window else "laft_wall_solid"
+	_append_blender_module(
+		streams,
+		back_mod,
+		_make_module_transform(Vector3(0.0, base_y, half_d), PI, Vector3(width / 4.0, h_scale, 1.0))
+	)
+
+	# Left wall (-X): Window or Solid Log Wall Module
+	var left_mod := "laft_wall_window" if left_has_window else "laft_wall_solid"
+	_append_blender_module(
+		streams,
+		left_mod,
+		_make_module_transform(Vector3(-half_w, base_y, 0.0), deg_to_rad(-90.0), Vector3(depth / 4.0, h_scale, 1.0))
+	)
+
+	# Right wall (+X): Window or Solid Log Wall Module
+	var right_mod := "laft_wall_window" if right_has_window else "laft_wall_solid"
+	_append_blender_module(
+		streams,
+		right_mod,
+		_make_module_transform(Vector3(half_w, base_y, 0.0), deg_to_rad(90.0), Vector3(depth / 4.0, h_scale, 1.0))
+	)
+	return true
+
+## Assembles the Laftehytte Gables, Raftered Sod Roof Slopes & Ljore Smoke Vent from Blender .glb modules
+static func _append_laftehytte_roof_modules(
+	streams: Dictionary,
+	width: float,
+	depth: float,
+	wall_h: float = 2.28,
+	gable_h: float = 1.40,
+	include_ljore: bool = true
+) -> bool:
+	if get_laftehytte_module_mesh("torvtak_roof_slope") == null:
+		return false
+
+	var half_d := depth * 0.5
+	var w_scale := width / 5.0
+	var d_scale := depth / 5.0
+	var g_scale := gable_h / 1.40
+
+	# Front & Rear Triangular Notched Log Gables (`laft_gable_triangle.glb`)
+	_append_blender_module(
+		streams,
+		"laft_gable_triangle",
+		_make_module_transform(Vector3(0.0, wall_h, -half_d), 0.0, Vector3(w_scale, g_scale, 1.0))
+	)
+	_append_blender_module(
+		streams,
+		"laft_gable_triangle",
+		_make_module_transform(Vector3(0.0, wall_h, half_d), PI, Vector3(w_scale, g_scale, 1.0))
+	)
+
+	# Left & Right Raftered Birch-Bark & Sod Roof Slopes (`torvtak_roof_slope.glb`)
+	_append_blender_module(
+		streams,
+		"torvtak_roof_slope",
+		_make_module_transform(Vector3(0.0, wall_h, 0.0), 0.0, Vector3(w_scale, g_scale, d_scale))
+	)
+	_append_blender_module(
+		streams,
+		"torvtak_roof_slope",
+		_make_module_transform(Vector3(0.0, wall_h, 0.0), PI, Vector3(w_scale, g_scale, d_scale))
+	)
+
+	# Ridge Beam, Turf Crest, Crossed Bargeboards & Ljore Smoke Vent (`ljore_smoke_vent.glb`)
+	if include_ljore:
+		_append_blender_module(
+			streams,
+			"ljore_smoke_vent",
+			_make_module_transform(Vector3(0.0, wall_h, 0.0), 0.0, Vector3(w_scale, g_scale, d_scale))
+		)
+	return true
+
+## Assembles the interior Central Hearth (Åre) and Wall Benches (Langbenk) from Blender .glb modules
+static func _append_laftehytte_interior_modules(
+	streams: Dictionary,
+	width: float,
+	depth: float,
+	dual_benches: bool = false
+) -> bool:
+	if get_laftehytte_module_mesh("are_central_hearth") == null:
+		return false
+
+	var half_w := width * 0.5
+	var bench_scale_z := (depth * 0.58) / 3.0
+
+	# Central Stone Hearth Ring (`are_central_hearth.glb`)
+	_append_blender_module(
+		streams,
+		"are_central_hearth",
+		_make_module_transform(Vector3(0.0, 0.06, 0.20), 0.0, Vector3.ONE)
+	)
+
+	# East Wall Sleeping Bench (`langbenk_sleeping_bench.glb`)
+	_append_blender_module(
+		streams,
+		"langbenk_sleeping_bench",
+		_make_module_transform(Vector3(half_w - 0.56, 0.06, 0.20), 0.0, Vector3(1.0, 1.0, bench_scale_z))
+	)
+
+	# Optional West Wall Sleeping Bench for larger family/farmstead Årestuer
+	if dual_benches:
+		_append_blender_module(
+			streams,
+			"langbenk_sleeping_bench",
+			_make_module_transform(Vector3(-half_w + 0.56, 0.06, 0.20), PI, Vector3(1.0, 1.0, bench_scale_z))
+		)
+	return true
 
 static func get_shared_material(key: String) -> StandardMaterial3D:
 	if _shared_materials.has(key):
 		return _shared_materials[key]
 
 	var mat := StandardMaterial3D.new()
+	mat.resource_name = key
 	match key:
 		"wood_spruce":
 			mat.albedo_color = Color(0.45, 0.30, 0.17) # Seasoned spruce / pine log lumber
@@ -588,15 +842,17 @@ static func _append_roof_assembly(
 # =============================================================================
 
 ## 1. Complete Norwegian Medieval Log Cabin / Farmhouse (Laftehytte / Årestue)
-static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0) -> StaticBody3D:
+## Procedurally assembled piece-by-piece from Blender-authored .glb modules in `res://assets/modular_pieces/laftehytte/`
+static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0, spec: Dictionary = {}) -> StaticBody3D:
 	var cabin := StaticBody3D.new()
-	cabin.name = "Laftehytte_Cabin_%d" % (randi() % 9999)
+	cabin.name = spec.get("name", "Laftehytte_Cabin_%d" % (randi() % 9999))
 	cabin.add_to_group("building")
 	cabin.add_to_group("shelter")
+	cabin.add_to_group("laftehytte")
 
 	var streams: Dictionary = {}
-	var wall_h: float = 2.28
-	var ridge_h: float = 3.68
+	var wall_h: float = spec.get("wall_h", 2.28)
+	var ridge_h: float = spec.get("ridge_h", 3.68)
 	var gable_h: float = ridge_h - wall_h
 	var half_w: float = width * 0.5
 	var half_d: float = depth * 0.5
@@ -605,52 +861,54 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0) -> Static
 	var door_h: float = 1.95
 	var nov_overhang: float = 0.30
 
-	# 1. Foundation piers, plinth, mudsills & planked floor
-	_append_foundation_pieces(streams, width, depth, 0.45)
+	var back_win: bool = spec.get("back_window", true)
+	var left_win: bool = spec.get("left_window", true)
+	var right_win: bool = spec.get("right_window", true)
+	var dual_benches: bool = spec.get("dual_benches", width >= 5.3)
 
-	# 2. Lafteverk 8-Course Notched Log Walls with Window & Door Apertures
-	var front_apertures := [
-		{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}
-	]
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 8, wall_thick, nov_overhang, front_apertures)
-	_append_door_piece(streams, Vector3(0, 0, -half_d), 0.0, door_w, door_h, wall_thick, true)
+	# 1. Foundation Stage Modules: `foundation_pier.glb`, `foundation_plinth_4m.glb`, `floor_plank_bay.glb`
+	if not _append_laftehytte_foundation_modules(streams, width, depth, 0.45):
+		_append_foundation_pieces(streams, width, depth, 0.45)
 
-	var back_apertures := [
-		{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.84}
-	]
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 8, wall_thick, nov_overhang, back_apertures)
-	_append_window_piece(streams, Vector3(0, 1.32, half_d), PI, 0.84, 0.80, wall_thick, true, true)
+	# 2. Lafteverk Wall Modules: `laft_wall_doorway.glb`, `laft_wall_window.glb`, `laft_wall_solid.glb`
+	if not _append_laftehytte_wall_modules(streams, width, depth, 0.0, wall_h, back_win, left_win, right_win):
+		var front_apertures := [{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}]
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 8, wall_thick, nov_overhang, front_apertures)
+		_append_door_piece(streams, Vector3(0, 0, -half_d), 0.0, door_w, door_h, wall_thick, true)
+		var back_apertures := [{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.84}] if back_win else []
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 8, wall_thick, nov_overhang, back_apertures)
+		if back_win:
+			_append_window_piece(streams, Vector3(0, 1.32, half_d), PI, 0.84, 0.80, wall_thick, true, true)
+		var side_apertures := [{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.88}]
+		_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 8, wall_thick, nov_overhang, side_apertures if left_win else [])
+		if left_win:
+			_append_window_piece(streams, Vector3(-half_w, 1.32, 0), deg_to_rad(-90.0), 0.88, 0.80, wall_thick, true, true)
+		_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 8, wall_thick, nov_overhang, side_apertures if right_win else [])
+		if right_win:
+			_append_window_piece(streams, Vector3(half_w, 1.32, 0), deg_to_rad(90.0), 0.88, 0.80, wall_thick, true, true)
 
-	var side_apertures := [
-		{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.88}
-	]
-	_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 8, wall_thick, nov_overhang, side_apertures)
-	_append_window_piece(streams, Vector3(-half_w, 1.32, 0), deg_to_rad(-90.0), 0.88, 0.80, wall_thick, true, true)
+	# 3. Roof & Gable Modules: `laft_gable_triangle.glb`, `torvtak_roof_slope.glb`, `ljore_smoke_vent.glb`
+	if not _append_laftehytte_roof_modules(streams, width, depth, wall_h, gable_h, true):
+		var st_wood := _get_stream(streams, "wood_spruce")
+		var gable_courses := 6
+		var g_step_h := gable_h / float(gable_courses)
+		for gable_z in [-half_d, half_d]:
+			for g in range(gable_courses):
+				var frac := (float(g) + 0.5) / float(gable_courses)
+				var cur_w := (width + nov_overhang * 1.6) * (1.0 - frac * 0.88)
+				var gy := wall_h + (float(g) + 0.5) * g_step_h
+				_append_box_piece(st_wood, Vector3(cur_w, g_step_h * 0.92, wall_thick), Vector3(0, gy, gable_z))
+		_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
 
-	_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 8, wall_thick, nov_overhang, side_apertures)
-	_append_window_piece(streams, Vector3(half_w, 1.32, 0), deg_to_rad(90.0), 0.88, 0.80, wall_thick, true, true)
-
-	# 3. Stepped Gable Log Courses (6 tapered logs per gable end)
-	var st_wood := _get_stream(streams, "wood_spruce")
-	var gable_courses := 6
-	var g_step_h := gable_h / float(gable_courses)
-	for gable_z in [-half_d, half_d]:
-		for g in range(gable_courses):
-			var frac := (float(g) + 0.5) / float(gable_courses)
-			var cur_w := (width + nov_overhang * 1.6) * (1.0 - frac * 0.88)
-			var gy := wall_h + (float(g) + 0.5) * g_step_h
-			_append_box_piece(st_wood, Vector3(cur_w, g_step_h * 0.92, wall_thick), Vector3(0, gy, gable_z))
-
-	# 4. Interior Sleeping Bench (Langbenk)
-	_append_box_piece(st_wood, Vector3(0.76, 0.42, depth * 0.56), Vector3(half_w - 0.56, 0.25, 0.25))
-
-	# 5. Roof Rafters, Purlins, Bargeboards, Birch Bark & Sod Turf Roof with Ljore Smoke Vent
-	_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
+	# 4. Interior Hearth & Sleeping Bench Modules: `are_central_hearth.glb`, `langbenk_sleeping_bench.glb`
+	if not _append_laftehytte_interior_modules(streams, width, depth, dual_benches):
+		var st_wood := _get_stream(streams, "wood_spruce")
+		_append_box_piece(st_wood, Vector3(0.76, 0.42, depth * 0.56), Vector3(half_w - 0.56, 0.25, 0.25))
 
 	var compound_mi := _commit_piece_streams(streams, "CabinPieceAssemblyMesh")
 	cabin.add_child(compound_mi)
 
-	# 6. Navigable Walk-In Physics Collisions (Floor, 4 Walls with Open Doorway Cutout, Roof)
+	# 5. Navigable Walk-In Physics Collisions (Floor, 4 Walls with Open Doorway Cutout)
 	var front_side_w := (width - door_w) * 0.5
 	var left_front_x := -half_w + front_side_w * 0.5
 	var right_front_x := half_w - front_side_w * 0.5
@@ -664,21 +922,16 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0) -> Static
 	_add_box_collider(cabin, Vector3(front_side_w, wall_h, wall_thick), Vector3(right_front_x, wall_h * 0.5, -half_d))
 	_add_box_collider(cabin, Vector3(door_w, lintel_h, wall_thick), Vector3(0, door_h + lintel_h * 0.5, -half_d))
 
-	# 7. Central Stone Hearth (Åre) Fireplace with Warm Firelight
+	# 6. Central Stone Hearth (Åre) Glowing Embers & Warm Firelight
 	var hearth := Node3D.new()
 	hearth.name = "CentralHearth"
 	hearth.add_to_group("hearth")
 	hearth.position = Vector3(0, 0.14, 0.2)
 	cabin.add_child(hearth)
 
-	var hearth_streams: Dictionary = {}
-	var st_h_stone := _get_stream(hearth_streams, "stone_foundation")
-	_append_box_piece(st_h_stone, Vector3(1.32, 0.22, 1.32), Vector3.ZERO)
-	hearth.add_child(_commit_piece_streams(hearth_streams, "HearthStoneMesh"))
-
 	var embers := MeshInstance3D.new()
 	var emb_box := BoxMesh.new()
-	emb_box.size = Vector3(0.8, 0.14, 0.8)
+	emb_box.size = Vector3(0.76, 0.12, 0.76)
 	embers.mesh = emb_box
 	var mat_fire := StandardMaterial3D.new()
 	mat_fire.albedo_color = Color(1.0, 0.45, 0.12)
@@ -686,7 +939,7 @@ static func assemble_log_cabin(width: float = 5.4, depth: float = 6.0) -> Static
 	mat_fire.emission = Color(1.0, 0.55, 0.15)
 	mat_fire.emission_energy_multiplier = 2.8
 	embers.material_override = mat_fire
-	embers.position = Vector3(0, 0.14, 0)
+	embers.position = Vector3(0, 0.06, 0)
 	hearth.add_child(embers)
 
 	var fire_light := OmniLight3D.new()
@@ -882,23 +1135,26 @@ static func _add_box_collider(parent: CollisionObject3D, size: Vector3, pos: Vec
 # PLAYER BUILDER STAGES & GHOST PREVIEW (Upgraded to Piece-by-Piece Meshes)
 # =============================================================================
 
-## Assembles Cabin Stage 1: Stone Footings, Plinth & Heavy Timber Plank Floor
+## Assembles Cabin Stage 1: Stone Footings, Plinth & Heavy Timber Plank Floor (from Blender .glb modules)
 static func assemble_cabin_stage_foundation(width: float = 5.0, depth: float = 5.0) -> StaticBody3D:
 	var stage := StaticBody3D.new()
 	stage.name = "CabinStage_Foundation_%d" % (randi() % 9999)
 	stage.add_to_group("building")
+	stage.add_to_group("laftehytte_stage")
 
 	var streams: Dictionary = {}
-	_append_foundation_pieces(streams, width, depth, 0.40)
+	if not _append_laftehytte_foundation_modules(streams, width, depth, 0.40):
+		_append_foundation_pieces(streams, width, depth, 0.40)
 	stage.add_child(_commit_piece_streams(streams, "FoundationStageCompoundMesh"))
 	_add_box_collider(stage, Vector3(width, 0.2, depth), Vector3(0, 0.0, 0))
 	return stage
 
-## Assembles Cabin Stage 2: 8-Course Lafteverk Timber Walls, Shuttered Windows & Hinged Open Door
+## Assembles Cabin Stage 2: 8-Course Lafteverk Timber Walls, Shuttered Windows & Hinged Open Door (from Blender .glb modules)
 static func assemble_cabin_stage_walls(width: float = 5.0, depth: float = 5.0) -> StaticBody3D:
 	var stage := StaticBody3D.new()
 	stage.name = "CabinStage_Walls_%d" % (randi() % 9999)
 	stage.add_to_group("building")
+	stage.add_to_group("laftehytte_stage")
 
 	var streams: Dictionary = {}
 	var wall_h: float = 2.28
@@ -909,19 +1165,20 @@ static func assemble_cabin_stage_walls(width: float = 5.0, depth: float = 5.0) -
 	var door_h: float = 1.95
 	var nov_overhang: float = 0.30
 
-	var front_ap := [{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}]
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 8, wall_thick, nov_overhang, front_ap)
-	_append_door_piece(streams, Vector3(0, 0, -half_d), 0.0, door_w, door_h, wall_thick, true)
+	if not _append_laftehytte_wall_modules(streams, width, depth, 0.0, wall_h, true, true, true):
+		var front_ap := [{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}]
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 8, wall_thick, nov_overhang, front_ap)
+		_append_door_piece(streams, Vector3(0, 0, -half_d), 0.0, door_w, door_h, wall_thick, true)
 
-	var win_ap := [{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.84}]
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 8, wall_thick, nov_overhang, win_ap)
-	_append_window_piece(streams, Vector3(0, 1.32, half_d), PI, 0.84, 0.80, wall_thick, true, true)
+		var win_ap := [{"x": 0.0, "y_min": 0.92, "y_max": 1.72, "w": 0.84}]
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 8, wall_thick, nov_overhang, win_ap)
+		_append_window_piece(streams, Vector3(0, 1.32, half_d), PI, 0.84, 0.80, wall_thick, true, true)
 
-	_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 8, wall_thick, nov_overhang, win_ap)
-	_append_window_piece(streams, Vector3(-half_w, 1.32, 0), deg_to_rad(-90.0), 0.84, 0.80, wall_thick, true, true)
+		_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 8, wall_thick, nov_overhang, win_ap)
+		_append_window_piece(streams, Vector3(-half_w, 1.32, 0), deg_to_rad(-90.0), 0.84, 0.80, wall_thick, true, true)
 
-	_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 8, wall_thick, nov_overhang, win_ap)
-	_append_window_piece(streams, Vector3(half_w, 1.32, 0), deg_to_rad(90.0), 0.84, 0.80, wall_thick, true, true)
+		_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 8, wall_thick, nov_overhang, win_ap)
+		_append_window_piece(streams, Vector3(half_w, 1.32, 0), deg_to_rad(90.0), 0.84, 0.80, wall_thick, true, true)
 
 	stage.add_child(_commit_piece_streams(streams, "WallsStageCompoundMesh"))
 
@@ -935,45 +1192,48 @@ static func assemble_cabin_stage_walls(width: float = 5.0, depth: float = 5.0) -
 	_add_box_collider(stage, Vector3(front_side_w, wall_h, wall_thick), Vector3(right_front_x, wall_h * 0.5, -half_d))
 	return stage
 
-## Assembles Cabin Stage 3: Stepped Gables, Exposed Rafters, Ridge Beam & Sod Turf Roof
+## Assembles Cabin Stage 3: Stepped Gables, Exposed Rafters, Ridge Beam & Sod Turf Roof (from Blender .glb modules)
 static func assemble_cabin_stage_roof(width: float = 5.0, depth: float = 5.0) -> StaticBody3D:
 	var stage := StaticBody3D.new()
 	stage.name = "CabinStage_Roof_%d" % (randi() % 9999)
 	stage.add_to_group("building")
 	stage.add_to_group("shelter")
+	stage.add_to_group("laftehytte_stage")
 
 	var streams: Dictionary = {}
 	var wall_h: float = 2.28
 	var ridge_h: float = 3.68
 	var gable_h: float = ridge_h - wall_h
 	var half_d := depth * 0.5
-	var st_wood := _get_stream(streams, "wood_spruce")
 
-	for gable_z in [-half_d, half_d]:
-		var gable_steps: int = 6
-		for g in range(gable_steps):
-			var frac: float = float(g + 0.5) / float(gable_steps)
-			var cur_w: float = (width + 0.48) * (1.0 - frac * 0.88)
-			var gy: float = wall_h + (g + 0.5) * (gable_h / float(gable_steps))
-			_append_box_piece(st_wood, Vector3(cur_w, (gable_h / float(gable_steps)) * 0.92, 0.32), Vector3(0, gy, gable_z))
+	if not _append_laftehytte_roof_modules(streams, width, depth, wall_h, gable_h, true):
+		var st_wood := _get_stream(streams, "wood_spruce")
+		for gable_z in [-half_d, half_d]:
+			var gable_steps: int = 6
+			for g in range(gable_steps):
+				var frac: float = float(g + 0.5) / float(gable_steps)
+				var cur_w: float = (width + 0.48) * (1.0 - frac * 0.88)
+				var gy: float = wall_h + (g + 0.5) * (gable_h / float(gable_steps))
+				_append_box_piece(st_wood, Vector3(cur_w, (gable_h / float(gable_steps)) * 0.92, 0.32), Vector3(0, gy, gable_z))
+		_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
 
-	_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
 	stage.add_child(_commit_piece_streams(streams, "RoofStageCompoundMesh"))
 	return stage
 
-## Assembles Cabin Stage 4: Central Hearth (Åre) & Sleeping Bench
+## Assembles Cabin Stage 4: Central Hearth (Åre) & Sleeping Bench (from Blender .glb modules)
 static func assemble_cabin_stage_hearth(width: float = 5.0, depth: float = 5.0) -> StaticBody3D:
 	var stage := StaticBody3D.new()
 	stage.name = "CabinStage_Hearth_%d" % (randi() % 9999)
 	stage.add_to_group("hearth")
+	stage.add_to_group("laftehytte_stage")
 
 	var half_w := width * 0.5
 	var streams: Dictionary = {}
-	var st_wood := _get_stream(streams, "wood_spruce")
-	var st_stone := _get_stream(streams, "stone_foundation")
-
-	_append_box_piece(st_stone, Vector3(1.3, 0.22, 1.3), Vector3(0, 0.14, 0.2))
-	_append_box_piece(st_wood, Vector3(0.75, 0.4, depth * 0.6), Vector3(half_w - 0.55, 0.26, 0.2))
+	if not _append_laftehytte_interior_modules(streams, width, depth, false):
+		var st_wood := _get_stream(streams, "wood_spruce")
+		var st_stone := _get_stream(streams, "stone_foundation")
+		_append_box_piece(st_stone, Vector3(1.3, 0.22, 1.3), Vector3(0, 0.14, 0.2))
+		_append_box_piece(st_wood, Vector3(0.75, 0.4, depth * 0.6), Vector3(half_w - 0.55, 0.26, 0.2))
 	stage.add_child(_commit_piece_streams(streams, "HearthBenchCompoundMesh"))
 
 	var hearth := Node3D.new()
@@ -984,7 +1244,7 @@ static func assemble_cabin_stage_hearth(width: float = 5.0, depth: float = 5.0) 
 
 	var embers := MeshInstance3D.new()
 	var emb_box := BoxMesh.new()
-	emb_box.size = Vector3(0.8, 0.14, 0.8)
+	emb_box.size = Vector3(0.76, 0.12, 0.76)
 	embers.mesh = emb_box
 	var mat_fire := StandardMaterial3D.new()
 	mat_fire.albedo_color = Color(1.0, 0.45, 0.12)
@@ -992,7 +1252,7 @@ static func assemble_cabin_stage_hearth(width: float = 5.0, depth: float = 5.0) 
 	mat_fire.emission = Color(1.0, 0.55, 0.15)
 	mat_fire.emission_energy_multiplier = 2.8
 	embers.material_override = mat_fire
-	embers.position = Vector3(0, 0.14, 0)
+	embers.position = Vector3(0, 0.06, 0)
 	hearth.add_child(embers)
 
 	var fire_light := OmniLight3D.new()
@@ -1006,7 +1266,7 @@ static func assemble_cabin_stage_hearth(width: float = 5.0, depth: float = 5.0) 
 
 	return stage
 
-## Creates a transparent 3D architectural ghost preview of the complete cabin
+## Creates a transparent 3D architectural ghost preview of the complete cabin from Blender .glb modules
 static func create_cabin_ghost_preview(width: float = 5.0, depth: float = 5.0, ghost_mat: Material = null) -> Node3D:
 	var preview := Node3D.new()
 	preview.name = "CabinGhostPreview"
@@ -1021,13 +1281,16 @@ static func create_cabin_ghost_preview(width: float = 5.0, depth: float = 5.0, g
 	var door_w: float = 1.12
 	var door_h: float = 1.95
 
-	_append_foundation_pieces(streams, width, depth, 0.20)
-	var front_ap := [{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}]
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 6, wall_thick, 0.28, front_ap)
-	_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 6, wall_thick, 0.28, [])
-	_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 6, wall_thick, 0.28, [])
-	_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 6, wall_thick, 0.28, [])
-	_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
+	if not _append_laftehytte_foundation_modules(streams, width, depth, 0.20):
+		_append_foundation_pieces(streams, width, depth, 0.20)
+	if not _append_laftehytte_wall_modules(streams, width, depth, 0.0, wall_h, true, true, true):
+		var front_ap := [{"x": 0.0, "y_min": 0.0, "y_max": door_h, "w": door_w}]
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, -half_d), width, wall_h, 0.0, 6, wall_thick, 0.28, front_ap)
+		_append_lafteverk_wall_courses(streams, Vector3(0, 0, half_d), width, wall_h, PI, 6, wall_thick, 0.28, [])
+		_append_lafteverk_wall_courses(streams, Vector3(-half_w, 0, 0), depth, wall_h, deg_to_rad(-90.0), 6, wall_thick, 0.28, [])
+		_append_lafteverk_wall_courses(streams, Vector3(half_w, 0, 0), depth, wall_h, deg_to_rad(90.0), 6, wall_thick, 0.28, [])
+	if not _append_laftehytte_roof_modules(streams, width, depth, wall_h, gable_h, true):
+		_append_roof_assembly(streams, width, depth, wall_h, gable_h, "sod_roof", true, true, false)
 
 	var mi := _commit_piece_streams(streams, "GhostCabinCompoundMesh")
 	preview.add_child(mi)

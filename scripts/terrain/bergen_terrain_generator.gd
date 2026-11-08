@@ -228,6 +228,30 @@ func _compute_settlement_plains() -> void:
 			"is_farm": true
 		})
 
+	# 3. Outlying Pioneer & Coastal Laftehytte Cabins (Assembled piece-by-piece from Blender .glb modules)
+	var cabin_zones := [
+		{"name": "Settler_Starter_Laftehytte", "x": 135.0, "z": 141.0, "yaw_deg": 115.0, "w": 5.0, "d": 5.4},
+		{"name": "Sandviken_Fisker_Laftehytte", "x": 86.0, "z": -65.0, "yaw_deg": 90.0, "w": 4.8, "d": 5.2},
+		{"name": "Floyen_Skogshytte_Laftehytte", "x": 168.0, "z": 62.0, "yaw_deg": 180.0, "w": 5.2, "d": 5.8},
+	]
+	for c_zone in cabin_zones:
+		var cx: float = c_zone["x"]
+		var cz: float = c_zone["z"]
+		var cy := clampf(_sample_natural_valley_height(cx, cz), bryggen_shelf_height + 0.5, 18.0)
+		_settlement_pads.append({
+			"name": c_zone["name"],
+			"x": cx,
+			"z": cz,
+			"target_y": cy,
+			"inner_radius": 8.0,
+			"outer_radius": 15.0,
+			"is_farm": false,
+			"is_laftehytte_site": true,
+			"yaw_deg": c_zone["yaw_deg"],
+			"cabin_w": c_zone["w"],
+			"cabin_d": c_zone["d"],
+		})
+
 ## Searches a valley neighborhood for the coordinate with minimal slope and height variance
 func _find_flattest_valley_spot(center_x: float, center_z: float, search_radius: float, footprint_r: float) -> Vector2:
 	var best_pt := Vector2(center_x, center_z)
@@ -601,16 +625,34 @@ func _generate_farmsteads() -> void:
 			child.free()
 
 	var farm_id := 1
+	var cabin_idx := 0
 	for pad in _settlement_pads:
-		if not pad.get("is_farm", false):
-			continue
-		var fx: float = pad["x"]
-		var fz: float = pad["z"]
-		var fy: float = sample_height(fx, fz)
+		if pad.get("is_farm", false):
+			var fx: float = pad["x"]
+			var fz: float = pad["z"]
+			var fy: float = sample_height(fx, fz)
 
-		var farm_node := FarmsteadGenerator.create_farmstead(farm_id, Vector3(fx, fy, fz), pad["name"], self)
-		farmsteads_container.add_child(farm_node)
-		farm_id += 1
+			var farm_node := FarmsteadGenerator.create_farmstead(farm_id, Vector3(fx, fy, fz), pad["name"], self)
+			farmsteads_container.add_child(farm_node)
+			farm_id += 1
+		elif pad.get("is_laftehytte_site", false):
+			var cx: float = pad["x"]
+			var cz: float = pad["z"]
+			var cy: float = sample_height(cx, cz)
+			var cw: float = pad.get("cabin_w", 5.0)
+			var cd: float = pad.get("cabin_d", 5.4)
+			var c_spec := {
+				"name": pad["name"],
+				"back_window": true,
+				"left_window": (cabin_idx % 2 == 0),
+				"right_window": true,
+				"dual_benches": (cw >= 5.0),
+			}
+			var cabin_node := BuildingAssembler.assemble_log_cabin(cw, cd, c_spec)
+			cabin_node.position = Vector3(cx, cy, cz)
+			cabin_node.rotation.y = deg_to_rad(float(pad.get("yaw_deg", 0.0)))
+			farmsteads_container.add_child(cabin_node)
+			cabin_idx += 1
 
 func _scatter_wildlife() -> void:
 	var wildlife_container := get_node_or_null("Wildlife") as Node3D

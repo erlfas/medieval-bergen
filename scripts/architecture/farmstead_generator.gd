@@ -46,10 +46,19 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	mat_soil.roughness = 0.98
 
 	# -------------------------------------------------------------------------
-	# 1. Main Timber Farmhouse (Piece-Built Årestue with Windows, Shutters & Hearth)
+	# 1. Main Timber Farmhouse (Piece-Built Blender Laftehytte Årestue with Windows, Shutters & Hearth)
 	# -------------------------------------------------------------------------
 	var farmhouse_pos := _place_on_valley_plain(origin, Vector2(-3.5, -6.5), terrain_generator)
-	var farmhouse := BuildingAssembler.assemble_log_cabin(5.4, 6.0)
+	var fw := 5.2 + float(farm_id % 3) * 0.3
+	var fd := 5.8 + float((farm_id + 1) % 3) * 0.3
+	var farm_spec := {
+		"name": "TimberFarmhouse_Arestue_%d" % farm_id,
+		"back_window": true,
+		"left_window": true,
+		"right_window": (farm_id % 2 == 1),
+		"dual_benches": true,
+	}
+	var farmhouse := BuildingAssembler.assemble_log_cabin(fw, fd, farm_spec)
 	farmhouse.name = "TimberFarmhouse_Arestue"
 	farmhouse.position = farmhouse_pos
 	farm_root.add_child(farmhouse)
@@ -65,13 +74,14 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 	farm_root.add_child(barn)
 
 	# -------------------------------------------------------------------------
-	# 3. Elevated Piece-Built Timber Stabbur (Storehouse on Stilts)
+	# 3. Elevated Piece-Built Timber Stabbur (Storehouse on Stilts using Blender Laftehytte modules)
 	# -------------------------------------------------------------------------
 	var stabbur_pos := _place_on_valley_plain(origin, Vector2(8.8, -5.0), terrain_generator)
 	var stabbur := _assemble_stabbur(4.0, 4.5, mat_wood, mat_wood_dark, mat_stone, mat_sod)
 	stabbur.name = "TimberStorehouse_Stabbur"
 	stabbur.position = stabbur_pos
 	stabbur.add_to_group("shelter")
+	stabbur.add_to_group("laftehytte")
 	farm_root.add_child(stabbur)
 
 	# -------------------------------------------------------------------------
@@ -143,7 +153,7 @@ static func create_farmstead(farm_id: int, origin: Vector3, farm_name: String, t
 
 	return farm_root
 
-## Piece-by-Piece Traditional Norwegian Stabbur (Elevated Storehouse on Carved Stilts)
+## Piece-by-Piece Traditional Norwegian Stabbur (Elevated Lafteverk Storehouse on Carved Stilts)
 static func _assemble_stabbur(w: float, d: float, _mat_wood: Material, _mat_wood_dark: Material, _mat_stone: Material, _mat_sod: Material) -> StaticBody3D:
 	var stabbur := StaticBody3D.new()
 	stabbur.add_to_group("building")
@@ -160,7 +170,7 @@ static func _assemble_stabbur(w: float, d: float, _mat_wood: Material, _mat_wood
 	var half_d: float = d * 0.5
 	var base_y: float = stilt_h + 0.24
 
-	# 1. 4 Carved Wooden Pillars (Stabbestolper) + Flat Stone Footings + Rodent-Guard Caps (Stabbesteiner)
+	# 1. 4 Carved Wooden Pillars (Stabbestolper) + Blender Stone Footing Piers + Rodent-Guard Caps (Stabbesteiner)
 	var pillar_coords := [
 		Vector3(-half_w + 0.32, 0, -half_d + 0.32),
 		Vector3(half_w - 0.32, 0, -half_d + 0.32),
@@ -168,42 +178,43 @@ static func _assemble_stabbur(w: float, d: float, _mat_wood: Material, _mat_wood
 		Vector3(half_w - 0.32, 0, half_d - 0.32)
 	]
 	for pos in pillar_coords:
-		BuildingAssembler._append_box_piece(st_stone, Vector3(0.56, 0.36, 0.56), pos + Vector3(0, -0.12, 0))
+		if not BuildingAssembler._append_blender_module(streams, "foundation_pier", BuildingAssembler._make_module_transform(pos, 0.0, Vector3(0.88, 0.65, 0.88))):
+			BuildingAssembler._append_box_piece(st_stone, Vector3(0.56, 0.36, 0.56), pos + Vector3(0, -0.12, 0))
 		BuildingAssembler._append_cyl_piece(st_dark, 0.16, 0.23, stilt_h, pos + Vector3(0, stilt_h * 0.5, 0))
 		BuildingAssembler._append_cyl_piece(st_stone, 0.35, 0.25, 0.14, pos + Vector3(0, stilt_h + 0.07, 0))
 
-	# 2. Heavy Cross-Sill Beams & Planked Storehouse Deck
+	# 2. Heavy Cross-Sill Beams & Blender Planked Storehouse Deck
 	BuildingAssembler._append_box_piece(st_dark, Vector3(w + 0.26, 0.18, 0.24), Vector3(0, stilt_h + 0.16, -half_d + 0.32))
 	BuildingAssembler._append_box_piece(st_dark, Vector3(w + 0.26, 0.18, 0.24), Vector3(0, stilt_h + 0.16, half_d - 0.32))
-	BuildingAssembler._append_box_piece(st_wood, Vector3(w + 0.16, 0.12, d + 0.24), Vector3(0, base_y - 0.04, 0))
+	if not BuildingAssembler._append_blender_module(streams, "floor_plank_bay", BuildingAssembler._make_module_transform(Vector3(0, base_y - 0.08, 0), 0.0, Vector3((w + 0.2) / 4.0, 1.0, (d + 0.2) / 4.0))):
+		BuildingAssembler._append_box_piece(st_wood, Vector3(w + 0.16, 0.12, d + 0.24), Vector3(0, base_y - 0.04, 0))
 
-	# 3. 6-Course Notched Lafteverk Log Walls + Upper Door Piece + Side Ventilation Glugger
-	var door_ap := [{"x": 0.0, "y_min": 0.0, "y_max": 1.56, "w": 0.94}]
-	BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, base_y, -half_d), w, wall_h, 0.0, 6, 0.28, 0.26, door_ap)
-	BuildingAssembler._append_door_piece(streams, Vector3(0, base_y, -half_d), 0.0, 0.94, 1.56, 0.28, false)
+	# 3. Elevated Notched Lafteverk Log Walls & Portal Door (from Blender .glb modules)
+	if not BuildingAssembler._append_laftehytte_wall_modules(streams, w, d, base_y, wall_h, false, false, false):
+		var door_ap := [{"x": 0.0, "y_min": 0.0, "y_max": 1.56, "w": 0.94}]
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, base_y, -half_d), w, wall_h, 0.0, 6, 0.28, 0.26, door_ap)
+		BuildingAssembler._append_door_piece(streams, Vector3(0, base_y, -half_d), 0.0, 0.94, 1.56, 0.28, false)
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, base_y, half_d), w, wall_h, PI, 6, 0.28, 0.26, [])
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(-half_w, base_y, 0), d, wall_h, deg_to_rad(-90.0), 6, 0.28, 0.26, [])
+		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(half_w, base_y, 0), d, wall_h, deg_to_rad(90.0), 6, 0.28, 0.26, [])
 
-	BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, base_y, half_d), w, wall_h, PI, 6, 0.28, 0.26, [])
-	BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(-half_w, base_y, 0), d, wall_h, deg_to_rad(-90.0), 6, 0.28, 0.26, [])
-	BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(half_w, base_y, 0), d, wall_h, deg_to_rad(90.0), 6, 0.28, 0.26, [])
-
-	# 4. Stepped Gable Logs
-	for gz in [-half_d, half_d]:
-		var g_steps := 4
-		for g in range(g_steps):
-			var frac := (float(g) + 0.5) / float(g_steps)
-			var cw := (w + 0.40) * (1.0 - frac * 0.86)
-			var gy := base_y + wall_h + (float(g) + 0.5) * (gable_h / float(g_steps))
-			BuildingAssembler._append_box_piece(st_wood, Vector3(cw, (gable_h / float(g_steps)) * 0.92, 0.28), Vector3(0, gy, gz))
-
-	# 5. Walkable Timber Steps (Trapp) with Stringers & Treads
+	# 4. Walkable Timber Steps (Trapp) with Stringers & Treads
 	var step_count := 4
 	for s in range(step_count):
 		var sy: float = (float(s) + 0.5) * (stilt_h / float(step_count))
 		var sz: float = -half_d - 0.28 - float(step_count - 1 - s) * 0.32
 		BuildingAssembler._append_box_piece(st_dark, Vector3(1.12, 0.14, 0.34), Vector3(0, sy, sz))
 
-	# 6. Exposed Rafters, Bargeboards, Birch Bark & Sod Turf Roof
-	BuildingAssembler._append_roof_assembly(streams, w, d, base_y + wall_h, gable_h, "sod_roof", true, false, false)
+	# 5. Gables, Exposed Rafters, Bargeboards, Birch Bark & Sod Turf Roof (from Blender .glb modules)
+	if not BuildingAssembler._append_laftehytte_roof_modules(streams, w, d, base_y + wall_h, gable_h, false):
+		for gz in [-half_d, half_d]:
+			var g_steps := 4
+			for g in range(g_steps):
+				var frac := (float(g) + 0.5) / float(g_steps)
+				var cw := (w + 0.40) * (1.0 - frac * 0.86)
+				var gy := base_y + wall_h + (float(g) + 0.5) * (gable_h / float(g_steps))
+				BuildingAssembler._append_box_piece(st_wood, Vector3(cw, (gable_h / float(g_steps)) * 0.92, 0.28), Vector3(0, gy, gz))
+		BuildingAssembler._append_roof_assembly(streams, w, d, base_y + wall_h, gable_h, "sod_roof", true, false, false)
 
 	stabbur.add_child(BuildingAssembler._commit_piece_streams(streams, "StabburPieceAssemblyMesh"))
 

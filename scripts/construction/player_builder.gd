@@ -52,6 +52,7 @@ func _init_catalog() -> void:
 	r_c_fund.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_c_fund.resource_costs = { "stone": 4, "timber_log": 2 }
 	r_c_fund.dimensions = Vector3(5.0, 0.4, 5.0)
+	r_c_fund.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_1_foundation.glb")
 	catalog.append(r_c_fund)
 
 	# 3. Cabin Stage 2: Lafteverk Timber Walls (Veggløft)
@@ -61,6 +62,7 @@ func _init_catalog() -> void:
 	r_c_walls.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_c_walls.resource_costs = { "timber_log": 4 }
 	r_c_walls.dimensions = Vector3(5.0, 2.2, 5.0)
+	r_c_walls.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_2_walls.glb")
 	catalog.append(r_c_walls)
 
 	# 4. Cabin Stage 3: Gables, Ridge & Sod Roof (Torvtak)
@@ -71,6 +73,7 @@ func _init_catalog() -> void:
 	r_c_roof.resource_costs = { "timber_log": 2, "birch_bark": 4, "turf": 4 }
 	r_c_roof.dimensions = Vector3(5.0, 1.4, 5.0)
 	r_c_roof.provides_shelter = true
+	r_c_roof.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_3_roof.glb")
 	catalog.append(r_c_roof)
 
 	# 5. Cabin Stage 4: Central Stone Hearth & Bench (Åre Ildsted)
@@ -81,45 +84,80 @@ func _init_catalog() -> void:
 	r_c_hearth.resource_costs = { "stone": 4, "firewood": 2 }
 	r_c_hearth.dimensions = Vector3(2.0, 0.6, 2.0)
 	r_c_hearth.is_hearth = true
+	r_c_hearth.custom_scene = load("res://assets/modular_pieces/laftehytte/stage_4_hearth.glb")
 	catalog.append(r_c_hearth)
 
-	# 6. Farmhouse Stone Footing (Modular Single Piece)
+	# 6. Farmhouse Stone Footing & Mudsill (Modular Single Piece)
 	var r_stone_footing := BuildingPieceRecipe.new()
 	r_stone_footing.piece_id = "farm_stone_footing"
-	r_stone_footing.piece_name = "Farmhouse Stone Sill (Grunnmur)"
+	r_stone_footing.piece_name = "Farmhouse Stone Sill & Plinth (Grunnmur)"
 	r_stone_footing.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_stone_footing.resource_costs = { "stone": 4 }
 	r_stone_footing.dimensions = Vector3(4.0, 0.4, 0.5)
+	r_stone_footing.custom_scene = load("res://assets/modular_pieces/laftehytte/foundation_plinth_4m.glb")
 	catalog.append(r_stone_footing)
 
-	# 7. Farmhouse Lafteverk Log Wall Course with Window & Shutters
+	# 7. Hand-Hewn Floor Plank Bay (Gulvbord)
+	var r_floor_bay := BuildingPieceRecipe.new()
+	r_floor_bay.piece_id = "floor_plank_bay"
+	r_floor_bay.piece_name = "Hewn Spruce Plank Floor Bay (Gulvbord)"
+	r_floor_bay.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_floor_bay.resource_costs = { "timber_log": 2 }
+	r_floor_bay.dimensions = Vector3(4.0, 0.2, 4.0)
+	r_floor_bay.custom_scene = load("res://assets/modular_pieces/laftehytte/floor_plank_bay.glb")
+	catalog.append(r_floor_bay)
+
+	# 8. Solid 8-Course Notched Log Wall (Lafteverk Vegg)
+	var r_solid_wall := BuildingPieceRecipe.new()
+	r_solid_wall.piece_id = "laft_wall_solid"
+	r_solid_wall.piece_name = "Solid Notched Log Wall (Lafteverk Vegg)"
+	r_solid_wall.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_solid_wall.resource_costs = { "timber_log": 2 }
+	r_solid_wall.dimensions = Vector3(4.0, 2.28, 0.35)
+	r_solid_wall.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_solid.glb")
+	catalog.append(r_solid_wall)
+
+	# 9. Farmhouse Lafteverk Log Wall Course with Window & Shutters
 	var r_lafte_wall := BuildingPieceRecipe.new()
 	r_lafte_wall.piece_id = "farm_lafte_wall"
 	r_lafte_wall.piece_name = "Lafteverk Log Wall & Shuttered Window"
 	r_lafte_wall.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_lafte_wall.resource_costs = { "timber_log": 2 }
-	r_lafte_wall.dimensions = Vector3(4.0, 2.2, 0.35)
+	r_lafte_wall.dimensions = Vector3(4.0, 2.28, 0.35)
+	r_lafte_wall.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_window.glb")
 	catalog.append(r_lafte_wall)
 
-	# 8. Framed Timber Doorway Wall Piece (Jambs, Lintel, Planked Door & Iron Hinges)
+	# 10. Framed Timber Doorway Wall Piece (Jambs, Lintel, Planked Door & Iron Hinges)
 	var r_door_piece := BuildingPieceRecipe.new()
 	r_door_piece.piece_id = "modular_doorway_wall"
 	r_door_piece.piece_name = "Timber Doorway Piece (Jambs, Lintel & Hinged Door)"
 	r_door_piece.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
 	r_door_piece.resource_costs = { "timber_log": 2, "stone": 1 }
-	r_door_piece.dimensions = Vector3(4.0, 2.2, 0.35)
+	r_door_piece.dimensions = Vector3(4.0, 2.28, 0.35)
+	r_door_piece.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_wall_doorway.glb")
 	catalog.append(r_door_piece)
 
-	# 9. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
+	# 11. Triangular Notched Log Gable (Gavlvegg)
+	var r_gable := BuildingPieceRecipe.new()
+	r_gable.piece_id = "laft_gable_triangle"
+	r_gable.piece_name = "Triangular Notched Log Gable (Gavlvegg)"
+	r_gable.category = BuildingPieceRecipe.BuildingCategory.ROOFING
+	r_gable.resource_costs = { "timber_log": 2 }
+	r_gable.dimensions = Vector3(5.0, 1.4, 0.35)
+	r_gable.custom_scene = load("res://assets/modular_pieces/laftehytte/laft_gable_triangle.glb")
+	catalog.append(r_gable)
+
+	# 12. Stabbur Stone Pillar (Mushroom Pillar to stop wolves/mice)
 	var r_stabbur_pillar := BuildingPieceRecipe.new()
 	r_stabbur_pillar.piece_id = "stabbur_stone_pillar"
 	r_stabbur_pillar.piece_name = "Stabbur Pillar (Raised Slate Post & Cap)"
 	r_stabbur_pillar.category = BuildingPieceRecipe.BuildingCategory.STOREHOUSE
 	r_stabbur_pillar.resource_costs = { "stone": 2, "timber_log": 1 }
 	r_stabbur_pillar.dimensions = Vector3(0.6, 1.2, 0.6)
+	r_stabbur_pillar.custom_scene = load("res://assets/modular_pieces/laftehytte/foundation_pier.glb")
 	catalog.append(r_stabbur_pillar)
 
-	# 10. Barn Grindverk Post-and-Beam Timber Frame (Posts, Tie Beam & Wind Braces)
+	# 13. Barn Grindverk Post-and-Beam Timber Frame (Posts, Tie Beam & Wind Braces)
 	var r_barn_frame := BuildingPieceRecipe.new()
 	r_barn_frame.piece_id = "barn_grindverk_post"
 	r_barn_frame.piece_name = "Grindverk Lumber Frame (Staves, Tie Beam & Braces)"
@@ -128,14 +166,15 @@ func _init_catalog() -> void:
 	r_barn_frame.dimensions = Vector3(4.0, 2.6, 0.35)
 	catalog.append(r_barn_frame)
 
-	# 11. Raftered Birch Bark & Sod Roof Section (Torvtak + Sperrer)
+	# 14. Raftered Birch Bark & Sod Roof Section (Torvtak + Sperrer)
 	var r_sod_roof := BuildingPieceRecipe.new()
 	r_sod_roof.piece_id = "roof_sod_turf"
 	r_sod_roof.piece_name = "Raftered Sod Roof Section (Rafters, Birch Bark & Turf)"
 	r_sod_roof.category = BuildingPieceRecipe.BuildingCategory.ROOFING
 	r_sod_roof.resource_costs = { "timber_log": 1, "birch_bark": 2, "turf": 2 }
-	r_sod_roof.dimensions = Vector3(4.0, 1.2, 3.0)
+	r_sod_roof.dimensions = Vector3(5.0, 1.4, 5.0)
 	r_sod_roof.provides_shelter = true
+	r_sod_roof.custom_scene = load("res://assets/modular_pieces/laftehytte/torvtak_roof_slope.glb")
 	catalog.append(r_sod_roof)
 
 func _init_ghost_materials() -> void:
@@ -224,10 +263,10 @@ func _update_ghost_position_and_validity() -> void:
 	var snapped_z := snappedf(hit_pos.z, 0.5)
 
 	var current_recipe: BuildingPieceRecipe = catalog[selected_recipe_index]
-	var is_cabin_piece := current_recipe.piece_id.begins_with("cabin")
+	# All Blender-authored modules have their pivot at ground/base level (Y=0)
+	var is_ground_origin := current_recipe.piece_id != "barn_grindverk_post"
 
-	if is_cabin_piece:
-		# Cabin origin is at floor level (Y=0)
+	if is_ground_origin:
 		ghost_root.global_position = Vector3(snapped_x, snapped_y, snapped_z)
 	else:
 		var y_center := snapped_y + current_recipe.dimensions.y * 0.5
@@ -290,7 +329,7 @@ func _try_place_current_piece() -> void:
 	piece_placed.emit(current_recipe, placed_piece.global_position)
 
 func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
-	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
+	# 1. Complete Norwegian Log Cabin & 4 Construction Stages (assembled with walk-in collisions & hearth)
 	if recipe.piece_id == "cabin_laftehytte":
 		return BuildingAssembler.assemble_log_cabin(recipe.dimensions.x, recipe.dimensions.z)
 	elif recipe.piece_id == "cabin_stage_foundation":
@@ -302,37 +341,29 @@ func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
 	elif recipe.piece_id == "cabin_stage_hearth":
 		return BuildingAssembler.assemble_cabin_stage_hearth(recipe.dimensions.x, recipe.dimensions.z)
 
-	# 2. If user provided a 3D model (.gltf, .obj, .tscn), instantiate it directly!
-	if recipe.custom_scene != null:
-		var custom_instance := recipe.custom_scene.instantiate() as Node3D
-		if custom_instance:
-			custom_instance.name = "%s_%d" % [recipe.piece_id, randi() % 9999]
-			return custom_instance
-
-	# 3. Procedural geometric piece
+	# 2. Modular piece with Blender .glb mesh + StaticBody3D physics collision
 	var piece_node := StaticBody3D.new()
 	piece_node.name = "%s_%d" % [recipe.piece_id, randi() % 9999]
+	piece_node.add_to_group("building")
+	if recipe.provides_shelter:
+		piece_node.add_to_group("shelter")
 
-	# Visual Mesh
 	var mi := MeshInstance3D.new()
 	mi.mesh = _generate_placeholder_mesh(recipe)
-
-	var mat := StandardMaterial3D.new()
-	if recipe.category == BuildingPieceRecipe.BuildingCategory.ROOFING:
-		mat.albedo_color = Color(0.28, 0.42, 0.22) # Green turf roof
-	elif recipe.piece_id.contains("stone"):
-		mat.albedo_color = Color(0.5, 0.48, 0.45) # Slate / field stone
-	else:
-		mat.albedo_color = Color(0.42, 0.32, 0.22) # Pine / spruce timber
-	mi.material_override = mat
 	piece_node.add_child(mi)
 
-	# Collision Shape
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = recipe.dimensions
-	cs.shape = box
-	piece_node.add_child(cs)
+	# Collision Shape (walk-through opening for doorway piece, solid box for walls/floors)
+	if recipe.piece_id == "modular_doorway_wall":
+		var side_w := (recipe.dimensions.x - 1.12) * 0.5
+		BuildingAssembler._add_box_collider(piece_node, Vector3(side_w, recipe.dimensions.y, recipe.dimensions.z), Vector3(-recipe.dimensions.x * 0.5 + side_w * 0.5, recipe.dimensions.y * 0.5, 0.0))
+		BuildingAssembler._add_box_collider(piece_node, Vector3(side_w, recipe.dimensions.y, recipe.dimensions.z), Vector3(recipe.dimensions.x * 0.5 - side_w * 0.5, recipe.dimensions.y * 0.5, 0.0))
+	else:
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = recipe.dimensions
+		cs.shape = box
+		cs.position = Vector3(0.0, recipe.dimensions.y * 0.5, 0.0)
+		piece_node.add_child(cs)
 
 	return piece_node
 
@@ -351,49 +382,39 @@ func _update_ghost_mesh() -> void:
 		selected_piece_changed.emit(recipe)
 		return
 
-	# If custom 3D model has mesh children, extract mesh for preview
-	if recipe.custom_scene != null:
-		var temp_node := recipe.custom_scene.instantiate()
-		var mesh_found: Mesh = null
-		if temp_node is MeshInstance3D:
-			mesh_found = temp_node.mesh
-		else:
-			for child in temp_node.get_children():
-				if child is MeshInstance3D:
-					mesh_found = child.mesh
-					break
-		temp_node.queue_free()
-
-		if mesh_found:
-			ghost_mesh_instance.visible = true
-			ghost_mesh_instance.mesh = mesh_found
-			selected_piece_changed.emit(recipe)
-			return
-
-	# Fallback placeholder mesh
 	ghost_mesh_instance.visible = true
 	ghost_mesh_instance.mesh = _generate_placeholder_mesh(recipe)
 	selected_piece_changed.emit(recipe)
 
 func _generate_placeholder_mesh(recipe: BuildingPieceRecipe) -> Mesh:
+	var piece_to_module := {
+		"cabin_stage_foundation": "stage_1_foundation",
+		"cabin_stage_walls": "stage_2_walls",
+		"cabin_stage_roof": "stage_3_roof",
+		"cabin_stage_hearth": "stage_4_hearth",
+		"farm_stone_footing": "foundation_plinth_4m",
+		"floor_plank_bay": "floor_plank_bay",
+		"laft_wall_solid": "laft_wall_solid",
+		"farm_lafte_wall": "laft_wall_window",
+		"modular_doorway_wall": "laft_wall_doorway",
+		"laft_gable_triangle": "laft_gable_triangle",
+		"stabbur_stone_pillar": "foundation_pier",
+		"roof_sod_turf": "torvtak_roof_slope",
+	}
+
+	if piece_to_module.has(recipe.piece_id):
+		var mod_mesh := BuildingAssembler.get_laftehytte_module_mesh(piece_to_module[recipe.piece_id])
+		if mod_mesh != null:
+			return mod_mesh
+
 	var streams: Dictionary = {}
 	var w := recipe.dimensions.x
 	var h := recipe.dimensions.y
 	var d := recipe.dimensions.z
 
-	if recipe.piece_id == "farm_lafte_wall":
-		var win_ap := [{"x": 0.0, "y_min": 0.75, "y_max": 1.55, "w": 0.84}]
-		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, -h * 0.5, 0), w, h, 0.0, 7, d, 0.24, win_ap)
-		BuildingAssembler._append_window_piece(streams, Vector3(0, 1.15 - h * 0.5, 0), 0.0, 0.84, 0.80, d, true, true)
-	elif recipe.piece_id == "modular_doorway_wall":
-		var door_ap := [{"x": 0.0, "y_min": 0.0, "y_max": 1.92, "w": 1.10}]
-		BuildingAssembler._append_lafteverk_wall_courses(streams, Vector3(0, -h * 0.5, 0), w, h, 0.0, 7, d, 0.24, door_ap)
-		BuildingAssembler._append_door_piece(streams, Vector3(0, -h * 0.5, 0), 0.0, 1.10, 1.92, d, true)
-	elif recipe.piece_id == "barn_grindverk_post":
+	if recipe.piece_id == "barn_grindverk_post":
 		var wins: Array[int] = [1]
 		BuildingAssembler._append_grindverk_wall_face(streams, Vector3(0, -h * 0.5, 0), w, h, 0, 0.0, "wood_weathered", 2, -1, wins, false)
-	elif recipe.piece_id == "roof_sod_turf":
-		BuildingAssembler._append_roof_assembly(streams, w, d, -h * 0.4, h * 0.8, "sod_roof", true, false, false)
 
 	if not streams.is_empty():
 		var mi := BuildingAssembler._commit_piece_streams(streams, "PieceMesh")
