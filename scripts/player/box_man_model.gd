@@ -58,6 +58,24 @@ var sword_mesh: Node3D
 var stowed_sword_mesh: Node3D
 
 # Modular 3D Character Meshes
+var char_head_mesh: Node3D
+var char_torso_mesh: Node3D
+var char_belt_mesh: Node3D
+var char_sleeve_l_mesh: Node3D
+var char_sleeve_r_mesh: Node3D
+var char_hand_l_mesh: Node3D
+var char_hand_r_mesh: Node3D
+var char_leg_l_mesh: Node3D
+var char_leg_r_mesh: Node3D
+
+# Naked modular variants
+var char_torso_naked_mesh: Node3D
+var char_arm_l_naked_mesh: Node3D
+var char_arm_r_naked_mesh: Node3D
+var char_leg_l_naked_mesh: Node3D
+var char_leg_r_naked_mesh: Node3D
+
+# Compatibility aliases
 var body_mesh_instance: Node3D
 var cloths_mesh_instance: Node3D
 var helmet_mesh_instance: Node3D
@@ -167,6 +185,7 @@ func _build_box_man() -> void:
 	box_torso.size = Vector3(0.44, 0.60, 0.26)
 	torso_mesh.mesh = box_torso
 	torso_mesh.material_override = mat_tunic
+	torso_mesh.visible = false
 	torso_node.add_child(torso_mesh)
 
 	# Belt around waist
@@ -176,6 +195,7 @@ func _build_box_man() -> void:
 	belt_mesh.mesh = box_belt
 	belt_mesh.position = Vector3(0, -0.22, 0)
 	belt_mesh.material_override = mat_belt
+	belt_mesh.visible = false
 	torso_node.add_child(belt_mesh)
 
 	# Modular 3D Leather Belt & Pouch
@@ -233,6 +253,7 @@ func _build_box_man() -> void:
 	box_head.size = Vector3(0.28, 0.30, 0.28)
 	head_mesh.mesh = box_head
 	head_mesh.material_override = mat_skin
+	head_mesh.visible = false
 	head_node.add_child(head_mesh)
 
 	# Face indicator / Brow (Forward is -Z)
@@ -242,6 +263,7 @@ func _build_box_man() -> void:
 	face_mesh.mesh = box_face
 	face_mesh.position = Vector3(0, 0.03, -0.145)
 	face_mesh.material_override = mat_belt
+	face_mesh.visible = false
 	head_node.add_child(face_mesh)
 
 	# Medieval cowl / Hood top
@@ -251,6 +273,7 @@ func _build_box_man() -> void:
 	hood_mesh.mesh = box_hood
 	hood_mesh.position = Vector3(0, 0.16, 0)
 	hood_mesh.material_override = mat_tunic
+	hood_mesh.visible = false
 	head_node.add_child(hood_mesh)
 
 	# Modular 3D Iron Helmet
@@ -270,6 +293,7 @@ func _build_box_man() -> void:
 	l_arm_mesh.mesh = box_arm
 	l_arm_mesh.position = Vector3(0, -0.21, 0)
 	l_arm_mesh.material_override = mat_tunic
+	l_arm_mesh.visible = false
 	left_arm_pivot.add_child(l_arm_mesh)
 
 	var l_hand_mesh := MeshInstance3D.new()
@@ -278,6 +302,7 @@ func _build_box_man() -> void:
 	l_hand_mesh.mesh = box_hand
 	l_hand_mesh.position = Vector3(0, -0.45, 0)
 	l_hand_mesh.material_override = mat_skin
+	l_hand_mesh.visible = false
 	left_arm_pivot.add_child(l_hand_mesh)
 
 	# Pine-tar Torch in Left Hand (Slot 5)
@@ -298,12 +323,14 @@ func _build_box_man() -> void:
 	r_arm_mesh.mesh = box_arm
 	r_arm_mesh.position = Vector3(0, -0.21, 0)
 	r_arm_mesh.material_override = mat_tunic
+	r_arm_mesh.visible = false
 	right_arm_pivot.add_child(r_arm_mesh)
 
 	var r_hand_mesh := MeshInstance3D.new()
 	r_hand_mesh.mesh = box_hand
 	r_hand_mesh.position = Vector3(0, -0.45, 0)
 	r_hand_mesh.material_override = mat_skin
+	r_hand_mesh.visible = false
 	right_arm_pivot.add_child(r_hand_mesh)
 
 	# Woodcutter's Axe in Right Hand (Slot 1)
@@ -338,6 +365,7 @@ func _build_box_man() -> void:
 	l_leg_mesh.mesh = box_leg
 	l_leg_mesh.position = Vector3(0, -0.26, 0)
 	l_leg_mesh.material_override = mat_tunic
+	l_leg_mesh.visible = false
 	left_leg_pivot.add_child(l_leg_mesh)
 
 	var l_boot_mesh := MeshInstance3D.new()
@@ -346,6 +374,7 @@ func _build_box_man() -> void:
 	l_boot_mesh.mesh = box_boot
 	l_boot_mesh.position = Vector3(0, -0.58, -0.04)
 	l_boot_mesh.material_override = mat_boot
+	l_boot_mesh.visible = false
 	left_leg_pivot.add_child(l_boot_mesh)
 
 	# =========================================================================
@@ -360,12 +389,14 @@ func _build_box_man() -> void:
 	r_leg_mesh.mesh = box_leg
 	r_leg_mesh.position = Vector3(0, -0.26, 0)
 	r_leg_mesh.material_override = mat_tunic
+	r_leg_mesh.visible = false
 	right_leg_pivot.add_child(r_leg_mesh)
 
 	var r_boot_mesh := MeshInstance3D.new()
 	r_boot_mesh.mesh = box_boot
 	r_boot_mesh.position = Vector3(0, -0.58, -0.04)
 	r_boot_mesh.material_override = mat_boot
+	r_boot_mesh.visible = false
 	right_leg_pivot.add_child(r_boot_mesh)
 
 	# Modular 3D Body & Clothes meshes
@@ -801,7 +832,6 @@ func _build_character_helmet() -> void:
 	if helmet_scene:
 		helmet_mesh_instance = helmet_scene.instantiate()
 		helmet_mesh_instance.name = "CharacterHelmet"
-		helmet_mesh_instance.position = Vector3(0, 0.02, 0)
 		helmet_mesh_instance.visible = show_helmet
 		head_node.add_child(helmet_mesh_instance)
 
@@ -810,25 +840,106 @@ func _build_character_belt() -> void:
 	if belt_scene:
 		belt_mesh_instance = belt_scene.instantiate()
 		belt_mesh_instance.name = "CharacterBelt"
-		belt_mesh_instance.position = Vector3(0, -0.18, 0)
 		belt_mesh_instance.visible = show_belt
 		torso_node.add_child(belt_mesh_instance)
 
 func _build_modular_character_mesh() -> void:
-	var body_scene = load("res://assets/character/man_without_cloths.glb")
-	if body_scene:
-		body_mesh_instance = body_scene.instantiate()
-		body_mesh_instance.name = "CharacterBodyMesh"
-		body_mesh_instance.position = Vector3(0, 0, 0)
-		add_child(body_mesh_instance)
+	# 1. Head (man_without_cloths face, hair, beard) -> attached to head_node
+	var head_scene = load("res://assets/character/character_head.glb")
+	if head_scene:
+		char_head_mesh = head_scene.instantiate()
+		char_head_mesh.name = "CharacterHead"
+		head_node.add_child(char_head_mesh)
+		body_mesh_instance = char_head_mesh
 
-	var cloths_scene = load("res://assets/character/cloths.glb")
-	if cloths_scene:
-		cloths_mesh_instance = cloths_scene.instantiate()
-		cloths_mesh_instance.name = "CharacterClothsMesh"
-		cloths_mesh_instance.position = Vector3(0, 0, 0)
-		cloths_mesh_instance.visible = show_clothing
-		add_child(cloths_mesh_instance)
+	# 2. Torso (cloths tunic) -> attached to torso_node
+	var torso_c_scene = load("res://assets/character/character_torso.glb")
+	if torso_c_scene:
+		char_torso_mesh = torso_c_scene.instantiate()
+		char_torso_mesh.name = "CharacterTorsoCloths"
+		char_torso_mesh.visible = show_clothing
+		torso_node.add_child(char_torso_mesh)
+		cloths_mesh_instance = char_torso_mesh
+
+	# Naked Torso variant -> attached to torso_node
+	var torso_m_scene = load("res://assets/character/character_torso_naked.glb")
+	if torso_m_scene:
+		char_torso_naked_mesh = torso_m_scene.instantiate()
+		char_torso_naked_mesh.name = "CharacterTorsoNaked"
+		char_torso_naked_mesh.visible = not show_clothing
+		torso_node.add_child(char_torso_naked_mesh)
+
+	# 3. Left Arm: Sleeve (cloths) and Hand (man_without_cloths) -> attached to left_arm_pivot
+	var slv_l_scene = load("res://assets/character/character_sleeve_l.glb")
+	if slv_l_scene:
+		char_sleeve_l_mesh = slv_l_scene.instantiate()
+		char_sleeve_l_mesh.name = "CharacterSleeveLeft"
+		char_sleeve_l_mesh.visible = show_clothing
+		left_arm_pivot.add_child(char_sleeve_l_mesh)
+
+	var hnd_l_scene = load("res://assets/character/character_hand_l.glb")
+	if hnd_l_scene:
+		char_hand_l_mesh = hnd_l_scene.instantiate()
+		char_hand_l_mesh.name = "CharacterHandLeft"
+		left_arm_pivot.add_child(char_hand_l_mesh)
+
+	var arm_l_m_scene = load("res://assets/character/character_arm_l_naked.glb")
+	if arm_l_m_scene:
+		char_arm_l_naked_mesh = arm_l_m_scene.instantiate()
+		char_arm_l_naked_mesh.name = "CharacterArmLeftNaked"
+		char_arm_l_naked_mesh.visible = not show_clothing
+		left_arm_pivot.add_child(char_arm_l_naked_mesh)
+
+	# 4. Right Arm: Sleeve (cloths) and Hand (man_without_cloths) -> attached to right_arm_pivot
+	var slv_r_scene = load("res://assets/character/character_sleeve_r.glb")
+	if slv_r_scene:
+		char_sleeve_r_mesh = slv_r_scene.instantiate()
+		char_sleeve_r_mesh.name = "CharacterSleeveRight"
+		char_sleeve_r_mesh.visible = show_clothing
+		right_arm_pivot.add_child(char_sleeve_r_mesh)
+
+	var hnd_r_scene = load("res://assets/character/character_hand_r.glb")
+	if hnd_r_scene:
+		char_hand_r_mesh = hnd_r_scene.instantiate()
+		char_hand_r_mesh.name = "CharacterHandRight"
+		right_arm_pivot.add_child(char_hand_r_mesh)
+
+	var arm_r_m_scene = load("res://assets/character/character_arm_r_naked.glb")
+	if arm_r_m_scene:
+		char_arm_r_naked_mesh = arm_r_m_scene.instantiate()
+		char_arm_r_naked_mesh.name = "CharacterArmRightNaked"
+		char_arm_r_naked_mesh.visible = not show_clothing
+		right_arm_pivot.add_child(char_arm_r_naked_mesh)
+
+	# 5. Left Leg (cloths trousers & boot) -> attached to left_leg_pivot
+	var leg_l_c_scene = load("res://assets/character/character_leg_l.glb")
+	if leg_l_c_scene:
+		char_leg_l_mesh = leg_l_c_scene.instantiate()
+		char_leg_l_mesh.name = "CharacterLegLeft"
+		char_leg_l_mesh.visible = show_clothing
+		left_leg_pivot.add_child(char_leg_l_mesh)
+
+	var leg_l_m_scene = load("res://assets/character/character_leg_l_naked.glb")
+	if leg_l_m_scene:
+		char_leg_l_naked_mesh = leg_l_m_scene.instantiate()
+		char_leg_l_naked_mesh.name = "CharacterLegLeftNaked"
+		char_leg_l_naked_mesh.visible = not show_clothing
+		left_leg_pivot.add_child(char_leg_l_naked_mesh)
+
+	# 6. Right Leg (cloths trousers & boot) -> attached to right_leg_pivot
+	var leg_r_c_scene = load("res://assets/character/character_leg_r.glb")
+	if leg_r_c_scene:
+		char_leg_r_mesh = leg_r_c_scene.instantiate()
+		char_leg_r_mesh.name = "CharacterLegRight"
+		char_leg_r_mesh.visible = show_clothing
+		right_leg_pivot.add_child(char_leg_r_mesh)
+
+	var leg_r_m_scene = load("res://assets/character/character_leg_r_naked.glb")
+	if leg_r_m_scene:
+		char_leg_r_naked_mesh = leg_r_m_scene.instantiate()
+		char_leg_r_naked_mesh.name = "CharacterLegRightNaked"
+		char_leg_r_naked_mesh.visible = not show_clothing
+		right_leg_pivot.add_child(char_leg_r_naked_mesh)
 
 func _build_torch(mat_wood: Material) -> void:
 	torch_mesh = Node3D.new()
@@ -1328,8 +1439,17 @@ func trigger_sword_slash() -> void:
 ## Sets whether modular clothing is visible
 func set_clothing_visible(v: bool) -> void:
 	show_clothing = v
-	if cloths_mesh_instance:
-		cloths_mesh_instance.visible = v
+	if char_torso_mesh: char_torso_mesh.visible = v
+	if char_sleeve_l_mesh: char_sleeve_l_mesh.visible = v
+	if char_sleeve_r_mesh: char_sleeve_r_mesh.visible = v
+	if char_leg_l_mesh: char_leg_l_mesh.visible = v
+	if char_leg_r_mesh: char_leg_r_mesh.visible = v
+
+	if char_torso_naked_mesh: char_torso_naked_mesh.visible = not v
+	if char_arm_l_naked_mesh: char_arm_l_naked_mesh.visible = not v
+	if char_arm_r_naked_mesh: char_arm_r_naked_mesh.visible = not v
+	if char_leg_l_naked_mesh: char_leg_l_naked_mesh.visible = not v
+	if char_leg_r_naked_mesh: char_leg_r_naked_mesh.visible = not v
 
 ## Sets whether iron helmet is visible
 func set_helmet_visible(v: bool) -> void:

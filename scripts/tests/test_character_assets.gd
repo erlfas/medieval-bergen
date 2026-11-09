@@ -4,10 +4,23 @@ func _init() -> void:
 	print("=== Running Character Assets Verification Test ===")
 	
 	var models := {
-		"man_without_cloths": "res://assets/character/man_without_cloths.glb",
-		"cloths": "res://assets/character/cloths.glb",
+		"character_head": "res://assets/character/character_head.glb",
 		"character_helmet": "res://assets/character/character_helmet.glb",
 		"character_belt": "res://assets/character/character_belt.glb",
+		"character_torso": "res://assets/character/character_torso.glb",
+		"character_sleeve_l": "res://assets/character/character_sleeve_l.glb",
+		"character_sleeve_r": "res://assets/character/character_sleeve_r.glb",
+		"character_hand_l": "res://assets/character/character_hand_l.glb",
+		"character_hand_r": "res://assets/character/character_hand_r.glb",
+		"character_leg_l": "res://assets/character/character_leg_l.glb",
+		"character_leg_r": "res://assets/character/character_leg_r.glb",
+		"character_torso_naked": "res://assets/character/character_torso_naked.glb",
+		"character_arm_l_naked": "res://assets/character/character_arm_l_naked.glb",
+		"character_arm_r_naked": "res://assets/character/character_arm_r_naked.glb",
+		"character_leg_l_naked": "res://assets/character/character_leg_l_naked.glb",
+		"character_leg_r_naked": "res://assets/character/character_leg_r_naked.glb",
+		"man_without_cloths": "res://assets/character/man_without_cloths.glb",
+		"cloths": "res://assets/character/cloths.glb",
 		"sword": "res://assets/weapons/sword.glb",
 		"bow": "res://assets/weapons/bow.glb",
 		"arrow": "res://assets/weapons/arrow.glb"

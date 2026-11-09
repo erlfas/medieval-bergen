@@ -14,12 +14,18 @@ func _init() -> void:
 	root.add_child(model)
 	model._build_box_man()
 
-	# 1. Verify Modular 3D Meshes exist
-	assert(model.get("body_mesh_instance") != null, "Character body mesh should exist")
-	assert(model.get("cloths_mesh_instance") != null, "Character cloths mesh should exist")
+	# 1. Verify Modular 3D Meshes exist and are parented to proper bone pivots
+	assert(model.get("char_head_mesh") != null, "Character head mesh should exist")
+	assert(model.get("char_torso_mesh") != null, "Character torso mesh should exist")
+	assert(model.get("char_sleeve_l_mesh") != null, "Character left sleeve mesh should exist")
+	assert(model.get("char_sleeve_r_mesh") != null, "Character right sleeve mesh should exist")
+	assert(model.get("char_hand_l_mesh") != null, "Character left hand mesh should exist")
+	assert(model.get("char_hand_r_mesh") != null, "Character right hand mesh should exist")
+	assert(model.get("char_leg_l_mesh") != null, "Character left leg mesh should exist")
+	assert(model.get("char_leg_r_mesh") != null, "Character right leg mesh should exist")
 	assert(model.get("helmet_mesh_instance") != null, "Character helmet mesh should exist")
 	assert(model.get("belt_mesh_instance") != null, "Character belt mesh should exist")
-	print("✓ Base body, clothes, helmet, and belt modular instances created successfully!")
+	print("✓ Base body, clothes, helmet, and belt modular instances created on skeleton pivots successfully!")
 
 	# 2. Verify Bow and Arrow 3D models
 	var bow_mesh: Node3D = model.get("bow_mesh")
@@ -77,11 +83,13 @@ func _init() -> void:
 	arrow_proj.free()
 	print("✓ ArrowProjectile 3D model validated!")
 
-	# 7. Verify Clothing toggles
+	# 7. Verify Clothing toggles & Clothed vs Naked layer switching
 	model.set_clothing_visible(false)
-	assert(model.get("cloths_mesh_instance").visible == false, "Cloths should be toggleable off")
+	assert(model.get("char_torso_mesh").visible == false, "Cloths torso should be hidden when clothing is off")
+	assert(model.get("char_torso_naked_mesh").visible == true, "Naked torso should be visible when clothing is off")
 	model.set_clothing_visible(true)
-	assert(model.get("cloths_mesh_instance").visible == true, "Cloths should be toggleable on")
+	assert(model.get("char_torso_mesh").visible == true, "Cloths torso should be visible when clothing is on")
+	assert(model.get("char_torso_naked_mesh").visible == false, "Naked torso should be hidden when clothing is on")
 
 	model.set_helmet_visible(false)
 	assert(model.get("helmet_mesh_instance").visible == false, "Helmet should be toggleable off")
@@ -92,7 +100,14 @@ func _init() -> void:
 	assert(model.get("belt_mesh_instance").visible == false, "Belt should be toggleable off")
 	model.set_belt_visible(true)
 	assert(model.get("belt_mesh_instance").visible == true, "Belt should be toggleable on")
-	print("✓ Modular clothing, helmet, and belt visibility toggles validated!")
+	print("✓ Modular clothing, naked layer toggles, and armor visibility validated!")
+
+	# 8. Verify Greybox placeholder meshes are hidden
+	var torso_child_box = model.get("torso_node").get_child(0)
+	assert(torso_child_box.visible == false, "Procedural placeholder torso box mesh must be hidden")
+	var head_child_box = model.get("head_node").get_child(0)
+	assert(head_child_box.visible == false, "Procedural placeholder head box mesh must be hidden")
+	print("✓ Placeholder greybox meshes successfully hidden (no mutant greybox mixture)!")
 
 	# 8. Clean up
 	model.free()

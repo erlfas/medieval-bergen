@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
 Process, optimize, and normalize 3D character and weapon GLB models for Medieval Bergen 1360.
-- Downscales massive 4K textures to WebGL-friendly resolutions (2048/1024)
+- Downscales massive 4K textures to WebGL-friendly resolutions (1024x1024)
 - Normalizes scales, pivots, and orientations (aligns sword, bow, arrow)
-- Splits helmet.glb into character_helmet.glb and character_belt.glb
-- Scales man_without_cloths and cloths to realistic player height (1.75m)
-- Ensures strictly valid float32 vertex buffers and uint16 index buffers
+- Splits character meshes into modular, animatable pieces matching the BoxManModel bone pivots:
+  - Head (man_without_cloths + helmet) attached to head_node
+  - Torso (cloths / naked + belt) attached to torso_node
+  - Sleeves & hands (cloths / naked) attached to left_arm_pivot and right_arm_pivot (rotated to hang down)
+  - Legs (cloths / naked) attached to left_leg_pivot and right_leg_pivot
+- Hides placeholder greybox cubes so the character is completely rendered by the 3D models.
+- Default state is fully clothed medieval settler (not naked).
 """
 
 import json
 import struct
 import io
 import os
+import copy
 import numpy as np
 from PIL import Image
 
@@ -22,7 +27,6 @@ def read_glb(path):
         chunk_len, chunk_type = struct.unpack('<I4s', fp.read(8))
         json_data = json.loads(fp.read(chunk_len).decode('utf-8'))
         
-        # Read BIN chunk if present
         bin_data = b''
         if fp.tell() < length:
             bin_len, bin_type = struct.unpack('<I4s', fp.read(8))
@@ -31,7 +35,6 @@ def read_glb(path):
         return json_data, bin_data
 
 def write_glb(path, json_data, bin_data):
-    # Align bin_data to 4 bytes
     rem_bin = len(bin_data) % 4
     if rem_bin != 0:
         bin_data += b'\x00' * (4 - rem_bin)
@@ -67,22 +70,17 @@ def optimize_texture(bin_data, image_info, buffer_views, max_dim=1024, quality=8
         new_w = int(w * scale)
         new_h = int(h * scale)
         img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-        print(f"  Resized image from {w}x{h} -> {new_w}x{new_h}")
-    else:
-        print(f"  Image kept at {w}x{h}")
-        
+    
     out_buf = io.BytesIO()
     img.save(out_buf, format='JPEG', quality=quality, optimize=True)
     return out_buf.getvalue()
 
 def build_glb_buffer(sub_d, v, n, u, tri, img):
-    # Ensure strict typed numpy arrays
     v = np.ascontiguousarray(v, dtype=np.float32)
     n = np.ascontiguousarray(n, dtype=np.float32)
     u = np.ascontiguousarray(u, dtype=np.float32)
     tri = np.ascontiguousarray(tri, dtype=np.uint16)
     
-    # Strip any problematic extensions
     sub_d.pop('extensionsUsed', None)
     sub_d.pop('extensionsRequired', None)
     
@@ -140,134 +138,189 @@ def build_glb_buffer(sub_d, v, n, u, tri, img):
     sub_d['buffers'][0]['byteLength'] = len(b)
     return sub_d, bytes(b)
 
-def process_character_models():
+def extract_submesh(v, n, u, tri, tri_mask):
+    sub_tri = tri[tri_mask]
+    unique_v_indices, new_tri_indices = np.unique(sub_tri, return_inverse=True)
+    new_tri = new_tri_indices.reshape(-1, 3).astype(np.uint16)
+    new_v = v[unique_v_indices].copy()
+    new_n = n[unique_v_indices].copy()
+    new_u = u[unique_v_indices].copy()
+    return new_v, new_n, new_u, new_tri
+
+def load_glb_arrays(path):
+    d, bin_data = read_glb(path)
+    prim = d['meshes'][0]['primitives'][0]
+    def read_acc(acc_id, dtype, mul=1):
+        acc = d['accessors'][acc_id]
+        bv = d['bufferViews'][acc['bufferView']]
+        off = bv.get('byteOffset', 0) + acc.get('byteOffset', 0)
+        return np.frombuffer(bin_data, dtype=dtype, count=acc['count']*mul, offset=off)
+    v = read_acc(prim['attributes']['POSITION'], np.float32, 3).reshape(-1, 3).copy()
+    n = read_acc(prim['attributes']['NORMAL'], np.float32, 3).reshape(-1, 3).copy()
+    u = read_acc(prim['attributes']['TEXCOORD_0'], np.float32, 2).reshape(-1, 2).copy()
+    idx_acc = d['accessors'][prim['indices']]
+    idx_type = np.uint16 if idx_acc['componentType'] == 5123 else np.uint32
+    tri = read_acc(prim['indices'], idx_type, 1).reshape(-1, 3).copy()
+    new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=1024)
+    return d, v, n, u, tri, new_img
+
+def save_submesh_glb(base_d, v, n, u, tri, img, out_path):
+    sub_d = copy.deepcopy(base_d)
+    sub_d, bin_sub = build_glb_buffer(sub_d, v, n, u, tri, img)
+    write_glb(out_path, sub_d, bin_sub)
+
+def process_all():
     os.makedirs('assets/character', exist_ok=True)
     os.makedirs('assets/weapons', exist_ok=True)
     
     # -------------------------------------------------------------
-    # 1. man_without_cloths.glb
+    # 1. Load source models
     # -------------------------------------------------------------
-    print("\n--- Processing man_without_cloths.glb ---")
-    d, bin_data = read_glb('3dmodels/man_without_cloths.glb')
+    print("\n=== Reading source 3D models ===")
+    d_man, v_m, n_m, u_m, tri_m, img_m = load_glb_arrays('3dmodels/man_without_cloths.glb')
+    v_m *= 1.75 # Scale man to 1.75m total height
     
-    prim = d['meshes'][0]['primitives'][0]
-    pos_acc = d['accessors'][prim['attributes']['POSITION']]
-    norm_acc = d['accessors'][prim['attributes']['NORMAL']]
-    uv_acc = d['accessors'][prim['attributes']['TEXCOORD_0']]
-    idx_acc = d['accessors'][prim['indices']]
+    d_cloth, v_c, n_c, u_c, tri_c, img_c = load_glb_arrays('3dmodels/cloths.glb')
+    v_c *= 1.48 # Scale cloths to match shoulders at 1.45m and waist at 0.85m
     
-    bv_pos = d['bufferViews'][pos_acc['bufferView']]
-    count = pos_acc['count']
-    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_pos.get('byteOffset', 0)).reshape(count, 3).copy()
-    verts *= 1.75 # Scale: height 1.0 -> 1.75m
+    d_helm, v_h, n_h, u_h, tri_h, img_h = load_glb_arrays('3dmodels/helmet.glb')
+    v_h *= 1.75 # Scale helmet and belt to 1.75m
     
-    bv_norm = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_norm.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_uv = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_uv.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_idx = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_idx.get('byteOffset', 0)).copy()
-    
-    new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=2048)
-    
-    d_man, bin_man = build_glb_buffer(d, verts, normals, uvs, indices.reshape(-1, 3), new_img)
-    write_glb('assets/character/man_without_cloths.glb', d_man, bin_man)
+    tri_m_c = v_m[tri_m].mean(axis=1)
+    tri_c_c = v_c[tri_c].mean(axis=1)
+    tri_h_c = v_h[tri_h].mean(axis=1)
 
     # -------------------------------------------------------------
-    # 2. cloths.glb
+    # 2. Extract Head & Helmet (Pivot at head_node: Vector3(0, 1.52, 0))
     # -------------------------------------------------------------
-    print("\n--- Processing cloths.glb ---")
-    d, bin_data = read_glb('3dmodels/cloths.glb')
-    
-    prim = d['meshes'][0]['primitives'][0]
-    pos_acc = d['accessors'][prim['attributes']['POSITION']]
-    norm_acc = d['accessors'][prim['attributes']['NORMAL']]
-    uv_acc = d['accessors'][prim['attributes']['TEXCOORD_0']]
-    idx_acc = d['accessors'][prim['indices']]
-    
-    bv_pos = d['bufferViews'][pos_acc['bufferView']]
-    count = pos_acc['count']
-    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_pos.get('byteOffset', 0)).reshape(count, 3).copy()
-    verts *= 1.75
-    
-    bv_norm = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_norm.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_uv = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_uv.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_idx = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_idx.get('byteOffset', 0)).copy()
-    
-    new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=2048)
-    
-    d_cloth, bin_cloth = build_glb_buffer(d, verts, normals, uvs, indices.reshape(-1, 3), new_img)
-    write_glb('assets/character/cloths.glb', d_cloth, bin_cloth)
+    print("\n--- Generating Head and Helmet ---")
+    # Head from man_without_cloths
+    mask_head = (tri_m_c[:, 1] >= 1.40) & (np.abs(tri_m_c[:, 0]) <= 0.22)
+    v_head, n_head, u_head, tri_head = extract_submesh(v_m, n_m, u_m, tri_m, mask_head)
+    v_head -= np.array([0.0, 1.52, 0.0], dtype=np.float32)
+    save_submesh_glb(d_man, v_head, n_head, u_head, tri_head, img_m, 'assets/character/character_head.glb')
+
+    # Helmet / cap from helmet.glb
+    mask_helm = tri_h_c[:, 1] >= 1.25
+    v_helm, n_helm, u_helm, tri_helm = extract_submesh(v_h, n_h, u_h, tri_h, mask_helm)
+    v_helm -= np.array([0.0, 1.52, 0.0], dtype=np.float32)
+    save_submesh_glb(d_helm, v_helm, n_helm, u_helm, tri_helm, img_h, 'assets/character/character_helmet.glb')
 
     # -------------------------------------------------------------
-    # 3. helmet.glb -> split into character_helmet.glb and character_belt.glb
+    # 3. Extract Torso & Belt (Pivot at torso_node: Vector3(0, 1.05, 0))
     # -------------------------------------------------------------
-    print("\n--- Processing helmet.glb (Splitting into helmet and belt) ---")
-    d, bin_data = read_glb('3dmodels/helmet.glb')
-    
-    prim = d['meshes'][0]['primitives'][0]
-    pos_acc = d['accessors'][prim['attributes']['POSITION']]
-    norm_acc = d['accessors'][prim['attributes']['NORMAL']]
-    uv_acc = d['accessors'][prim['attributes']['TEXCOORD_0']]
-    idx_acc = d['accessors'][prim['indices']]
-    
-    bv_p = d['bufferViews'][pos_acc['bufferView']]
-    count = pos_acc['count']
-    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_p.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_n = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_n.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_u = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_u.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_i = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_i.get('byteOffset', 0)).copy()
-    
-    new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=1024)
-    
-    triangles = indices.reshape(-1, 3)
-    tri_y_mean = verts[triangles, 1].mean(axis=1)
-    
-    helmet_tri_mask = tri_y_mean >= 0.70
-    helmet_tris = triangles[helmet_tri_mask]
-    
-    belt_tri_mask = (tri_y_mean >= 0.35) & (tri_y_mean < 0.70)
-    belt_tris = triangles[belt_tri_mask]
-    
-    def extract_submesh(sub_tris, center_y_ref, scale=1.75):
-        unique_v_indices, new_tri_indices = np.unique(sub_tris, return_inverse=True)
-        new_tris = new_tri_indices.reshape(-1, 3)
-        
-        sub_verts = verts[unique_v_indices].copy() * scale
-        sub_normals = normals[unique_v_indices].copy()
-        sub_uvs = uvs[unique_v_indices].copy()
-        
-        sub_verts[:, 1] -= (center_y_ref * scale)
-        sub_verts[:, 0] -= sub_verts[:, 0].mean()
-        sub_verts[:, 2] -= sub_verts[:, 2].mean()
-        
-        return sub_verts.astype(np.float32), sub_normals.astype(np.float32), sub_uvs.astype(np.float32), new_tris.astype(np.uint16)
-    
-    h_verts, h_normals, h_uvs, h_tris = extract_submesh(helmet_tris, center_y_ref=0.88)
-    d_helm = json.loads(json.dumps(d))
-    d_helm, bin_helm = build_glb_buffer(d_helm, h_verts, h_normals, h_uvs, h_tris, new_img)
-    write_glb('assets/character/character_helmet.glb', d_helm, bin_helm)
-    
-    b_verts, b_normals, b_uvs, b_tris = extract_submesh(belt_tris, center_y_ref=0.50)
-    d_belt = json.loads(json.dumps(d))
-    d_belt, bin_belt = build_glb_buffer(d_belt, b_verts, b_normals, b_uvs, b_tris, new_img)
-    write_glb('assets/character/character_belt.glb', d_belt, bin_belt)
+    print("\n--- Generating Torso and Belt ---")
+    # Cloths tunic
+    mask_torso_c = (tri_c_c[:, 1] >= 0.70) & (np.abs(tri_c_c[:, 0]) <= 0.22)
+    v_tc, n_tc, u_tc, tri_tc = extract_submesh(v_c, n_c, u_c, tri_c, mask_torso_c)
+    v_tc -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
+    save_submesh_glb(d_cloth, v_tc, n_tc, u_tc, tri_tc, img_c, 'assets/character/character_torso.glb')
+
+    # Belt from helmet.glb
+    mask_belt = (tri_h_c[:, 1] >= 0.50) & (tri_h_c[:, 1] < 1.15)
+    v_belt, n_belt, u_belt, tri_belt = extract_submesh(v_h, n_h, u_h, tri_h, mask_belt)
+    v_belt -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
+    save_submesh_glb(d_helm, v_belt, n_belt, u_belt, tri_belt, img_h, 'assets/character/character_belt.glb')
+
+    # Naked chest from man_without_cloths
+    mask_torso_m = (tri_m_c[:, 1] >= 0.72) & (tri_m_c[:, 1] < 1.40) & (np.abs(tri_m_c[:, 0]) <= 0.22)
+    v_tm, n_tm, u_tm, tri_tm = extract_submesh(v_m, n_m, u_m, tri_m, mask_torso_m)
+    v_tm -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
+    save_submesh_glb(d_man, v_tm, n_tm, u_tm, tri_tm, img_m, 'assets/character/character_torso_naked.glb')
 
     # -------------------------------------------------------------
-    # 4. sword.glb -> rotate to +Y blade, -Z edge, hilt at (0,0,0)
+    # 4. Extract Sleeves & Hands (Pivots at left_arm_pivot and right_arm_pivot)
+    #    Rotate 90 deg around Z from horizontal T-pose to hang down
+    # -------------------------------------------------------------
+    print("\n--- Generating Sleeves and Hands ---")
+    p_sl = np.array([-0.28, 1.25, 0.0], dtype=np.float32)
+    p_sr = np.array([ 0.28, 1.25, 0.0], dtype=np.float32)
+
+    # Left sleeve (cloths)
+    mask_slv_l = (tri_c_c[:, 0] < -0.20) & (tri_c_c[:, 1] >= 0.80)
+    v_sl_l, n_sl_l, u_sl_l, tri_sl_l = extract_submesh(v_c, n_c, u_c, tri_c, mask_slv_l)
+    v_rel = v_sl_l - p_sl
+    v_rot = np.column_stack([-v_rel[:, 1], v_rel[:, 0], v_rel[:, 2]])
+    n_rot = np.column_stack([-n_sl_l[:, 1], n_sl_l[:, 0], n_sl_l[:, 2]])
+    save_submesh_glb(d_cloth, v_rot, n_rot, u_sl_l, tri_sl_l, img_c, 'assets/character/character_sleeve_l.glb')
+
+    # Right sleeve (cloths)
+    mask_slv_r = (tri_c_c[:, 0] > 0.20) & (tri_c_c[:, 1] >= 0.80)
+    v_sl_r, n_sl_r, u_sl_r, tri_sl_r = extract_submesh(v_c, n_c, u_c, tri_c, mask_slv_r)
+    v_rel_r = v_sl_r - p_sr
+    v_rot_r = np.column_stack([v_rel_r[:, 1], -v_rel_r[:, 0], v_rel_r[:, 2]])
+    n_rot_r = np.column_stack([n_sl_r[:, 1], -n_sl_r[:, 0], n_sl_r[:, 2]])
+    save_submesh_glb(d_cloth, v_rot_r, n_rot_r, u_sl_r, tri_sl_r, img_c, 'assets/character/character_sleeve_r.glb')
+
+    # Left hand (man_without_cloths)
+    mask_hnd_l = (tri_m_c[:, 0] < -0.65) & (tri_m_c[:, 1] >= 1.20)
+    v_hl, n_hl, u_hl, tri_hl = extract_submesh(v_m, n_m, u_m, tri_m, mask_hnd_l)
+    v_rel_hl = v_hl - p_sl
+    v_rot_hl = np.column_stack([-v_rel_hl[:, 1], v_rel_hl[:, 0], v_rel_hl[:, 2]])
+    n_rot_hl = np.column_stack([-n_hl[:, 1], n_hl[:, 0], n_hl[:, 2]])
+    save_submesh_glb(d_man, v_rot_hl, n_rot_hl, u_hl, tri_hl, img_m, 'assets/character/character_hand_l.glb')
+
+    # Right hand (man_without_cloths)
+    mask_hnd_r = (tri_m_c[:, 0] > 0.65) & (tri_m_c[:, 1] >= 1.20)
+    v_hr, n_hr, u_hr, tri_hr = extract_submesh(v_m, n_m, u_m, tri_m, mask_hnd_r)
+    v_rel_hr = v_hr - p_sr
+    v_rot_hr = np.column_stack([v_rel_hr[:, 1], -v_rel_hr[:, 0], v_rel_hr[:, 2]])
+    n_rot_hr = np.column_stack([n_hr[:, 1], -n_hr[:, 0], n_hr[:, 2]])
+    save_submesh_glb(d_man, v_rot_hr, n_rot_hr, u_hr, tri_hr, img_m, 'assets/character/character_hand_r.glb')
+
+    # Naked left arm (entire arm including hand)
+    mask_arm_m_l = (tri_m_c[:, 0] < -0.20) & (tri_m_c[:, 1] >= 1.20)
+    v_aml, n_aml, u_aml, tri_aml = extract_submesh(v_m, n_m, u_m, tri_m, mask_arm_m_l)
+    v_rel_aml = v_aml - p_sl
+    v_rot_aml = np.column_stack([-v_rel_aml[:, 1], v_rel_aml[:, 0], v_rel_aml[:, 2]])
+    n_rot_aml = np.column_stack([-n_aml[:, 1], n_aml[:, 0], n_aml[:, 2]])
+    save_submesh_glb(d_man, v_rot_aml, n_rot_aml, u_aml, tri_aml, img_m, 'assets/character/character_arm_l_naked.glb')
+
+    # Naked right arm
+    mask_arm_m_r = (tri_m_c[:, 0] > 0.20) & (tri_m_c[:, 1] >= 1.20)
+    v_amr, n_amr, u_amr, tri_amr = extract_submesh(v_m, n_m, u_m, tri_m, mask_arm_m_r)
+    v_rel_amr = v_amr - p_sr
+    v_rot_amr = np.column_stack([v_rel_amr[:, 1], -v_rel_amr[:, 0], v_rel_amr[:, 2]])
+    n_rot_amr = np.column_stack([n_amr[:, 1], -n_amr[:, 0], n_amr[:, 2]])
+    save_submesh_glb(d_man, v_rot_amr, n_rot_amr, u_amr, tri_amr, img_m, 'assets/character/character_arm_r_naked.glb')
+
+    # -------------------------------------------------------------
+    # 5. Extract Legs & Boots (Pivots at left_leg_pivot and right_leg_pivot)
+    # -------------------------------------------------------------
+    print("\n--- Generating Legs and Boots ---")
+    p_hl = np.array([-0.13, 0.72, 0.0], dtype=np.float32)
+    p_hr = np.array([ 0.13, 0.72, 0.0], dtype=np.float32)
+
+    # Clothed left leg
+    mask_leg_cl = (tri_c_c[:, 0] < 0.0) & (tri_c_c[:, 1] < 0.70)
+    v_lcl, n_lcl, u_lcl, tri_lcl = extract_submesh(v_c, n_c, u_c, tri_c, mask_leg_cl)
+    v_lcl -= p_hl
+    save_submesh_glb(d_cloth, v_lcl, n_lcl, u_lcl, tri_lcl, img_c, 'assets/character/character_leg_l.glb')
+
+    # Clothed right leg
+    mask_leg_cr = (tri_c_c[:, 0] >= 0.0) & (tri_c_c[:, 1] < 0.70)
+    v_lcr, n_lcr, u_lcr, tri_lcr = extract_submesh(v_c, n_c, u_c, tri_c, mask_leg_cr)
+    v_lcr -= p_hr
+    save_submesh_glb(d_cloth, v_lcr, n_lcr, u_lcr, tri_lcr, img_c, 'assets/character/character_leg_r.glb')
+
+    # Naked left leg
+    mask_leg_ml = (tri_m_c[:, 0] < 0.0) & (tri_m_c[:, 1] < 0.72)
+    v_lml, n_lml, u_lml, tri_lml = extract_submesh(v_m, n_m, u_m, tri_m, mask_leg_ml)
+    v_lml -= p_hl
+    save_submesh_glb(d_man, v_lml, n_lml, u_lml, tri_lml, img_m, 'assets/character/character_leg_l_naked.glb')
+
+    # Naked right leg
+    mask_leg_mr = (tri_m_c[:, 0] >= 0.0) & (tri_m_c[:, 1] < 0.72)
+    v_lmr, n_lmr, u_lmr, tri_lmr = extract_submesh(v_m, n_m, u_m, tri_m, mask_leg_mr)
+    v_lmr -= p_hr
+    save_submesh_glb(d_man, v_lmr, n_lmr, u_lmr, tri_lmr, img_m, 'assets/character/character_leg_r_naked.glb')
+
+    # Also save full compatibility GLBs
+    save_submesh_glb(d_man, v_m, n_m, u_m, tri_m, img_m, 'assets/character/man_without_cloths.glb')
+    save_submesh_glb(d_cloth, v_c, n_c, u_c, tri_c, img_c, 'assets/character/cloths.glb')
+
+    # -------------------------------------------------------------
+    # 6. Weapons: sword.glb, bow.glb, arrow.glb
     # -------------------------------------------------------------
     print("\n--- Processing sword.glb ---")
     d, bin_data = read_glb('3dmodels/sword.glb')
@@ -280,29 +333,19 @@ def process_character_models():
     bv_p = d['bufferViews'][pos_acc['bufferView']]
     count = pos_acc['count']
     verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_p.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_n = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_n.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_u = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_u.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_i = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_i.get('byteOffset', 0)).copy()
-    
+    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=d['bufferViews'][norm_acc['bufferView']].get('byteOffset', 0)).reshape(count, 3).copy()
+    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=d['bufferViews'][uv_acc['bufferView']].get('byteOffset', 0)).reshape(count, 2).copy()
+    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=d['bufferViews'][idx_acc['bufferView']].get('byteOffset', 0)).copy()
     new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=1024)
     
     p_hilt = np.array([-0.4997, 0.0005, -0.1257])
     p_tip = np.array([0.4875, 0.8496, 0.0969])
-    
     blade_vec = p_tip - p_hilt
     blade_dir = blade_vec / np.linalg.norm(blade_vec)
     target_y = np.array([0.0, 1.0, 0.0])
-    
     rot_axis = np.cross(blade_dir, target_y)
     rot_axis = rot_axis / np.linalg.norm(rot_axis)
     rot_angle = np.arccos(np.clip(np.dot(blade_dir, target_y), -1.0, 1.0))
-    
     K = np.array([
         [0, -rot_axis[2], rot_axis[1]],
         [rot_axis[2], 0, -rot_axis[0]],
@@ -314,25 +357,23 @@ def process_character_models():
     verts_trans = verts - p_grip
     verts_rot = verts_trans @ R.T
     normals_rot = normals @ R.T
-    
     current_len = np.linalg.norm(blade_vec)
     sword_scale = 0.90 / current_len
     verts_rot *= sword_scale
     
-    var_x = np.var(verts_rot[:, 0])
-    var_z = np.var(verts_rot[:, 2])
-    if var_x < var_z:
-        R90 = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
-        verts_rot = verts_rot @ R90.T
-        normals_rot = normals_rot @ R90.T
-        
-    d_sword = json.loads(json.dumps(d))
-    d_sword, bin_sword = build_glb_buffer(d_sword, verts_rot, normals_rot, uvs, indices.reshape(-1, 3), new_img)
-    write_glb('assets/weapons/sword.glb', d_sword, bin_sword)
+    # Rotate edge towards -Z
+    R_edge = np.array([
+        [np.cos(np.pi/4), 0, np.sin(np.pi/4)],
+        [0, 1, 0],
+        [-np.sin(np.pi/4), 0, np.cos(np.pi/4)]
+    ])
+    verts_rot = verts_rot @ R_edge.T
+    normals_rot = normals_rot @ R_edge.T
+    
+    d_sw = copy.deepcopy(d)
+    d_sw, bin_sw = build_glb_buffer(d_sw, verts_rot, normals_rot, uvs, indices.reshape(-1, 3), new_img)
+    write_glb('assets/weapons/sword.glb', d_sw, bin_sw)
 
-    # -------------------------------------------------------------
-    # 5. bow.glb -> center grip at (0,0,0), scale height to 1.25m
-    # -------------------------------------------------------------
     print("\n--- Processing bow.glb ---")
     d, bin_data = read_glb('3dmodels/bow.glb')
     prim = d['meshes'][0]['primitives'][0]
@@ -340,35 +381,24 @@ def process_character_models():
     norm_acc = d['accessors'][prim['attributes']['NORMAL']]
     uv_acc = d['accessors'][prim['attributes']['TEXCOORD_0']]
     idx_acc = d['accessors'][prim['indices']]
-    
-    bv_p = d['bufferViews'][pos_acc['bufferView']]
     count = pos_acc['count']
-    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_p.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_n = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_n.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_u = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_u.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_i = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_i.get('byteOffset', 0)).copy()
-    
+    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=d['bufferViews'][pos_acc['bufferView']].get('byteOffset', 0)).reshape(count, 3).copy()
+    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=d['bufferViews'][norm_acc['bufferView']].get('byteOffset', 0)).reshape(count, 3).copy()
+    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=d['bufferViews'][uv_acc['bufferView']].get('byteOffset', 0)).reshape(count, 2).copy()
+    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=d['bufferViews'][idx_acc['bufferView']].get('byteOffset', 0)).copy()
     new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=1024)
     
-    grip_y = 0.495
-    verts[:, 1] -= grip_y
+    bow_h = verts[:, 1].max() - verts[:, 1].min()
+    bow_scale = 1.25 / bow_h
+    verts *= bow_scale
     verts[:, 0] -= verts[:, 0].mean()
-    verts[:, 2] -= verts[:, 2].mean()
-    verts *= 1.25
+    verts[:, 1] -= (verts[:, 1].max() + verts[:, 1].min()) * 0.5
+    verts[:, 2] -= (verts[:, 2].max() + verts[:, 2].min()) * 0.5
     
-    d_bow = json.loads(json.dumps(d))
-    d_bow, bin_bow = build_glb_buffer(d_bow, verts, normals, uvs, indices.reshape(-1, 3), new_img)
-    write_glb('assets/weapons/bow.glb', d_bow, bin_bow)
+    d_bw = copy.deepcopy(d)
+    d_bw, bin_bw = build_glb_buffer(d_bw, verts, normals, uvs, indices.reshape(-1, 3), new_img)
+    write_glb('assets/weapons/bow.glb', d_bw, bin_bw)
 
-    # -------------------------------------------------------------
-    # 6. arrow.glb -> tip at (0, 0, -0.05), shaft extending to +Z ~ 0.72m
-    # -------------------------------------------------------------
     print("\n--- Processing arrow.glb ---")
     d, bin_data = read_glb('3dmodels/arrow.glb')
     prim = d['meshes'][0]['primitives'][0]
@@ -376,53 +406,47 @@ def process_character_models():
     norm_acc = d['accessors'][prim['attributes']['NORMAL']]
     uv_acc = d['accessors'][prim['attributes']['TEXCOORD_0']]
     idx_acc = d['accessors'][prim['indices']]
-    
-    bv_p = d['bufferViews'][pos_acc['bufferView']]
     count = pos_acc['count']
-    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_p.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_n = d['bufferViews'][norm_acc['bufferView']]
-    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=bv_n.get('byteOffset', 0)).reshape(count, 3).copy()
-    
-    bv_u = d['bufferViews'][uv_acc['bufferView']]
-    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=bv_u.get('byteOffset', 0)).reshape(count, 2).copy()
-    
-    bv_i = d['bufferViews'][idx_acc['bufferView']]
-    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=bv_i.get('byteOffset', 0)).copy()
-    
+    verts = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=d['bufferViews'][pos_acc['bufferView']].get('byteOffset', 0)).reshape(count, 3).copy()
+    normals = np.frombuffer(bin_data, dtype=np.float32, count=count*3, offset=d['bufferViews'][norm_acc['bufferView']].get('byteOffset', 0)).reshape(count, 3).copy()
+    uvs = np.frombuffer(bin_data, dtype=np.float32, count=count*2, offset=d['bufferViews'][uv_acc['bufferView']].get('byteOffset', 0)).reshape(count, 2).copy()
+    indices = np.frombuffer(bin_data, dtype=np.uint16 if idx_acc['componentType']==5123 else np.uint32, count=idx_acc['count'], offset=d['bufferViews'][idx_acc['bufferView']].get('byteOffset', 0)).copy()
     new_img = optimize_texture(bin_data, d['images'][0], d['bufferViews'], max_dim=512)
     
-    p_tip = np.array([-0.4998, 0.0000, 0.0022])
-    p_nock = np.array([0.4983, 0.6245, -0.0022])
+    # Arrow along Z axis with tip pointing at -Z
+    pca_cov = np.cov(verts, rowvar=False)
+    eigvals, eigvecs = np.linalg.eigh(pca_cov)
+    shaft_axis = eigvecs[:, 2]
+    target_axis = np.array([0.0, 0.0, 1.0])
     
-    arrow_vec = p_nock - p_tip
-    arrow_dir = arrow_vec / np.linalg.norm(arrow_vec)
-    target_z = np.array([0.0, 0.0, 1.0])
+    axis = np.cross(shaft_axis, target_axis)
+    axis_norm = np.linalg.norm(axis)
+    if axis_norm > 1e-4:
+        axis = axis / axis_norm
+        angle = np.arccos(np.clip(np.dot(shaft_axis, target_axis), -1.0, 1.0))
+        K = np.array([[0, -axis[2], axis[1]], [axis[2], 0, -axis[0]], [-axis[1], axis[0], 0]])
+        R = np.eye(3) + np.sin(angle)*K + (1 - np.cos(angle))*(K @ K)
+        verts = verts @ R.T
+        normals = normals @ R.T
+        
+    verts[:, 0] -= verts[:, 0].mean()
+    verts[:, 1] -= verts[:, 1].mean()
+    verts[:, 2] -= verts[:, 2].min()
     
-    rot_axis = np.cross(arrow_dir, target_z)
-    rot_axis = rot_axis / np.linalg.norm(rot_axis)
-    rot_angle = np.arccos(np.clip(np.dot(arrow_dir, target_z), -1.0, 1.0))
+    curr_len = verts[:, 2].max()
+    arrow_scale = 0.70 / curr_len
+    verts *= arrow_scale
     
-    K = np.array([
-        [0, -rot_axis[2], rot_axis[1]],
-        [rot_axis[2], 0, -rot_axis[0]],
-        [-rot_axis[1], rot_axis[0], 0]
-    ])
-    R = np.eye(3) + np.sin(rot_angle) * K + (1 - np.cos(rot_angle)) * (K @ K)
+    # Tip forward (-Z)
+    verts[:, 2] = 0.70 - verts[:, 2]
+    verts[:, 2] -= 0.70
+    normals[:, 2] = -normals[:, 2]
     
-    verts_trans = verts - p_tip
-    verts_rot = verts_trans @ R.T
-    normals_rot = normals @ R.T
-    
-    arrow_len = np.linalg.norm(arrow_vec)
-    arrow_scale = 0.75 / arrow_len
-    verts_rot *= arrow_scale
-    
-    d_arrow = json.loads(json.dumps(d))
-    d_arrow, bin_arrow = build_glb_buffer(d_arrow, verts_rot, normals_rot, uvs, indices.reshape(-1, 3), new_img)
-    write_glb('assets/weapons/arrow.glb', d_arrow, bin_arrow)
+    d_ar = copy.deepcopy(d)
+    d_ar, bin_ar = build_glb_buffer(d_ar, verts, normals, uvs, indices.reshape(-1, 3), new_img)
+    write_glb('assets/weapons/arrow.glb', d_ar, bin_ar)
 
-    print("\n✓ Successfully processed all models into assets/character and assets/weapons!")
+    print("\n✓ ALL CHARACTER AND WEAPON ASSETS SUCCESSFULLY PROCESSED!")
 
 if __name__ == '__main__':
-    process_character_models()
+    process_all()
