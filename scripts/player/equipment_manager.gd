@@ -220,11 +220,11 @@ func _use_axe(raycast: RayCast3D) -> void:
 	if raycast and raycast.is_colliding():
 		var target := raycast.get_collider()
 		if target:
-			if target.has_method("take_damage"):
-				target.take_damage(28.0, settler)
-				hit_target = true
-			elif target.has_method("chop"):
+			if target.has_method("chop"):
 				target.chop(settler)
+				hit_target = true
+			elif target.has_method("take_damage"):
+				target.take_damage(28.0, settler)
 				hit_target = true
 			elif target.has_method("on_interact"):
 				target.on_interact(settler)
@@ -234,7 +234,7 @@ func _use_axe(raycast: RayCast3D) -> void:
 	if not hit_target and settler:
 		var focused_tree = settler.get("_focused_tree")
 		if focused_tree and is_instance_valid(focused_tree) and focused_tree.has_method("chop"):
-			if settler.global_position.distance_to(focused_tree.global_position) < 3.8:
+			if settler.global_position.distance_to(focused_tree.global_position) < 4.2:
 				focused_tree.chop(settler)
 
 ## Slot 2: Drinking Horn / Water Bottle: Hydrates settler on the go from rucksack reservoir

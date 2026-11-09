@@ -308,9 +308,17 @@ func _unhandled_input(event: InputEvent) -> void:
 					else:
 						equipment.release_bow(camera)
 				elif event.pressed:
-					equipment.use_primary(interact_raycast, camera)
+					var target_tree: Node = _get_target_or_focused_tree()
+					if target_tree:
+						_chop_tree(target_tree)
+					else:
+						equipment.use_primary(interact_raycast, camera)
 			elif event.pressed:
-				_perform_attack_or_chop()
+				var target_tree: Node = _get_target_or_focused_tree()
+				if target_tree:
+					_chop_tree(target_tree)
+				else:
+					_perform_attack_or_chop()
 
 	# Cancel bow aim with Right Click
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -739,10 +747,10 @@ func _update_focused_interactables() -> void:
 			elif col.is_in_group("harvestable_trees") or (col.has_method("chop") and col.has_method("set_settler_focus")):
 				hit_tree = col
 
-	# Proximity check for nearby trees within 3.6m ahead of settler
+	# Proximity check for nearby trees within 3.8m ahead of settler
 	if hit_tree == null and is_inside_tree():
 		var trees := get_tree().get_nodes_in_group("harvestable_trees")
-		var closest_d := 3.6
+		var closest_d := 3.8
 		var forward_h := -global_transform.basis.z
 		forward_h.y = 0.0
 		if forward_h.length_squared() > 0.01:
@@ -753,7 +761,7 @@ func _update_focused_interactables() -> void:
 					to_tree.y = 0.0
 					var d := to_tree.length()
 					if d < closest_d:
-						if forward_h.dot(to_tree.normalized()) > 0.35:
+						if d < 2.2 or forward_h.dot(to_tree.normalized()) > 0.15:
 							closest_d = d
 							hit_tree = t
 
@@ -772,6 +780,8 @@ func _update_focused_interactables() -> void:
 		_focused_tree = hit_tree
 		if _focused_tree and is_instance_valid(_focused_tree):
 			_focused_tree.set_settler_focus(self)
+	elif _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("set_settler_focus"):
+		_focused_tree.set_settler_focus(self)
 
 ## Detects steep rocky cliff faces (>= 45° slope) ahead of settler
 func _check_steep_cliff() -> Dictionary:
@@ -1028,9 +1038,17 @@ func _perform_interaction() -> void:
 	# 1. Direct raycast interaction (crosshair target)
 	if interact_raycast and interact_raycast.is_colliding():
 		var target := interact_raycast.get_collider()
-		if target and target.has_method("on_interact"):
-			target.on_interact(self)
-			return
+		if target:
+			if target.has_method("chop"):
+				target.chop(self)
+				if box_man_model:
+					box_man_model.trigger_chop()
+				return
+			elif target.has_method("on_interact"):
+				target.on_interact(self)
+				if box_man_model and target.is_in_group("harvestable_trees"):
+					box_man_model.trigger_chop()
+				return
 
 	# 2. Forgiving proximity pickup: check for nearby carryable logs within 2.6m
 	var logs := get_tree().get_nodes_in_group("carryable_log")
@@ -1061,9 +1079,20 @@ func _perform_interaction() -> void:
 		return
 
 	# 4. Tree chopping with [E] when focused or looking at a tree
-	if _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("chop"):
-		if global_position.distance_to(_focused_tree.global_position) < 3.8:
-			_focused_tree.chop(self)
+	var tree_to_chop: Node = _focused_tree
+	if tree_to_chop == null and is_inside_tree():
+		var trees := get_tree().get_nodes_in_group("harvestable_trees")
+		var min_d := 3.8
+		for t in trees:
+			if t is Node3D and is_instance_valid(t) and t.has_method("chop"):
+				var d := global_position.distance_to(t.global_position)
+				if d < min_d:
+					min_d = d
+					tree_to_chop = t
+
+	if tree_to_chop and is_instance_valid(tree_to_chop) and tree_to_chop.has_method("chop"):
+		if global_position.distance_to(tree_to_chop.global_position) < 4.2:
+			tree_to_chop.chop(self)
 			if box_man_model:
 				box_man_model.trigger_chop()
 			return
@@ -1097,6 +1126,41 @@ func _perform_attack_or_chop() -> void:
 			survival_stats.consume_stamina(12.0)
 		elif target.has_method("on_interact"):
 			target.on_interact(self)
+
+func _get_target_or_focused_tree() -> Node:
+	if interact_raycast and interact_raycast.is_colliding():
+		var col := interact_raycast.get_collider()
+		if col and (col.is_in_group("harvestable_trees") or col.has_method("chop")):
+			if global_position.distance_to(col.global_position) < 4.5:
+				return col
+	if _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("chop"):
+		if global_position.distance_to(_focused_tree.global_position) < 4.2:
+			return _focused_tree
+	if is_inside_tree():
+		var trees := get_tree().get_nodes_in_group("harvestable_trees")
+		var closest: Node = null
+		var min_d := 3.8
+		for t in trees:
+			if t is Node3D and is_instance_valid(t) and t.has_method("chop"):
+				var d := global_position.distance_to(t.global_position)
+				if d < min_d:
+					min_d = d
+					closest = t
+		return closest
+	return null
+
+func _chop_tree(target_tree: Node) -> void:
+	if not target_tree or not is_instance_valid(target_tree) or not target_tree.has_method("chop"):
+		return
+	if equipment and equipment.attack_cooldown > 0.0:
+		return
+	if equipment:
+		equipment.attack_cooldown = 0.40
+		if equipment.current_slot != EquipmentManager.Slot.AXE and equipment.current_slot != EquipmentManager.Slot.TORCH:
+			equipment.select_slot(EquipmentManager.Slot.AXE)
+	if box_man_model:
+		box_man_model.trigger_chop()
+	target_tree.chop(self)
 
 func _try_eat() -> void:
 	if not inventory or not survival_stats:

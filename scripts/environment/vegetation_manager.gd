@@ -279,6 +279,8 @@ static func populate_dense_vegetation(
 		tree_node.set_script(harvestable_script)
 		tree_node.collision_layer = 1
 		tree_node.collision_mask = 1
+		tree_node.add_to_group("harvestable_trees")
+		tree_node.add_to_group("interactable")
 
 		var is_spruce := (rng.randf() > 0.34) or (ty > 42.0)
 		tree_node.set("tree_type", 1 if is_spruce else 0)
@@ -355,16 +357,14 @@ static func populate_dense_vegetation(
 		else:
 			spruce_xforms.append(xform)
 
-	_create_multimesh_batch(veg_container, "SpruceForestMultiMesh", spruce_mesh, spruce_xforms)
-	_create_multimesh_batch(veg_container, "PineForestMultiMesh", pine_mesh, pine_xforms)
-	_create_multimesh_batch(veg_container, "BirchForestMultiMesh", birch_mesh, birch_xforms)
+	var spruce_mmi := _create_multimesh_batch(veg_container, "SpruceForestMultiMesh", spruce_mesh, spruce_xforms)
+	var pine_mmi := _create_multimesh_batch(veg_container, "PineForestMultiMesh", pine_mesh, pine_xforms)
+	var birch_mmi := _create_multimesh_batch(veg_container, "BirchForestMultiMesh", birch_mesh, birch_xforms)
 
-	# Add solid physical collisions for canopy trees across playable valley & mountain areas
-	var all_tree_xforms: Array[Transform3D] = []
-	all_tree_xforms.append_array(spruce_xforms)
-	all_tree_xforms.append_array(pine_xforms)
-	all_tree_xforms.append_array(birch_xforms)
-	_add_forest_tree_colliders(veg_container, all_tree_xforms)
+	# Add solid physical collisions and interactive harvestable tree handling for canopy trees
+	_add_forest_tree_colliders(veg_container, spruce_xforms, spruce_mmi, 1)
+	_add_forest_tree_colliders(veg_container, pine_xforms, pine_mmi, 1)
+	_add_forest_tree_colliders(veg_container, birch_xforms, birch_mmi, 0)
 
 	# -------------------------------------------------------------------------
 	# TIER 3: 7,500+ Dense Understory & Valley Vegetation via MultiMeshInstance3D (3 Draw Calls)
@@ -431,9 +431,9 @@ static func _is_inside_settlement(x: float, z: float, settlement_pads: Array[Dic
 			return true
 	return false
 
-static func _create_multimesh_batch(parent: Node3D, node_name: String, mesh: Mesh, xforms: Array[Transform3D], cast_shadows: bool = true, visibility_end: float = 0.0) -> void:
+static func _create_multimesh_batch(parent: Node3D, node_name: String, mesh: Mesh, xforms: Array[Transform3D], cast_shadows: bool = true, visibility_end: float = 0.0) -> MultiMeshInstance3D:
 	if xforms.is_empty():
-		return
+		return null
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = node_name
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if cast_shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -448,19 +448,25 @@ static func _create_multimesh_batch(parent: Node3D, node_name: String, mesh: Mes
 		mm.set_instance_transform(i, xforms[i])
 	mmi.multimesh = mm
 	parent.add_child(mmi)
+	return mmi
 
-static func _add_forest_tree_colliders(parent: Node3D, xforms: Array[Transform3D]) -> void:
+static func _add_forest_tree_colliders(parent: Node3D, xforms: Array[Transform3D], mmi: MultiMeshInstance3D = null, tree_type_idx: int = 1) -> void:
 	if xforms.is_empty():
 		return
-	var col_container := Node3D.new()
-	col_container.name = "ForestTreeColliders"
-	parent.add_child(col_container)
+	var col_container := parent.get_node_or_null("ForestTreeColliders") as Node3D
+	if col_container == null:
+		col_container = Node3D.new()
+		col_container.name = "ForestTreeColliders"
+		parent.add_child(col_container)
 
 	var shared_shape := CylinderShape3D.new()
 	shared_shape.radius = 0.42
 	shared_shape.height = 4.5
 
-	for xf in xforms:
+	var harvestable_script = load("res://scripts/environment/harvestable_tree.gd")
+
+	for i in range(xforms.size()):
+		var xf := xforms[i]
 		var pos := xf.origin
 		# Place colliders on trees within walkable valley and hillside regions
 		if pos.y < 0.5 or pos.y > 115.0:
@@ -468,6 +474,15 @@ static func _add_forest_tree_colliders(parent: Node3D, xforms: Array[Transform3D
 		var sb := StaticBody3D.new()
 		sb.collision_layer = 1
 		sb.collision_mask = 1
+		sb.set_script(harvestable_script)
+		sb.set("tree_type", tree_type_idx)
+		if mmi:
+			sb.set("multimesh_instance", mmi)
+			sb.set("multimesh_index", i)
+
+		sb.add_to_group("harvestable_trees")
+		sb.add_to_group("interactable")
+
 		var cs := CollisionShape3D.new()
 		cs.shape = shared_shape
 		cs.position.y = 2.25

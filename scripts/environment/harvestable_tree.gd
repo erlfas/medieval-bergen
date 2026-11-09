@@ -48,6 +48,8 @@ var landing_zone_marker: Node3D
 var landing_label: Label3D
 var notch_mesh: MeshInstance3D
 var terrain_generator: Node = null
+var multimesh_instance: MultiMeshInstance3D = null
+var multimesh_index: int = -1
 
 func _ready() -> void:
 	_ensure_setup()
@@ -103,7 +105,7 @@ func _setup_model_pivot() -> void:
 		m.reparent(model_pivot)
 
 	# If tree created standalone without procedural generator, construct default meshes
-	if model_pivot.get_child_count() == 0:
+	if model_pivot.get_child_count() == 0 and multimesh_instance == null:
 		_build_default_meshes()
 
 func _build_default_meshes() -> void:
@@ -154,31 +156,36 @@ func _build_default_meshes() -> void:
 func _setup_progress_tracker() -> void:
 	progress_tracker = Node3D.new()
 	progress_tracker.name = "ProgressTracker"
-	progress_tracker.position = Vector3(0.0, 2.1, 0.0)
+	# Positioned 0.95m next to the tree trunk at eye level 2.05m
+	progress_tracker.position = Vector3(0.95, 2.05, 0.0)
 	add_child(progress_tracker)
 
-	# 3D Billboard Chop Counter ("Chop 3/10")
+	# 3D Billboard Chop Counter & Progress Gauge ("Chop 3/10")
 	tracker_label = Label3D.new()
 	tracker_label.name = "ChopCounterLabel"
 	tracker_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tracker_label.no_depth_test = true
+	tracker_label.render_priority = 15
 	tracker_label.font_size = 28
 	tracker_label.outline_size = 7
-	tracker_label.modulate = Color(1.0, 0.90, 0.40) # Golden amber
+	tracker_label.modulate = Color(1.0, 0.90, 0.35) # Golden amber
 	tracker_label.outline_modulate = Color(0.06, 0.05, 0.04, 0.95)
-	tracker_label.position = Vector3(0.0, 0.24, 0.0)
+	tracker_label.position = Vector3(0.0, 0.28, 0.0)
 	progress_tracker.add_child(tracker_label)
 
 	# 3D Floating Progress Bar Background Frame
 	bar_bg = MeshInstance3D.new()
 	bar_bg.name = "ProgressBarBG"
 	var quad_bg := QuadMesh.new()
-	quad_bg.size = Vector2(1.2, 0.13)
+	quad_bg.size = Vector2(1.24, 0.15)
 	bar_bg.mesh = quad_bg
 	var bg_mat := StandardMaterial3D.new()
 	bg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bg_mat.albedo_color = Color(0.12, 0.12, 0.15, 0.92)
+	bg_mat.albedo_color = Color(0.10, 0.11, 0.14, 0.94)
 	bg_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	bg_mat.no_depth_test = true
+	bg_mat.render_priority = 10
 	bar_bg.material_override = bg_mat
 	bar_bg.position = Vector3(0.0, 0.02, 0.0)
 	progress_tracker.add_child(bar_bg)
@@ -187,12 +194,15 @@ func _setup_progress_tracker() -> void:
 	bar_fill = MeshInstance3D.new()
 	bar_fill.name = "ProgressBarFill"
 	var quad_fill := QuadMesh.new()
-	quad_fill.size = Vector2(1.14, 0.08)
+	quad_fill.size = Vector2(1.18, 0.09)
 	bar_fill.mesh = quad_fill
 	var fill_mat := StandardMaterial3D.new()
 	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fill_mat.albedo_color = Color(0.96, 0.78, 0.22, 0.98) # Warm gold
 	fill_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fill_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	fill_mat.no_depth_test = true
+	fill_mat.render_priority = 11
 	bar_fill.material_override = fill_mat
 	bar_fill.position = Vector3(0.0, 0.02, 0.01)
 	progress_tracker.add_child(bar_fill)
@@ -325,8 +335,15 @@ func _process(delta: float) -> void:
 			trajectory_indicator.visible = true
 
 		if focused_settler and is_instance_valid(focused_settler):
+			var my_pos := _get_pos(self)
+			var settler_pos := _get_pos(focused_settler)
+			var dist := my_pos.distance_to(settler_pos)
+			# As long as settler is within 4.5m, maintain active focus
+			if dist < 4.5:
+				focus_timer = maxf(focus_timer, 2.5)
+
 			# Tree falls away from settler
-			var away_dir: Vector3 = global_position - focused_settler.global_position
+			var away_dir: Vector3 = my_pos - settler_pos
 			away_dir.y = 0.0
 			if away_dir.length_squared() > 0.01:
 				var target_dir := away_dir.normalized()
@@ -375,7 +392,21 @@ func _physics_process(delta: float) -> void:
 func _update_tracker_orientation() -> void:
 	if not progress_tracker or not progress_tracker.visible:
 		return
-	var cam := get_viewport().get_camera_3d()
+
+	var vp := get_viewport()
+	var cam: Camera3D = vp.get_camera_3d() if vp else null
+	var observer: Node3D = focused_settler if focused_settler and is_instance_valid(focused_settler) else cam
+	if observer:
+		var my_pos := _get_pos(self)
+		var obs_pos := _get_pos(observer)
+		var to_obs: Vector3 = obs_pos - my_pos
+		to_obs.y = 0.0
+		if to_obs.length_squared() > 0.01:
+			var obs_dir := to_obs.normalized()
+			var side_dir := obs_dir.cross(Vector3.UP).normalized()
+			var target_pos := side_dir * 0.95 + obs_dir * 0.25 + Vector3(0.0, 2.05, 0.0)
+			progress_tracker.position = progress_tracker.position.lerp(target_pos, 0.15)
+
 	if cam:
 		var dir := cam.global_position - progress_tracker.global_position
 		if Vector2(dir.x, dir.z).length_squared() > 0.01:
@@ -386,14 +417,22 @@ func _update_progress_display() -> void:
 		return
 
 	var type_name := "🌲 Gran (Spruce)" if tree_type == TreeType.SPRUCE else "🪵 Bjørk (Birch)"
+	var meter := ""
+	for i in range(chop_hits_required):
+		if i < current_hits:
+			meter += "■ "
+		else:
+			meter += "□ "
+	meter = meter.strip_edges()
+
 	if tracker_label:
-		tracker_label.text = "%s\nChop %d / %d" % [type_name, current_hits, chop_hits_required]
+		tracker_label.text = "%s\nChop %d / %d\n[ %s ]" % [type_name, current_hits, chop_hits_required, meter]
 
 	if bar_fill:
 		var ratio := clampf(float(current_hits) / float(chop_hits_required), 0.0, 1.0)
 		bar_fill.scale.x = maxf(0.01, ratio)
-		# Left-align the fill bar within the 1.14 width frame
-		bar_fill.position.x = -0.57 * (1.0 - ratio)
+		# Left-align the fill bar within the 1.18 width frame
+		bar_fill.position.x = -0.59 * (1.0 - ratio)
 
 		# Color transition: Warm gold -> Vibrant Emerald Green as chopping finishes
 		var mat := bar_fill.material_override as StandardMaterial3D
@@ -529,6 +568,16 @@ func fell_tree(_harvester: Node) -> void:
 	is_falling = true
 	set_process(false)
 	set_physics_process(true)
+
+	# If attached to a MultiMesh instance, hide that instance in MultiMesh
+	if multimesh_instance and is_instance_valid(multimesh_instance) and multimesh_index >= 0:
+		var mm: MultiMesh = multimesh_instance.multimesh
+		if mm and multimesh_index < mm.instance_count:
+			mm.set_instance_transform(multimesh_index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -999, 0)))
+
+	# Ensure we have a visual compound mesh in model_pivot to animate the toppling fall
+	if model_pivot and model_pivot.get_child_count() == 0:
+		_build_default_meshes()
 
 	# Hide tracker and ground indicator during falling animation
 	if progress_tracker:
