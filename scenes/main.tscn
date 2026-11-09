@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3 uid="uid://dp6m5k3u5o2a4"]
+[gd_scene load_steps=18 format=3 uid="uid://dp6m5k3u5o2a4"]
 
 [ext_resource type="Script" path="res://scripts/time/time_manager.gd" id="1_time"]
 [ext_resource type="Script" path="res://scripts/time/season_manager.gd" id="2_season"]
@@ -15,6 +15,8 @@
 [ext_resource type="Script" path="res://scripts/player/equipment_manager.gd" id="13_equip"]
 [ext_resource type="PackedScene" uid="uid://c6v2n4q1r7tp9" path="res://scenes/ui/hud_hotbar.tscn" id="14_hotbar"]
 [ext_resource type="Script" path="res://scripts/environment/weather_visual_controller.gd" id="15_weather"]
+[ext_resource type="AudioStream" uid="uid://c0wed6y3ps80q" path="res://music/Fjord_Pathways.mp3" id="16_music"]
+[ext_resource type="Script" path="res://scripts/audio/background_music_player.gd" id="17_bgm"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.35, 0.48, 0.65, 1)
@@ -134,5 +136,14 @@ visible = true
 [node name="HUDBuildingBar" parent="HUDLayer" instance=ExtResource("10_build_hud")]
 
 [node name="HUDHotbar" parent="HUDLayer" instance=ExtResource("14_hotbar")]
+
+[node name="BackgroundMusic" type="AudioStreamPlayer" parent="." groups=["background_music"]]
+stream = ExtResource("16_music")
+volume_db = -9.0
+autoplay = true
+bus = &"Master"
+script = ExtResource("17_bgm")
+music_track = ExtResource("16_music")
+
 
 
