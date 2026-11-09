@@ -181,10 +181,9 @@ def process_all():
     v_m *= 1.75 # Scale man to 1.75m total height
     
     d_cloth, v_c, n_c, u_c, tri_c, img_c = load_glb_arrays('3dmodels/cloths.glb')
-    v_c *= 1.48 # Scale cloths to match shoulders at 1.45m and waist at 0.85m
+    v_c *= 1.50 # Scale cloths to match shoulders at 1.36m, collar at 1.45m, and waist at 0.88m
     
     d_helm, v_h, n_h, u_h, tri_h, img_h = load_glb_arrays('3dmodels/helmet.glb')
-    v_h *= 1.75 # Scale helmet and belt to 1.75m
     
     tri_m_c = v_m[tri_m].mean(axis=1)
     tri_c_c = v_c[tri_c].mean(axis=1)
@@ -195,15 +194,15 @@ def process_all():
     # -------------------------------------------------------------
     print("\n--- Generating Head and Helmet ---")
     # Head from man_without_cloths
-    mask_head = (tri_m_c[:, 1] >= 1.40) & (np.abs(tri_m_c[:, 0]) <= 0.22)
+    mask_head = (tri_m_c[:, 1] >= 1.42) & (np.abs(tri_m_c[:, 0]) <= 0.20)
     v_head, n_head, u_head, tri_head = extract_submesh(v_m, n_m, u_m, tri_m, mask_head)
     v_head -= np.array([0.0, 1.52, 0.0], dtype=np.float32)
     save_submesh_glb(d_man, v_head, n_head, u_head, tri_head, img_m, 'assets/character/character_head.glb')
 
-    # Helmet / cap from helmet.glb
-    mask_helm = tri_h_c[:, 1] >= 1.25
+    # Helmet / cap from helmet.glb (rescaled 0.70x to snugly fit 22cm human head)
+    mask_helm = tri_h_c[:, 1] >= 0.74
     v_helm, n_helm, u_helm, tri_helm = extract_submesh(v_h, n_h, u_h, tri_h, mask_helm)
-    v_helm -= np.array([0.0, 1.52, 0.0], dtype=np.float32)
+    v_helm = (v_helm - np.array([0.0, 1.0, 0.0], dtype=np.float32)) * 0.70 + np.array([0.0, 0.24, -0.02], dtype=np.float32)
     save_submesh_glb(d_helm, v_helm, n_helm, u_helm, tri_helm, img_h, 'assets/character/character_helmet.glb')
 
     # -------------------------------------------------------------
@@ -211,19 +210,23 @@ def process_all():
     # -------------------------------------------------------------
     print("\n--- Generating Torso and Belt ---")
     # Cloths tunic
-    mask_torso_c = (tri_c_c[:, 1] >= 0.70) & (np.abs(tri_c_c[:, 0]) <= 0.22)
+    mask_torso_c = (tri_c_c[:, 1] >= 0.70) & (np.abs(tri_c_c[:, 0]) <= 0.21)
     v_tc, n_tc, u_tc, tri_tc = extract_submesh(v_c, n_c, u_c, tri_c, mask_torso_c)
     v_tc -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
     save_submesh_glb(d_cloth, v_tc, n_tc, u_tc, tri_tc, img_c, 'assets/character/character_torso.glb')
 
-    # Belt from helmet.glb
-    mask_belt = (tri_h_c[:, 1] >= 0.50) & (tri_h_c[:, 1] < 1.15)
+    # Belt from helmet.glb (scaled to fit waist: 42cm width, 31cm depth at Y=0.88m)
+    mask_belt = (tri_h_c[:, 1] >= 0.0) & (tri_h_c[:, 1] < 0.65)
     v_belt, n_belt, u_belt, tri_belt = extract_submesh(v_h, n_h, u_h, tri_h, mask_belt)
-    v_belt -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
+    v_belt[:, 0] *= 0.83
+    v_belt[:, 2] = v_belt[:, 2] * 0.55 - 0.02
+    v_belt[:, 1] = (v_belt[:, 1] - 0.48) * 0.83 - 0.17
+    n_belt = n_belt * np.array([1.0/0.83, 1.0/0.83, 1.0/0.55], dtype=np.float32)
+    n_belt /= np.maximum(1e-6, np.linalg.norm(n_belt, axis=1, keepdims=True))
     save_submesh_glb(d_helm, v_belt, n_belt, u_belt, tri_belt, img_h, 'assets/character/character_belt.glb')
 
     # Naked chest from man_without_cloths
-    mask_torso_m = (tri_m_c[:, 1] >= 0.72) & (tri_m_c[:, 1] < 1.40) & (np.abs(tri_m_c[:, 0]) <= 0.22)
+    mask_torso_m = (tri_m_c[:, 1] >= 0.70) & (tri_m_c[:, 1] < 1.42) & (np.abs(tri_m_c[:, 0]) <= 0.21)
     v_tm, n_tm, u_tm, tri_tm = extract_submesh(v_m, n_m, u_m, tri_m, mask_torso_m)
     v_tm -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
     save_submesh_glb(d_man, v_tm, n_tm, u_tm, tri_tm, img_m, 'assets/character/character_torso_naked.glb')
@@ -231,13 +234,14 @@ def process_all():
     # -------------------------------------------------------------
     # 4. Extract Sleeves & Hands (Pivots at left_arm_pivot and right_arm_pivot)
     #    Rotate 90 deg around Z from horizontal T-pose to hang down
+    #    Shoulder joints precisely at X = +-0.21, Y = 1.36, Z = -0.02
     # -------------------------------------------------------------
     print("\n--- Generating Sleeves and Hands ---")
-    p_sl = np.array([-0.28, 1.25, 0.0], dtype=np.float32)
-    p_sr = np.array([ 0.28, 1.25, 0.0], dtype=np.float32)
+    p_sl = np.array([-0.21, 1.36, -0.02], dtype=np.float32)
+    p_sr = np.array([ 0.21, 1.36, -0.02], dtype=np.float32)
 
     # Left sleeve (cloths)
-    mask_slv_l = (tri_c_c[:, 0] < -0.20) & (tri_c_c[:, 1] >= 0.80)
+    mask_slv_l = (tri_c_c[:, 0] < -0.21) & (tri_c_c[:, 1] >= 1.20)
     v_sl_l, n_sl_l, u_sl_l, tri_sl_l = extract_submesh(v_c, n_c, u_c, tri_c, mask_slv_l)
     v_rel = v_sl_l - p_sl
     v_rot = np.column_stack([-v_rel[:, 1], v_rel[:, 0], v_rel[:, 2]])
@@ -245,7 +249,7 @@ def process_all():
     save_submesh_glb(d_cloth, v_rot, n_rot, u_sl_l, tri_sl_l, img_c, 'assets/character/character_sleeve_l.glb')
 
     # Right sleeve (cloths)
-    mask_slv_r = (tri_c_c[:, 0] > 0.20) & (tri_c_c[:, 1] >= 0.80)
+    mask_slv_r = (tri_c_c[:, 0] > 0.21) & (tri_c_c[:, 1] >= 1.20)
     v_sl_r, n_sl_r, u_sl_r, tri_sl_r = extract_submesh(v_c, n_c, u_c, tri_c, mask_slv_r)
     v_rel_r = v_sl_r - p_sr
     v_rot_r = np.column_stack([v_rel_r[:, 1], -v_rel_r[:, 0], v_rel_r[:, 2]])
@@ -253,7 +257,7 @@ def process_all():
     save_submesh_glb(d_cloth, v_rot_r, n_rot_r, u_sl_r, tri_sl_r, img_c, 'assets/character/character_sleeve_r.glb')
 
     # Left hand (man_without_cloths)
-    mask_hnd_l = (tri_m_c[:, 0] < -0.65) & (tri_m_c[:, 1] >= 1.20)
+    mask_hnd_l = (tri_m_c[:, 0] < -0.68) & (tri_m_c[:, 1] >= 1.25)
     v_hl, n_hl, u_hl, tri_hl = extract_submesh(v_m, n_m, u_m, tri_m, mask_hnd_l)
     v_rel_hl = v_hl - p_sl
     v_rot_hl = np.column_stack([-v_rel_hl[:, 1], v_rel_hl[:, 0], v_rel_hl[:, 2]])
@@ -261,7 +265,7 @@ def process_all():
     save_submesh_glb(d_man, v_rot_hl, n_rot_hl, u_hl, tri_hl, img_m, 'assets/character/character_hand_l.glb')
 
     # Right hand (man_without_cloths)
-    mask_hnd_r = (tri_m_c[:, 0] > 0.65) & (tri_m_c[:, 1] >= 1.20)
+    mask_hnd_r = (tri_m_c[:, 0] > 0.68) & (tri_m_c[:, 1] >= 1.25)
     v_hr, n_hr, u_hr, tri_hr = extract_submesh(v_m, n_m, u_m, tri_m, mask_hnd_r)
     v_rel_hr = v_hr - p_sr
     v_rot_hr = np.column_stack([v_rel_hr[:, 1], -v_rel_hr[:, 0], v_rel_hr[:, 2]])
@@ -269,7 +273,7 @@ def process_all():
     save_submesh_glb(d_man, v_rot_hr, n_rot_hr, u_hr, tri_hr, img_m, 'assets/character/character_hand_r.glb')
 
     # Naked left arm (entire arm including hand)
-    mask_arm_m_l = (tri_m_c[:, 0] < -0.20) & (tri_m_c[:, 1] >= 1.20)
+    mask_arm_m_l = (tri_m_c[:, 0] < -0.21) & (tri_m_c[:, 1] >= 1.20)
     v_aml, n_aml, u_aml, tri_aml = extract_submesh(v_m, n_m, u_m, tri_m, mask_arm_m_l)
     v_rel_aml = v_aml - p_sl
     v_rot_aml = np.column_stack([-v_rel_aml[:, 1], v_rel_aml[:, 0], v_rel_aml[:, 2]])
@@ -277,7 +281,7 @@ def process_all():
     save_submesh_glb(d_man, v_rot_aml, n_rot_aml, u_aml, tri_aml, img_m, 'assets/character/character_arm_l_naked.glb')
 
     # Naked right arm
-    mask_arm_m_r = (tri_m_c[:, 0] > 0.20) & (tri_m_c[:, 1] >= 1.20)
+    mask_arm_m_r = (tri_m_c[:, 0] > 0.21) & (tri_m_c[:, 1] >= 1.20)
     v_amr, n_amr, u_amr, tri_amr = extract_submesh(v_m, n_m, u_m, tri_m, mask_arm_m_r)
     v_rel_amr = v_amr - p_sr
     v_rot_amr = np.column_stack([v_rel_amr[:, 1], -v_rel_amr[:, 0], v_rel_amr[:, 2]])
@@ -288,8 +292,8 @@ def process_all():
     # 5. Extract Legs & Boots (Pivots at left_leg_pivot and right_leg_pivot)
     # -------------------------------------------------------------
     print("\n--- Generating Legs and Boots ---")
-    p_hl = np.array([-0.13, 0.72, 0.0], dtype=np.float32)
-    p_hr = np.array([ 0.13, 0.72, 0.0], dtype=np.float32)
+    p_hl = np.array([-0.15, 0.70, -0.04], dtype=np.float32)
+    p_hr = np.array([ 0.15, 0.70, -0.04], dtype=np.float32)
 
     # Clothed left leg
     mask_leg_cl = (tri_c_c[:, 0] < 0.0) & (tri_c_c[:, 1] < 0.70)
@@ -304,13 +308,13 @@ def process_all():
     save_submesh_glb(d_cloth, v_lcr, n_lcr, u_lcr, tri_lcr, img_c, 'assets/character/character_leg_r.glb')
 
     # Naked left leg
-    mask_leg_ml = (tri_m_c[:, 0] < 0.0) & (tri_m_c[:, 1] < 0.72)
+    mask_leg_ml = (tri_m_c[:, 0] < 0.0) & (tri_m_c[:, 1] < 0.70)
     v_lml, n_lml, u_lml, tri_lml = extract_submesh(v_m, n_m, u_m, tri_m, mask_leg_ml)
     v_lml -= p_hl
     save_submesh_glb(d_man, v_lml, n_lml, u_lml, tri_lml, img_m, 'assets/character/character_leg_l_naked.glb')
 
     # Naked right leg
-    mask_leg_mr = (tri_m_c[:, 0] >= 0.0) & (tri_m_c[:, 1] < 0.72)
+    mask_leg_mr = (tri_m_c[:, 0] >= 0.0) & (tri_m_c[:, 1] < 0.70)
     v_lmr, n_lmr, u_lmr, tri_lmr = extract_submesh(v_m, n_m, u_m, tri_m, mask_leg_mr)
     v_lmr -= p_hr
     save_submesh_glb(d_man, v_lmr, n_lmr, u_lmr, tri_lmr, img_m, 'assets/character/character_leg_r_naked.glb')

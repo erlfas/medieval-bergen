@@ -280,11 +280,11 @@ func _build_box_man() -> void:
 	_build_character_helmet()
 
 	# =========================================================================
-	# 3. Left Arm (Shoulder pivot at -0.28, 1.25, 0)
+	# 3. Left Arm (Shoulder pivot at -0.21, 1.35, -0.02 matching 3D tunic shoulders)
 	# =========================================================================
 	left_arm_pivot = Node3D.new()
 	left_arm_pivot.name = "LeftArm"
-	left_arm_pivot.position = Vector3(-0.28, 1.25, 0)
+	left_arm_pivot.position = Vector3(-0.21, 1.35, -0.02)
 	add_child(left_arm_pivot)
 
 	var l_arm_mesh := MeshInstance3D.new()
@@ -312,11 +312,11 @@ func _build_box_man() -> void:
 	_build_bow(mat_wood, mat_dark_leather)
 
 	# =========================================================================
-	# 4. Right Arm (Shoulder pivot at 0.28, 1.25, 0)
+	# 4. Right Arm (Shoulder pivot at 0.21, 1.35, -0.02 matching 3D tunic shoulders)
 	# =========================================================================
 	right_arm_pivot = Node3D.new()
 	right_arm_pivot.name = "RightArm"
-	right_arm_pivot.position = Vector3(0.28, 1.25, 0)
+	right_arm_pivot.position = Vector3(0.21, 1.35, -0.02)
 	add_child(right_arm_pivot)
 
 	var r_arm_mesh := MeshInstance3D.new()
@@ -352,11 +352,11 @@ func _build_box_man() -> void:
 	_build_sword()
 
 	# =========================================================================
-	# 5. Left Leg (Hip pivot at -0.13, 0.72, 0)
+	# 5. Left Leg (Hip pivot at -0.15, 0.70, -0.04)
 	# =========================================================================
 	left_leg_pivot = Node3D.new()
 	left_leg_pivot.name = "LeftLeg"
-	left_leg_pivot.position = Vector3(-0.13, 0.72, 0)
+	left_leg_pivot.position = Vector3(-0.15, 0.70, -0.04)
 	add_child(left_leg_pivot)
 
 	var l_leg_mesh := MeshInstance3D.new()
@@ -378,11 +378,11 @@ func _build_box_man() -> void:
 	left_leg_pivot.add_child(l_boot_mesh)
 
 	# =========================================================================
-	# 6. Right Leg (Hip pivot at 0.13, 0.72, 0)
+	# 6. Right Leg (Hip pivot at 0.15, 0.70, -0.04)
 	# =========================================================================
 	right_leg_pivot = Node3D.new()
 	right_leg_pivot.name = "RightLeg"
-	right_leg_pivot.position = Vector3(0.13, 0.72, 0)
+	right_leg_pivot.position = Vector3(0.15, 0.70, -0.04)
 	add_child(right_leg_pivot)
 
 	var r_leg_mesh := MeshInstance3D.new()
@@ -595,7 +595,7 @@ func _build_backpack(mat_leather: Material, mat_dark_leather: Material, mat_bras
 func _build_axe(mat_wood: Material, mat_iron: Material) -> void:
 	axe_mesh = Node3D.new()
 	axe_mesh.name = "HandAxe"
-	axe_mesh.position = Vector3(0, -0.45, -0.05)
+	axe_mesh.position = Vector3(0, -0.56, -0.04)
 	axe_mesh.rotation_degrees = Vector3(20, 0, 0)
 	right_arm_pivot.add_child(axe_mesh)
 
@@ -620,7 +620,7 @@ func _build_axe(mat_wood: Material, mat_iron: Material) -> void:
 func _build_water_bottle(mat_horn: Material, mat_strap: Material, mat_brass: Material) -> void:
 	water_bottle_mesh = Node3D.new()
 	water_bottle_mesh.name = "WaterBottle"
-	water_bottle_mesh.position = Vector3(0, -0.48, -0.06)
+	water_bottle_mesh.position = Vector3(0, -0.56, -0.05)
 	water_bottle_mesh.rotation_degrees = Vector3(-10, 0, 20)
 	water_bottle_mesh.visible = false
 	right_arm_pivot.add_child(water_bottle_mesh)
@@ -674,7 +674,7 @@ func _build_water_bottle(mat_horn: Material, mat_strap: Material, mat_brass: Mat
 func _build_knife(mat_wood: Material, mat_brass: Material, mat_iron: Material) -> void:
 	knife_mesh = Node3D.new()
 	knife_mesh.name = "HuntingKnife"
-	knife_mesh.position = Vector3(0, -0.46, -0.04)
+	knife_mesh.position = Vector3(0, -0.56, -0.04)
 	knife_mesh.rotation_degrees = Vector3(15, 0, 0)
 	knife_mesh.visible = false
 	right_arm_pivot.add_child(knife_mesh)
@@ -711,7 +711,7 @@ func _build_knife(mat_wood: Material, mat_brass: Material, mat_iron: Material) -
 func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 	bow_mesh = Node3D.new()
 	bow_mesh.name = "HuntingBow"
-	bow_mesh.position = Vector3(0, -0.45, -0.08)
+	bow_mesh.position = Vector3(0, -0.56, -0.04)
 	bow_mesh.rotation_degrees = Vector3(0, 90, 0)
 	bow_mesh.visible = false
 	left_arm_pivot.add_child(bow_mesh)
@@ -770,7 +770,7 @@ func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 func _build_held_arrow(mat_wood: Material, mat_iron: Material) -> void:
 	arrow_hand_mesh = Node3D.new()
 	arrow_hand_mesh.name = "HeldArrow"
-	arrow_hand_mesh.position = Vector3(0, -0.45, 0)
+	arrow_hand_mesh.position = Vector3(0, -0.56, -0.04)
 	arrow_hand_mesh.visible = false
 	right_arm_pivot.add_child(arrow_hand_mesh)
 
@@ -804,7 +804,7 @@ func _build_held_arrow(mat_wood: Material, mat_iron: Material) -> void:
 func _build_sword() -> void:
 	sword_mesh = Node3D.new()
 	sword_mesh.name = "HandSword"
-	sword_mesh.position = Vector3(0, -0.45, -0.05)
+	sword_mesh.position = Vector3(0, -0.56, -0.04)
 	sword_mesh.rotation_degrees = Vector3(15, 0, 0)
 	sword_mesh.visible = false
 	right_arm_pivot.add_child(sword_mesh)
@@ -944,7 +944,7 @@ func _build_modular_character_mesh() -> void:
 func _build_torch(mat_wood: Material) -> void:
 	torch_mesh = Node3D.new()
 	torch_mesh.name = "HandTorch"
-	torch_mesh.position = Vector3(0, -0.45, -0.1)
+	torch_mesh.position = Vector3(0, -0.56, -0.06)
 	torch_mesh.visible = false
 	left_arm_pivot.add_child(torch_mesh)
 
@@ -975,7 +975,7 @@ func _build_torch(mat_wood: Material) -> void:
 func _build_fishing_spool(mat_wood: Material, mat_iron: Material, mat_line: Material) -> void:
 	fishing_spool_mesh = Node3D.new()
 	fishing_spool_mesh.name = "FishingSpool"
-	fishing_spool_mesh.position = Vector3(0, -0.46, -0.06)
+	fishing_spool_mesh.position = Vector3(0, -0.56, -0.05)
 	fishing_spool_mesh.rotation_degrees = Vector3(15, 0, 10)
 	fishing_spool_mesh.visible = false
 	right_arm_pivot.add_child(fishing_spool_mesh)
