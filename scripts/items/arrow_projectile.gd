@@ -19,6 +19,7 @@ var elapsed_time: float = 0.0
 var shaft_mesh: MeshInstance3D
 var head_mesh: MeshInstance3D
 var fletchings: Array[MeshInstance3D] = []
+var arrow_model: Node3D
 
 static var _shared_mat_wood: StandardMaterial3D
 static var _shared_mat_iron: StandardMaterial3D
@@ -29,6 +30,7 @@ static var _shared_box_fletch: BoxMesh
 
 func _enter_tree() -> void:
 	add_to_group("projectiles")
+	_build_arrow_model()
 
 func _ready() -> void:
 	add_to_group("projectiles")
@@ -42,7 +44,13 @@ func _align_to_velocity() -> void:
 		look_at(global_position + velocity, up_vec)
 
 func _build_arrow_model() -> void:
-	if shaft_mesh != null:
+	if shaft_mesh != null or arrow_model != null:
+		return
+
+	var arrow_glb_scene = load("res://assets/weapons/arrow.glb")
+	if arrow_glb_scene:
+		arrow_model = arrow_glb_scene.instantiate()
+		add_child(arrow_model)
 		return
 
 	if _shared_mat_wood == null:

@@ -19,7 +19,8 @@ extends Control
 	$PanelCenter/HBoxSlots/Slot3,
 	$PanelCenter/HBoxSlots/Slot4,
 	$PanelCenter/HBoxSlots/Slot5,
-	$PanelCenter/HBoxSlots/Slot6
+	$PanelCenter/HBoxSlots/Slot6,
+	$PanelCenter/HBoxSlots/Slot7
 ]
 
 @onready var label_water: Label = $PanelCenter/HBoxSlots/Slot2/VBox/LabelSub

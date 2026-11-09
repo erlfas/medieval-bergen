@@ -24,7 +24,8 @@ enum Slot {
 	KNIFE = 3,
 	BOW = 4,
 	TORCH = 5,
-	FISHING_LINE = 6
+	FISHING_LINE = 6,
+	SWORD = 7
 }
 
 enum FishingState {
@@ -39,7 +40,8 @@ const SLOT_NAMES := {
 	Slot.KNIFE: "Hunting Knife",
 	Slot.BOW: "Recurve Bow & Arrow",
 	Slot.TORCH: "Pine-tar Torch",
-	Slot.FISHING_LINE: "Handline & Cod Jig (Fiskesnøre)"
+	Slot.FISHING_LINE: "Handline & Cod Jig (Fiskesnøre)",
+	Slot.SWORD: "Norse Arming Sword"
 }
 
 @export var current_slot: int = Slot.AXE
@@ -111,12 +113,12 @@ func _process(delta: float) -> void:
 				fishing_state = FishingState.IDLE
 				fishing_state_changed.emit(FishingState.IDLE, "Fisken glapp unna!")
 
-## Selects an equipment slot by number (1 to 6)
+## Selects an equipment slot by number (1 to 7)
 func select_slot(slot_idx: int, force: bool = false) -> void:
 	if box_man_model == null or settler == null:
 		_bind_settler_references()
 
-	if slot_idx < Slot.AXE or slot_idx > Slot.FISHING_LINE:
+	if slot_idx < Slot.AXE or slot_idx > Slot.SWORD:
 		return
 	if current_slot == slot_idx and not force:
 		return
@@ -154,10 +156,10 @@ func cancel_fishing() -> void:
 
 func cycle_slot(direction: int) -> void:
 	var new_slot := current_slot + direction
-	if new_slot > Slot.FISHING_LINE:
+	if new_slot > Slot.SWORD:
 		new_slot = Slot.AXE
 	elif new_slot < Slot.AXE:
-		new_slot = Slot.FISHING_LINE
+		new_slot = Slot.SWORD
 	select_slot(new_slot)
 
 ## Executes primary use of equipped item (Left Click)
@@ -179,6 +181,30 @@ func use_primary(raycast: RayCast3D, camera: Camera3D) -> void:
 			_use_torch(raycast)
 		Slot.FISHING_LINE:
 			_use_fishing_line(raycast)
+		Slot.SWORD:
+			_use_sword(raycast)
+
+## Slot 7: Norse Arming Sword: Heavy slashing melee (34 dmg), 0.32s cooldown, costs 7.0 stamina
+func _use_sword(raycast: RayCast3D) -> void:
+	attack_cooldown = 0.32
+	if box_man_model and box_man_model.has_method("trigger_sword_slash"):
+		box_man_model.trigger_sword_slash()
+	elif box_man_model:
+		box_man_model.trigger_knife_slash()
+	if survival_stats:
+		survival_stats.consume_stamina(7.0)
+
+	item_action_triggered.emit(Slot.SWORD, "slash")
+
+	if raycast and raycast.is_colliding():
+		var target := raycast.get_collider()
+		if target:
+			if target.has_method("take_damage"):
+				target.take_damage(34.0, settler)
+			elif target.has_method("chop"):
+				target.chop(settler)
+			elif target.has_method("on_interact"):
+				target.on_interact(settler)
 
 ## Slot 1: Woodcutter's Axe: Heavy melee swing (28 dmg), chops trees, costs 12 stamina
 func _use_axe(raycast: RayCast3D) -> void:

@@ -22,7 +22,8 @@ enum EquippedItem {
 	KNIFE = 3,
 	BOW = 4,
 	TORCH = 5,
-	FISHING_LINE = 6
+	FISHING_LINE = 6,
+	SWORD = 7
 }
 
 @export var tunic_color: Color = Color(0.46, 0.48, 0.52) # Slate grey wool
@@ -53,11 +54,25 @@ var bow_mesh: Node3D
 var arrow_hand_mesh: Node3D
 var carried_log_node: Node3D
 var fishing_spool_mesh: Node3D
+var sword_mesh: Node3D
+var stowed_sword_mesh: Node3D
+
+# Modular 3D Character Meshes
+var body_mesh_instance: Node3D
+var cloths_mesh_instance: Node3D
+var helmet_mesh_instance: Node3D
+var belt_mesh_instance: Node3D
+
+@export var show_clothing: bool = true
+@export var show_helmet: bool = true
+@export var show_belt: bool = true
 
 # State
 var walk_cycle: float = 0.0
 var chop_timer: float = 0.0
 var is_chopping: bool = false
+var is_sword_slashing: bool = false
+var sword_timer: float = 0.0
 var knife_timer: float = 0.0
 var is_knife_slashing: bool = false
 var drink_timer: float = 0.0
@@ -163,6 +178,9 @@ func _build_box_man() -> void:
 	belt_mesh.material_override = mat_belt
 	torso_node.add_child(belt_mesh)
 
+	# Modular 3D Leather Belt & Pouch
+	_build_character_belt()
+
 	# =========================================================================
 	# 3D BACKPACK (Attached to Torso back at +Z)
 	# =========================================================================
@@ -235,6 +253,9 @@ func _build_box_man() -> void:
 	hood_mesh.material_override = mat_tunic
 	head_node.add_child(hood_mesh)
 
+	# Modular 3D Iron Helmet
+	_build_character_helmet()
+
 	# =========================================================================
 	# 3. Left Arm (Shoulder pivot at -0.28, 1.25, 0)
 	# =========================================================================
@@ -300,6 +321,9 @@ func _build_box_man() -> void:
 	# Handline & Cod Jig Spool in Right Hand (Slot 6)
 	_build_fishing_spool(mat_wood, mat_iron, mat_dark_leather)
 
+	# Norse Arming Sword in Right Hand (Slot 7) & Sheath at Hip
+	_build_sword()
+
 	# =========================================================================
 	# 5. Left Leg (Hip pivot at -0.13, 0.72, 0)
 	# =========================================================================
@@ -343,6 +367,9 @@ func _build_box_man() -> void:
 	r_boot_mesh.position = Vector3(0, -0.58, -0.04)
 	r_boot_mesh.material_override = mat_boot
 	right_leg_pivot.add_child(r_boot_mesh)
+
+	# Modular 3D Body & Clothes meshes
+	_build_modular_character_mesh()
 
 	# Initialize item visibilities
 	set_equipped_item(equipped_item)
@@ -658,7 +685,14 @@ func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 	bow_mesh.visible = false
 	left_arm_pivot.add_child(bow_mesh)
 
-	# Central handle grip
+	var bow_glb_scene = load("res://assets/weapons/bow.glb")
+	if bow_glb_scene:
+		var bow_inst: Node3D = bow_glb_scene.instantiate()
+		bow_inst.name = "Bow3DModel"
+		bow_mesh.add_child(bow_inst)
+		return
+
+	# Fallback procedural bow
 	var grip := MeshInstance3D.new()
 	var cyl_g := CylinderMesh.new()
 	cyl_g.top_radius = 0.025
@@ -668,7 +702,6 @@ func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 	grip.material_override = mat_grip
 	bow_mesh.add_child(grip)
 
-	# Upper limb (curved forward recurve)
 	var upper_limb := MeshInstance3D.new()
 	var cyl_ul := CylinderMesh.new()
 	cyl_ul.top_radius = 0.016
@@ -680,7 +713,6 @@ func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 	upper_limb.material_override = mat_wood
 	bow_mesh.add_child(upper_limb)
 
-	# Lower limb (curved forward recurve)
 	var lower_limb := MeshInstance3D.new()
 	var cyl_ll := CylinderMesh.new()
 	cyl_ll.top_radius = 0.024
@@ -692,7 +724,6 @@ func _build_bow(mat_wood: Material, mat_grip: Material) -> void:
 	lower_limb.material_override = mat_wood
 	bow_mesh.add_child(lower_limb)
 
-	# Bowstring (taut cord between upper and lower nocks)
 	var string_mesh := MeshInstance3D.new()
 	var cyl_s := CylinderMesh.new()
 	cyl_s.top_radius = 0.003
@@ -712,6 +743,15 @@ func _build_held_arrow(mat_wood: Material, mat_iron: Material) -> void:
 	arrow_hand_mesh.visible = false
 	right_arm_pivot.add_child(arrow_hand_mesh)
 
+	var arrow_glb_scene = load("res://assets/weapons/arrow.glb")
+	if arrow_glb_scene:
+		var arrow_inst: Node3D = arrow_glb_scene.instantiate()
+		arrow_inst.name = "Arrow3DModel"
+		arrow_inst.rotation_degrees = Vector3(90, 0, 0)
+		arrow_hand_mesh.add_child(arrow_inst)
+		return
+
+	# Fallback procedural arrow
 	var shaft := MeshInstance3D.new()
 	var cyl_as := CylinderMesh.new()
 	cyl_as.top_radius = 0.01
@@ -729,6 +769,66 @@ func _build_held_arrow(mat_wood: Material, mat_iron: Material) -> void:
 	head.position = Vector3(0, 0.58, 0)
 	head.material_override = mat_iron
 	arrow_hand_mesh.add_child(head)
+
+func _build_sword() -> void:
+	sword_mesh = Node3D.new()
+	sword_mesh.name = "HandSword"
+	sword_mesh.position = Vector3(0, -0.45, -0.05)
+	sword_mesh.rotation_degrees = Vector3(15, 0, 0)
+	sword_mesh.visible = false
+	right_arm_pivot.add_child(sword_mesh)
+
+	var sword_glb_scene = load("res://assets/weapons/sword.glb")
+	if sword_glb_scene:
+		var sword_inst: Node3D = sword_glb_scene.instantiate()
+		sword_inst.name = "Sword3DModel"
+		sword_mesh.add_child(sword_inst)
+
+	# Hip sheath at left hip of torso/belt when sword is unequipped
+	stowed_sword_mesh = Node3D.new()
+	stowed_sword_mesh.name = "StowedSword"
+	stowed_sword_mesh.position = Vector3(-0.24, -0.20, 0.04)
+	stowed_sword_mesh.rotation_degrees = Vector3(25, 0, -15)
+	stowed_sword_mesh.visible = true
+	torso_node.add_child(stowed_sword_mesh)
+	if sword_glb_scene:
+		var stowed_inst: Node3D = sword_glb_scene.instantiate()
+		stowed_inst.name = "SheathedSword3DModel"
+		stowed_sword_mesh.add_child(stowed_inst)
+
+func _build_character_helmet() -> void:
+	var helmet_scene = load("res://assets/character/character_helmet.glb")
+	if helmet_scene:
+		helmet_mesh_instance = helmet_scene.instantiate()
+		helmet_mesh_instance.name = "CharacterHelmet"
+		helmet_mesh_instance.position = Vector3(0, 0.02, 0)
+		helmet_mesh_instance.visible = show_helmet
+		head_node.add_child(helmet_mesh_instance)
+
+func _build_character_belt() -> void:
+	var belt_scene = load("res://assets/character/character_belt.glb")
+	if belt_scene:
+		belt_mesh_instance = belt_scene.instantiate()
+		belt_mesh_instance.name = "CharacterBelt"
+		belt_mesh_instance.position = Vector3(0, -0.18, 0)
+		belt_mesh_instance.visible = show_belt
+		torso_node.add_child(belt_mesh_instance)
+
+func _build_modular_character_mesh() -> void:
+	var body_scene = load("res://assets/character/man_without_cloths.glb")
+	if body_scene:
+		body_mesh_instance = body_scene.instantiate()
+		body_mesh_instance.name = "CharacterBodyMesh"
+		body_mesh_instance.position = Vector3(0, 0, 0)
+		add_child(body_mesh_instance)
+
+	var cloths_scene = load("res://assets/character/cloths.glb")
+	if cloths_scene:
+		cloths_mesh_instance = cloths_scene.instantiate()
+		cloths_mesh_instance.name = "CharacterClothsMesh"
+		cloths_mesh_instance.position = Vector3(0, 0, 0)
+		cloths_mesh_instance.visible = show_clothing
+		add_child(cloths_mesh_instance)
 
 func _build_torch(mat_wood: Material) -> void:
 	torch_mesh = Node3D.new()
@@ -820,6 +920,8 @@ func _update_hand_item_visibility() -> void:
 		if arrow_hand_mesh: arrow_hand_mesh.visible = false
 		if torch_mesh: torch_mesh.visible = false
 		if fishing_spool_mesh: fishing_spool_mesh.visible = false
+		if sword_mesh: sword_mesh.visible = false
+		if stowed_sword_mesh: stowed_sword_mesh.visible = true
 		return
 
 	if axe_mesh:
@@ -836,6 +938,10 @@ func _update_hand_item_visibility() -> void:
 		torch_mesh.visible = (equipped_item == EquippedItem.TORCH or has_torch)
 	if fishing_spool_mesh:
 		fishing_spool_mesh.visible = (equipped_item == EquippedItem.FISHING_LINE)
+	if sword_mesh:
+		sword_mesh.visible = (equipped_item == EquippedItem.SWORD)
+	if stowed_sword_mesh:
+		stowed_sword_mesh.visible = (equipped_item != EquippedItem.SWORD)
 
 ## Updates procedural animation every physics frame
 func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: bool, holding_torch: bool, is_swimming: bool = false, is_climbing: bool = false, is_on_rope: bool = false, vertical_velocity: float = 0.0) -> void:
@@ -867,6 +973,15 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 	else:
 		is_chopping = false
 		chop_timer = 0.0
+
+	if is_sword_slashing and not is_carrying_log:
+		sword_timer += delta * 10.0
+		if sword_timer >= PI:
+			is_sword_slashing = false
+			sword_timer = 0.0
+	else:
+		is_sword_slashing = false
+		sword_timer = 0.0
 
 	if is_knife_slashing and not is_carrying_log:
 		knife_timer += delta * 12.0
@@ -1157,6 +1272,12 @@ func _apply_item_poses(arm_swing: float, delta: float, is_airborne: bool, breath
 		right_arm_pivot.rotation.x = -deg_to_rad(55) + slash * deg_to_rad(85)
 		right_arm_pivot.rotation.y = -slash * deg_to_rad(40)
 		right_arm_pivot.rotation.z = slash * deg_to_rad(35)
+	elif is_sword_slashing:
+		# Fast sweeping Norse sword slash
+		var slash := sin(sword_timer)
+		right_arm_pivot.rotation.x = -deg_to_rad(70) + slash * deg_to_rad(115)
+		right_arm_pivot.rotation.y = deg_to_rad(20) - slash * deg_to_rad(50)
+		right_arm_pivot.rotation.z = deg_to_rad(25) - slash * deg_to_rad(35)
 	elif is_chopping:
 		# Heavy axe chop
 		var chop := sin(chop_timer)
@@ -1197,6 +1318,30 @@ func trigger_knife_slash() -> void:
 	if not is_carrying_log:
 		is_knife_slashing = true
 		knife_timer = 0.0
+
+## Triggers sweeping sword slash animation (Slot 7)
+func trigger_sword_slash() -> void:
+	if not is_carrying_log:
+		is_sword_slashing = true
+		sword_timer = 0.0
+
+## Sets whether modular clothing is visible
+func set_clothing_visible(v: bool) -> void:
+	show_clothing = v
+	if cloths_mesh_instance:
+		cloths_mesh_instance.visible = v
+
+## Sets whether iron helmet is visible
+func set_helmet_visible(v: bool) -> void:
+	show_helmet = v
+	if helmet_mesh_instance:
+		helmet_mesh_instance.visible = v
+
+## Sets whether leather belt & pouch is visible
+func set_belt_visible(v: bool) -> void:
+	show_belt = v
+	if belt_mesh_instance:
+		belt_mesh_instance.visible = v
 
 ## Triggers drinking animation (Slot 2)
 func trigger_drink() -> void:
