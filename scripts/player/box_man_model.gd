@@ -280,11 +280,11 @@ func _build_box_man() -> void:
 	_build_character_helmet()
 
 	# =========================================================================
-	# 3. Left Arm (Shoulder pivot at -0.21, 1.35, -0.02 matching 3D tunic shoulders)
+	# 3. Left Arm (Shoulder pivot at -0.21, 1.35, 0.02 matching 3D tunic shoulders)
 	# =========================================================================
 	left_arm_pivot = Node3D.new()
 	left_arm_pivot.name = "LeftArm"
-	left_arm_pivot.position = Vector3(-0.21, 1.35, -0.02)
+	left_arm_pivot.position = Vector3(-0.21, 1.35, 0.02)
 	add_child(left_arm_pivot)
 
 	var l_arm_mesh := MeshInstance3D.new()
@@ -312,11 +312,11 @@ func _build_box_man() -> void:
 	_build_bow(mat_wood, mat_dark_leather)
 
 	# =========================================================================
-	# 4. Right Arm (Shoulder pivot at 0.21, 1.35, -0.02 matching 3D tunic shoulders)
+	# 4. Right Arm (Shoulder pivot at 0.21, 1.35, 0.02 matching 3D tunic shoulders)
 	# =========================================================================
 	right_arm_pivot = Node3D.new()
 	right_arm_pivot.name = "RightArm"
-	right_arm_pivot.position = Vector3(0.21, 1.35, -0.02)
+	right_arm_pivot.position = Vector3(0.21, 1.35, 0.02)
 	add_child(right_arm_pivot)
 
 	var r_arm_mesh := MeshInstance3D.new()
@@ -352,11 +352,11 @@ func _build_box_man() -> void:
 	_build_sword()
 
 	# =========================================================================
-	# 5. Left Leg (Hip pivot at -0.15, 0.70, -0.04)
+	# 5. Left Leg (Hip pivot at -0.15, 0.70, 0.04)
 	# =========================================================================
 	left_leg_pivot = Node3D.new()
 	left_leg_pivot.name = "LeftLeg"
-	left_leg_pivot.position = Vector3(-0.15, 0.70, -0.04)
+	left_leg_pivot.position = Vector3(-0.15, 0.70, 0.04)
 	add_child(left_leg_pivot)
 
 	var l_leg_mesh := MeshInstance3D.new()
@@ -378,11 +378,11 @@ func _build_box_man() -> void:
 	left_leg_pivot.add_child(l_boot_mesh)
 
 	# =========================================================================
-	# 6. Right Leg (Hip pivot at 0.15, 0.70, -0.04)
+	# 6. Right Leg (Hip pivot at 0.15, 0.70, 0.04)
 	# =========================================================================
 	right_leg_pivot = Node3D.new()
 	right_leg_pivot.name = "RightLeg"
-	right_leg_pivot.position = Vector3(0.15, 0.70, -0.04)
+	right_leg_pivot.position = Vector3(0.15, 0.70, 0.04)
 	add_child(right_leg_pivot)
 
 	var r_leg_mesh := MeshInstance3D.new()

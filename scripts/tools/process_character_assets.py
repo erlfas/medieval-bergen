@@ -178,12 +178,19 @@ def process_all():
     # -------------------------------------------------------------
     print("\n=== Reading source 3D models ===")
     d_man, v_m, n_m, u_m, tri_m, img_m = load_glb_arrays('3dmodels/man_without_cloths.glb')
-    v_m *= 1.75 # Scale man to 1.75m total height
-    
     d_cloth, v_c, n_c, u_c, tri_c, img_c = load_glb_arrays('3dmodels/cloths.glb')
-    v_c *= 1.50 # Scale cloths to match shoulders at 1.36m, collar at 1.45m, and waist at 0.88m
-    
     d_helm, v_h, n_h, u_h, tri_h, img_h = load_glb_arrays('3dmodels/helmet.glb')
+    
+    # Tripo3D models face +Z (backwards in Godot).
+    # Rotate 180 degrees around Y (X' = -X, Z' = -Z) so the character faces -Z (Godot forward):
+    for v, n in [(v_m, n_m), (v_c, n_c), (v_h, n_h)]:
+        v[:, 0] = -v[:, 0]
+        v[:, 2] = -v[:, 2]
+        n[:, 0] = -n[:, 0]
+        n[:, 2] = -n[:, 2]
+
+    v_m *= 1.75 # Scale man to 1.75m total height
+    v_c *= 1.50 # Scale cloths to match shoulders at 1.36m, collar at 1.45m, and waist at 0.88m
     
     tri_m_c = v_m[tri_m].mean(axis=1)
     tri_c_c = v_c[tri_c].mean(axis=1)
@@ -202,7 +209,7 @@ def process_all():
     # Helmet / cap from helmet.glb (rescaled 0.70x to snugly fit 22cm human head)
     mask_helm = tri_h_c[:, 1] >= 0.74
     v_helm, n_helm, u_helm, tri_helm = extract_submesh(v_h, n_h, u_h, tri_h, mask_helm)
-    v_helm = (v_helm - np.array([0.0, 1.0, 0.0], dtype=np.float32)) * 0.70 + np.array([0.0, 0.24, -0.02], dtype=np.float32)
+    v_helm = (v_helm - np.array([0.0, 1.0, 0.0], dtype=np.float32)) * 0.70 + np.array([0.0, 0.24, 0.02], dtype=np.float32)
     save_submesh_glb(d_helm, v_helm, n_helm, u_helm, tri_helm, img_h, 'assets/character/character_helmet.glb')
 
     # -------------------------------------------------------------
@@ -215,11 +222,11 @@ def process_all():
     v_tc -= np.array([0.0, 1.05, 0.0], dtype=np.float32)
     save_submesh_glb(d_cloth, v_tc, n_tc, u_tc, tri_tc, img_c, 'assets/character/character_torso.glb')
 
-    # Belt from helmet.glb (scaled to fit waist: 42cm width, 31cm depth at Y=0.88m)
+    # Belt from helmet.glb (scaled to fit waist: 42cm width, 31cm depth at Y=0.88m, knot at -Z in front)
     mask_belt = (tri_h_c[:, 1] >= 0.0) & (tri_h_c[:, 1] < 0.65)
     v_belt, n_belt, u_belt, tri_belt = extract_submesh(v_h, n_h, u_h, tri_h, mask_belt)
     v_belt[:, 0] *= 0.83
-    v_belt[:, 2] = v_belt[:, 2] * 0.55 - 0.02
+    v_belt[:, 2] = v_belt[:, 2] * 0.55 + 0.02
     v_belt[:, 1] = (v_belt[:, 1] - 0.48) * 0.83 - 0.17
     n_belt = n_belt * np.array([1.0/0.83, 1.0/0.83, 1.0/0.55], dtype=np.float32)
     n_belt /= np.maximum(1e-6, np.linalg.norm(n_belt, axis=1, keepdims=True))
@@ -234,11 +241,11 @@ def process_all():
     # -------------------------------------------------------------
     # 4. Extract Sleeves & Hands (Pivots at left_arm_pivot and right_arm_pivot)
     #    Rotate 90 deg around Z from horizontal T-pose to hang down
-    #    Shoulder joints precisely at X = +-0.21, Y = 1.36, Z = -0.02
+    #    Shoulder joints precisely at X = +-0.21, Y = 1.36, Z = 0.02
     # -------------------------------------------------------------
     print("\n--- Generating Sleeves and Hands ---")
-    p_sl = np.array([-0.21, 1.36, -0.02], dtype=np.float32)
-    p_sr = np.array([ 0.21, 1.36, -0.02], dtype=np.float32)
+    p_sl = np.array([-0.21, 1.36, 0.02], dtype=np.float32)
+    p_sr = np.array([ 0.21, 1.36, 0.02], dtype=np.float32)
 
     # Left sleeve (cloths)
     mask_slv_l = (tri_c_c[:, 0] < -0.21) & (tri_c_c[:, 1] >= 1.20)
@@ -292,8 +299,8 @@ def process_all():
     # 5. Extract Legs & Boots (Pivots at left_leg_pivot and right_leg_pivot)
     # -------------------------------------------------------------
     print("\n--- Generating Legs and Boots ---")
-    p_hl = np.array([-0.15, 0.70, -0.04], dtype=np.float32)
-    p_hr = np.array([ 0.15, 0.70, -0.04], dtype=np.float32)
+    p_hl = np.array([-0.15, 0.70, 0.04], dtype=np.float32)
+    p_hr = np.array([ 0.15, 0.70, 0.04], dtype=np.float32)
 
     # Clothed left leg
     mask_leg_cl = (tri_c_c[:, 0] < 0.0) & (tri_c_c[:, 1] < 0.70)
