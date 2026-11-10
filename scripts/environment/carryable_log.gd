@@ -7,6 +7,7 @@ extends RigidBody3D
 enum LogType { SPRUCE, BIRCH }
 
 @export var log_type: LogType = LogType.SPRUCE
+@export var log_length: float = 4.0
 @export var timber_logs_yield: int = 1
 @export var firewood_yield: int = 1
 @export var birch_bark_yield: int = 2
@@ -17,8 +18,8 @@ var col_shape: CollisionShape3D
 var is_focused: bool = false
 var focus_cooldown: float = 0.0
 
-static var _shared_log_capsule: CapsuleShape3D = null
-static var _shared_log_cyl: CylinderMesh = null
+static var _shared_log_capsule_4m: CapsuleShape3D = null
+static var _shared_log_cyl_4m: CylinderMesh = null
 static var _shared_mat_spruce: StandardMaterial3D = null
 static var _shared_mat_birch: StandardMaterial3D = null
 static var _shared_log_phys_mat: PhysicsMaterial = null
@@ -57,15 +58,15 @@ func _ensure_setup() -> void:
 	_setup_prompt_ui()
 
 func _setup_collision_and_mesh() -> void:
-	if _shared_log_capsule == null:
-		_shared_log_capsule = CapsuleShape3D.new()
-		_shared_log_capsule.radius = 0.22
-		_shared_log_capsule.height = 1.6
-		_shared_log_cyl = CylinderMesh.new()
-		_shared_log_cyl.top_radius = 0.20
-		_shared_log_cyl.bottom_radius = 0.22
-		_shared_log_cyl.height = 1.55
-		_shared_log_cyl.radial_segments = 12
+	if _shared_log_capsule_4m == null:
+		_shared_log_capsule_4m = CapsuleShape3D.new()
+		_shared_log_capsule_4m.radius = 0.22
+		_shared_log_capsule_4m.height = 4.0
+		_shared_log_cyl_4m = CylinderMesh.new()
+		_shared_log_cyl_4m.top_radius = 0.20
+		_shared_log_cyl_4m.bottom_radius = 0.22
+		_shared_log_cyl_4m.height = 3.95
+		_shared_log_cyl_4m.radial_segments = 14
 		_shared_mat_spruce = StandardMaterial3D.new()
 		_shared_mat_spruce.albedo_color = Color(0.38, 0.25, 0.15)
 		_shared_mat_spruce.roughness = 0.88
@@ -77,7 +78,13 @@ func _setup_collision_and_mesh() -> void:
 	if not has_node("CollisionShape3D"):
 		col_shape = CollisionShape3D.new()
 		col_shape.name = "CollisionShape3D"
-		col_shape.shape = _shared_log_capsule
+		if is_equal_approx(log_length, 4.0):
+			col_shape.shape = _shared_log_capsule_4m
+		else:
+			var custom_cap := CapsuleShape3D.new()
+			custom_cap.radius = 0.22
+			custom_cap.height = log_length
+			col_shape.shape = custom_cap
 		# Align capsule horizontally along local Z axis
 		col_shape.rotation.x = deg_to_rad(90.0)
 		add_child(col_shape)
@@ -88,7 +95,15 @@ func _setup_collision_and_mesh() -> void:
 	if not has_node("LogMesh"):
 		mesh_instance = MeshInstance3D.new()
 		mesh_instance.name = "LogMesh"
-		mesh_instance.mesh = _shared_log_cyl
+		if is_equal_approx(log_length, 4.0):
+			mesh_instance.mesh = _shared_log_cyl_4m
+		else:
+			var custom_cyl := CylinderMesh.new()
+			custom_cyl.top_radius = 0.20
+			custom_cyl.bottom_radius = 0.22
+			custom_cyl.height = log_length - 0.05
+			custom_cyl.radial_segments = 14
+			mesh_instance.mesh = custom_cyl
 		# Align mesh horizontally
 		mesh_instance.rotation.x = deg_to_rad(90.0)
 		mesh_instance.material_override = _shared_mat_spruce if log_type == LogType.SPRUCE else _shared_mat_birch
@@ -109,7 +124,7 @@ func _setup_prompt_ui() -> void:
 	prompt_label.visible = false
 
 	var type_name := "Gran (Spruce)" if log_type == LogType.SPRUCE else "Bjørk (Birch)"
-	prompt_label.text = "[E] Bær Tømmerstokk (%s)" % type_name
+	prompt_label.text = "[E] Bær 4m Tømmerstokk (%s)" % type_name
 	add_child(prompt_label)
 
 func _process(delta: float) -> void:

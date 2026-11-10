@@ -609,15 +609,34 @@ func _on_hit_ground() -> void:
 	is_falling = false
 	is_felled = true
 
-	# Spawn physical CarryableLog instances along the fallen tree path
-	_spawn_carryable_logs()
+	# Spawn physical FallenTreeStem with visual cut guides for bucking into 4m logs
+	_spawn_fallen_stem()
 
 	# Spawn cut tree stump at original position
 	_spawn_tree_stump()
 
 	queue_free()
 
+func _spawn_fallen_stem() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+
+	var stem_script = load("res://scripts/environment/fallen_tree_stem.gd")
+	var stem := StaticBody3D.new()
+	stem.name = "FallenStem_%d" % Time.get_ticks_msec()
+	stem.set_script(stem_script)
+	stem.set("tree_type", tree_type)
+	stem.set("total_length", 12.0)
+	stem.set("log_section_length", 4.0)
+
+	parent.add_child(stem)
+	stem.global_position = global_position
+	var rot_y := atan2(fall_direction.x, fall_direction.z)
+	stem.rotation.y = rot_y
+
 func _spawn_carryable_logs() -> void:
+	_spawn_fallen_stem()
 	var parent := get_parent()
 	if not parent:
 		return

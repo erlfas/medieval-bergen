@@ -36,7 +36,17 @@ func _ready() -> void:
 	_create_ghost_instance()
 
 func _init_catalog() -> void:
-	# 1. Complete Norwegian Log Cabin (Laftehytte / Årestue)
+	# 1. Laftehytte Construction Site (Log-by-Log Build)
+	var r_site := BuildingPieceRecipe.new()
+	r_site.piece_id = "laftehytte_construction_site"
+	r_site.piece_name = "Laftehytte Construction Site (Log-by-Log Build)"
+	r_site.category = BuildingPieceRecipe.BuildingCategory.FARMHOUSE
+	r_site.resource_costs = { "stone": 4 } # 4 corner foundation stones to stake plot
+	r_site.dimensions = Vector3(4.0, 3.2, 4.0)
+	r_site.provides_shelter = true
+	catalog.append(r_site)
+
+	# 2. Complete Norwegian Log Cabin (Laftehytte / Årestue Prefab)
 	var r_cabin := BuildingPieceRecipe.new()
 	r_cabin.piece_id = "cabin_laftehytte"
 	r_cabin.piece_name = "Norwegian Log Cabin (Complete Laftehytte)"
@@ -311,7 +321,7 @@ func _try_place_current_piece() -> void:
 		scene_root = get_tree().current_scene if get_tree().current_scene else get_tree().root
 	scene_root.add_child(placed_piece)
 
-	if current_recipe.piece_id.begins_with("cabin"):
+	if current_recipe.piece_id.begins_with("cabin") or current_recipe.piece_id == "laftehytte_construction_site":
 		placed_piece.global_position = ghost_root.global_position
 		placed_piece.rotation.y = current_rotation_y
 	else:
@@ -320,8 +330,13 @@ func _try_place_current_piece() -> void:
 	piece_placed.emit(current_recipe, placed_piece.global_position)
 
 func _spawn_piece_instance(recipe: BuildingPieceRecipe) -> Node3D:
-	# 1. Complete Norwegian Log Cabin & 4 Construction Stages (assembled with walk-in collisions & hearth)
-	if recipe.piece_id == "cabin_laftehytte":
+	if recipe.piece_id == "laftehytte_construction_site":
+		var site_script = load("res://scripts/construction/laftehytte_construction_site.gd")
+		var site := StaticBody3D.new()
+		site.name = "LaftehytteSite_%d" % Time.get_ticks_msec()
+		site.set_script(site_script)
+		return site
+	elif recipe.piece_id == "cabin_laftehytte":
 		return BuildingAssembler.assemble_log_cabin(recipe.dimensions.x, recipe.dimensions.z)
 	elif recipe.piece_id == "cabin_stage_foundation":
 		return BuildingAssembler.assemble_cabin_stage_foundation(recipe.dimensions.x, recipe.dimensions.z)
@@ -367,7 +382,7 @@ func _update_ghost_mesh() -> void:
 		ghost_custom_node.queue_free()
 		ghost_custom_node = null
 
-	if recipe.piece_id == "cabin_laftehytte":
+	if recipe.piece_id == "cabin_laftehytte" or recipe.piece_id == "laftehytte_construction_site":
 		ghost_mesh_instance.visible = false
 		ghost_custom_node = BuildingAssembler.create_cabin_ghost_preview(recipe.dimensions.x, recipe.dimensions.z, ghost_mat_valid)
 		ghost_root.add_child(ghost_custom_node)

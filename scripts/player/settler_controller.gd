@@ -191,8 +191,10 @@ func _create_torch_light() -> void:
 	torch_light.light_energy = 1.4
 	torch_light.omni_range = 14.0
 	torch_light.shadow_enabled = false
-	torch_light.visible = false
-	head.add_child(torch_light)
+	if head:
+		head.add_child(torch_light)
+	else:
+		add_child(torch_light)
 
 func _spawn_starter_logs() -> void:
 	var existing_logs := get_tree().get_nodes_in_group("carryable_log")
@@ -286,7 +288,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Interaction Key (E) - pick up or drop log, or interact with objects
 	if event.is_action_pressed("interact"):
 		if is_carrying_log:
-			drop_log()
+			if not _try_slot_carried_log_into_construction_site():
+				drop_log()
 		else:
 			_perform_interaction()
 
@@ -298,9 +301,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if (event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_R and (not player_builder or not player_builder.is_build_mode) or event.physical_keycode == KEY_T)) or event.is_action_pressed("deploy_rope"):
 		_handle_climbing_rope_tool()
 
-	# Primary Item Use / Attack / Bow Aim & Release (Left Click)
+	# Primary Item Use / Attack / Bow Aim & Release / Slot Carried Log (Left Click)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if not is_carrying_log and (not player_builder or not player_builder.is_build_mode):
+		if is_carrying_log:
+			if event.pressed:
+				_try_slot_carried_log_into_construction_site()
+		elif not player_builder or not player_builder.is_build_mode:
 			if equipment:
 				if equipment.current_slot == EquipmentManager.Slot.BOW:
 					if event.pressed:
@@ -1021,9 +1027,38 @@ func consume_carried_log() -> void:
 	if box_man_model:
 		box_man_model.set_carrying_log(false)
 
+## Attempts to place the carried log into a nearby construction site slot
+func _try_slot_carried_log_into_construction_site() -> bool:
+	if not is_carrying_log:
+		return false
+	var sites: Array = []
+	if is_inside_tree() and get_tree():
+		sites = get_tree().get_nodes_in_group("construction_site")
+	elif get_parent():
+		for child in get_parent().get_children():
+			if child.is_in_group("construction_site"):
+				sites.append(child)
+
+	var my_pos: Vector3 = global_position if is_inside_tree() else position
+	var closest_site: Node = null
+	var min_d := 5.0
+	for s in sites:
+		if s and is_instance_valid(s) and s.has_method("can_place_log"):
+			if s.can_place_log(self):
+				var s_node := s as Node3D
+				var s_pos: Vector3 = s_node.global_position if (s_node and s_node.is_inside_tree()) else (s_node.position if s_node else Vector3.ZERO)
+				var d: float = my_pos.distance_to(s_pos)
+				if d < min_d:
+					min_d = d
+					closest_site = s
+	if closest_site:
+		return closest_site.place_carried_log(self)
+	return false
+
 func _perform_interaction() -> void:
 	if is_carrying_log:
-		drop_log()
+		if not _try_slot_carried_log_into_construction_site():
+			drop_log()
 		return
 
 	# 0. Check for nearby hanging climbing rope within 2.2m (Task 7)
