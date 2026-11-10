@@ -21,12 +21,18 @@ var current_hits: int = 0
 var is_felled: bool = false
 var is_falling: bool = false
 
-# Topple Physics
+# Topple Physics & Multi-Stage Fall Phases
+enum FallPhase { NONE, CREAK, TOPPLE, BOUNCE }
+var fall_phase: FallPhase = FallPhase.NONE
+var fall_creak_timer: float = 0.0
+var fall_bounce_timer: float = 0.0
+var fall_bounce_peak: float = 0.0
 var fall_direction: Vector3 = Vector3.FORWARD
 var fall_rotation_axis: Vector3 = Vector3.RIGHT
 var fall_angle: float = 0.0
 var fall_angular_velocity: float = 0.0
 var natural_lean: Vector3 = Vector3.ZERO
+var wood_chips: CPUParticles3D = null
 
 # Interaction & UI Focus
 var focused_settler: Node3D = null
@@ -300,21 +306,125 @@ func _setup_trajectory_indicator() -> void:
 		trajectory_indicator.add_child(bead)
 		arc_beads.append(bead)
 
+func _build_v_notch_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# Fresh cut inner sapwood grain
+	var notch_mat := StandardMaterial3D.new()
+	notch_mat.albedo_color = Color(0.92, 0.79, 0.52)
+	notch_mat.roughness = 0.82
+	st.set_material(notch_mat)
+
+	# 45-degree directional timber felling notch
+	# Apex sits at Z = -0.16 (towards trunk center), horizontal shelf at Y = -0.05, top slope down from Y = +0.14
+	var v_top_l := Vector3(-0.16, 0.14, 0.08)
+	var v_top_r := Vector3(0.16, 0.14, 0.08)
+	var v_bot_l := Vector3(-0.16, -0.05, 0.08)
+	var v_bot_r := Vector3(0.16, -0.05, 0.08)
+	var v_apex_l := Vector3(-0.14, -0.05, -0.16)
+	var v_apex_r := Vector3(0.14, -0.05, -0.16)
+
+	# 1. Horizontal shelf (bottom cut)
+	st.set_normal(Vector3.UP)
+	st.set_uv(Vector2(0.0, 0.0))
+	st.add_vertex(v_bot_l)
+	st.set_uv(Vector2(1.0, 0.0))
+	st.add_vertex(v_bot_r)
+	st.set_uv(Vector2(1.0, 1.0))
+	st.add_vertex(v_apex_r)
+
+	st.set_normal(Vector3.UP)
+	st.set_uv(Vector2(0.0, 0.0))
+	st.add_vertex(v_bot_l)
+	st.set_uv(Vector2(1.0, 1.0))
+	st.add_vertex(v_apex_r)
+	st.set_uv(Vector2(0.0, 1.0))
+	st.add_vertex(v_apex_l)
+
+	# 2. Slanted upper face (45-degree angled downward cut)
+	var norm_slant := Vector3(0.0, 0.707, 0.707).normalized()
+	st.set_normal(norm_slant)
+	st.set_uv(Vector2(1.0, 0.0))
+	st.add_vertex(v_top_r)
+	st.set_uv(Vector2(0.0, 0.0))
+	st.add_vertex(v_top_l)
+	st.set_uv(Vector2(0.0, 1.0))
+	st.add_vertex(v_apex_l)
+
+	st.set_normal(norm_slant)
+	st.set_uv(Vector2(1.0, 0.0))
+	st.add_vertex(v_top_r)
+	st.set_uv(Vector2(0.0, 1.0))
+	st.add_vertex(v_apex_l)
+	st.set_uv(Vector2(1.0, 1.0))
+	st.add_vertex(v_apex_r)
+
+	# 3. Left side triangle
+	st.set_normal(Vector3.LEFT)
+	st.set_uv(Vector2(0.0, 0.0))
+	st.add_vertex(v_top_l)
+	st.set_uv(Vector2(0.0, 1.0))
+	st.add_vertex(v_bot_l)
+	st.set_uv(Vector2(1.0, 0.5))
+	st.add_vertex(v_apex_l)
+
+	# 4. Right side triangle
+	st.set_normal(Vector3.RIGHT)
+	st.set_uv(Vector2(0.0, 0.0))
+	st.add_vertex(v_top_r)
+	st.set_uv(Vector2(1.0, 0.5))
+	st.add_vertex(v_apex_r)
+	st.set_uv(Vector2(0.0, 1.0))
+	st.add_vertex(v_bot_r)
+
+	st.generate_tangents()
+	return st.commit()
+
+func _setup_wood_chips() -> void:
+	if wood_chips != null:
+		return
+	wood_chips = CPUParticles3D.new()
+	wood_chips.name = "WoodChipsParticles"
+	wood_chips.emitting = false
+	wood_chips.one_shot = true
+	wood_chips.explosiveness = 0.95
+	wood_chips.lifetime = 0.55
+	wood_chips.amount = 16
+
+	var chip_mesh := BoxMesh.new()
+	chip_mesh.size = Vector3(0.045, 0.025, 0.018)
+	var chip_mat := StandardMaterial3D.new()
+	chip_mat.albedo_color = Color(0.89, 0.76, 0.48)
+	chip_mat.roughness = 0.85
+	chip_mesh.material = chip_mat
+	wood_chips.mesh = chip_mesh
+
+	wood_chips.direction = Vector3(0.0, 0.65, 1.0)
+	wood_chips.spread = 45.0
+	wood_chips.initial_velocity_min = 2.2
+	wood_chips.initial_velocity_max = 4.8
+	wood_chips.angular_velocity_min = -360.0
+	wood_chips.angular_velocity_max = 360.0
+	wood_chips.gravity = Vector3(0.0, -9.8, 0.0)
+	wood_chips.position = Vector3(0.0, 1.05, 0.0)
+
+	if model_pivot:
+		model_pivot.add_child(wood_chips)
+	else:
+		add_child(wood_chips)
+
 func _setup_notch() -> void:
 	notch_mesh = MeshInstance3D.new()
 	notch_mesh.name = "TrunkNotch"
-	var wedge := BoxMesh.new()
-	wedge.size = Vector3(0.32, 0.18, 0.24)
-	notch_mesh.mesh = wedge
-	var notch_mat := StandardMaterial3D.new()
-	notch_mat.albedo_color = Color(0.85, 0.72, 0.48) # Freshly cut inner wood grain
-	notch_mesh.material_override = notch_mat
-	notch_mesh.position = Vector3(0.0, 1.1, 0.2)
+	notch_mesh.mesh = _build_v_notch_mesh()
+	notch_mesh.position = Vector3(0.0, 1.05, 0.19)
 	notch_mesh.visible = false
 	if model_pivot:
 		model_pivot.add_child(notch_mesh)
 	else:
 		add_child(notch_mesh)
+	_setup_wood_chips()
 
 var _last_displayed_fall_dir: Vector3 = Vector3.ZERO
 static var _shared_stump_mesh: CylinderMesh = null
@@ -377,17 +487,62 @@ func _physics_process(delta: float) -> void:
 	if not is_falling:
 		return
 
-	# Realistic gravity torque acceleration: tau = M * g * (L/2) * sin(theta)
-	var torque: float = 4.8 * sin(maxf(fall_angle, 0.08))
-	fall_angular_velocity += torque * delta
-	fall_angle += fall_angular_velocity * delta
+	match fall_phase:
+		FallPhase.CREAK:
+			fall_creak_timer -= delta
+			var progress := 1.0 - clampf(fall_creak_timer / 0.36, 0.0, 1.0)
+			# Creaking shudder of strained holding wood fibers
+			var creak_shudder := sin(progress * 38.0) * deg_to_rad(0.35) * progress
+			var creak_lean := lerpf(deg_to_rad(0.8), deg_to_rad(2.4), progress)
+			if model_pivot:
+				model_pivot.transform.basis = Basis(fall_rotation_axis, creak_lean + creak_shudder)
+			if fall_creak_timer <= 0.0:
+				fall_phase = FallPhase.TOPPLE
+				fall_angle = deg_to_rad(2.4)
+				fall_angular_velocity = 0.28
 
-	if model_pivot:
-		model_pivot.transform.basis = Basis(fall_rotation_axis, fall_angle)
+		FallPhase.TOPPLE:
+			# Non-linear gravity torque with aerodynamic drag:
+			# alpha = 3g / (2H) * sin(theta) - c_drag * omega^2
+			var alpha: float = 2.45 * sin(maxf(fall_angle, 0.06)) - 0.06 * (fall_angular_velocity * fall_angular_velocity)
+			fall_angular_velocity += alpha * delta
+			fall_angle += fall_angular_velocity * delta
 
-	# When tree tilts past 88 degrees, it impacts ground
-	if fall_angle >= deg_to_rad(88.0):
-		_on_hit_ground()
+			if model_pivot:
+				model_pivot.transform.basis = Basis(fall_rotation_axis, fall_angle)
+
+			# Ground impact threshold (~87.5 degrees)
+			if fall_angle >= deg_to_rad(87.5):
+				fall_phase = FallPhase.BOUNCE
+				fall_bounce_timer = 0.22
+				fall_bounce_peak = deg_to_rad(3.2)
+				_trigger_ground_impact_shake()
+
+		FallPhase.BOUNCE:
+			fall_bounce_timer -= delta
+			var bt := 1.0 - clampf(fall_bounce_timer / 0.22, 0.0, 1.0)
+			var bounce := sin(bt * PI) * fall_bounce_peak * (1.0 - bt * 0.75)
+			if model_pivot:
+				model_pivot.transform.basis = Basis(fall_rotation_axis, deg_to_rad(87.5) - bounce)
+			if fall_bounce_timer <= 0.0:
+				_on_hit_ground()
+
+func _trigger_ground_impact_shake() -> void:
+	if not is_inside_tree():
+		return
+	var settlers: Array = []
+	settlers.append_array(get_tree().get_nodes_in_group("settler"))
+	settlers.append_array(get_tree().get_nodes_in_group("player"))
+	var my_pos := global_position
+	var notified: Dictionary = {}
+	for s in settlers:
+		if s and is_instance_valid(s) and s is Node3D and not notified.has(s):
+			notified[s] = true
+			if s.has_method("add_camera_trauma"):
+				var dist: float = my_pos.distance_to((s as Node3D).global_position)
+				if dist < 24.0:
+					var trauma := clampf(1.0 - (dist / 24.0), 0.15, 0.75)
+					s.call("add_camera_trauma", trauma)
 
 func _update_tracker_orientation() -> void:
 	if not progress_tracker or not progress_tracker.visible:
@@ -455,18 +610,20 @@ func _update_fall_direction_display() -> void:
 	var segment_distances := [1.2, 2.2, 3.2, 4.2, 5.2, 6.2, 6.8]
 	var rot_y := atan2(horiz_dir.x, horiz_dir.z)
 
+	var my_pos := _get_pos(self)
+
 	# Update Ground Directional Arrow Markers
 	for i in range(min(arrow_markers.size(), segment_distances.size())):
 		var d: float = segment_distances[i]
 		var marker := arrow_markers[i]
-		var world_pos := global_position + horiz_dir * d
+		var world_pos := my_pos + horiz_dir * d
 		var ground_y := _sample_ground_height(world_pos.x, world_pos.z)
 		marker.global_position = Vector3(world_pos.x, ground_y + 0.08, world_pos.z)
 		marker.rotation.y = rot_y
 
 	# Update Landing Zone Target Marker
 	if landing_zone_marker:
-		var landing_world := global_position + horiz_dir * target_dist
+		var landing_world := my_pos + horiz_dir * target_dist
 		var landing_ground_y := _sample_ground_height(landing_world.x, landing_world.z)
 		landing_zone_marker.global_position = Vector3(landing_world.x, landing_ground_y + 0.06, landing_world.z)
 		landing_zone_marker.rotation.y = rot_y
@@ -480,7 +637,7 @@ func _update_fall_direction_display() -> void:
 		var r_d := target_dist * sin(angle)
 
 		var bead := arc_beads[i]
-		var bead_pos := global_position + horiz_dir * r_d + Vector3(0.0, r_y, 0.0)
+		var bead_pos := my_pos + horiz_dir * r_d + Vector3(0.0, r_y, 0.0)
 		bead.global_position = bead_pos
 
 func _update_notch_display() -> void:
@@ -488,8 +645,24 @@ func _update_notch_display() -> void:
 		if current_hits > 0:
 			notch_mesh.visible = true
 			var ratio := float(current_hits) / float(chop_hits_required)
-			notch_mesh.scale = Vector3(1.0 + ratio * 0.5, 1.0 + ratio * 0.4, 0.4 + ratio * 1.6)
-			notch_mesh.position = fall_direction * 0.18 + Vector3(0.0, 1.1, 0.0)
+			var horiz_fall := Vector3(fall_direction.x, 0.0, fall_direction.z).normalized()
+			if horiz_fall.length_squared() < 0.01:
+				horiz_fall = Vector3.FORWARD
+
+			# Cut face is placed on the settler's strike side (-fall_direction) in plain view of camera
+			var strike_dir := -horiz_fall
+			notch_mesh.position = strike_dir * 0.18 + Vector3(0.0, 1.05, 0.0)
+			notch_mesh.rotation.y = atan2(strike_dir.x, strike_dir.z)
+
+			# Progressive notch depth: starts with shallow bark cuts and deepens into full 45-degree wedge
+			var scale_w := 0.35 + ratio * 0.85
+			var scale_h := 0.30 + ratio * 0.85
+			var scale_d := 0.25 + ratio * 1.10
+			notch_mesh.scale = Vector3(scale_w, scale_h, scale_d)
+
+			if wood_chips:
+				wood_chips.position = notch_mesh.position
+				wood_chips.rotation.y = notch_mesh.rotation.y
 		else:
 			notch_mesh.visible = false
 
@@ -554,18 +727,28 @@ func chop(actor: Node) -> void:
 		if stats and stats.get("stamina") != null and float(stats.get("stamina")) > 0.0:
 			stats.call("consume_stamina", 6.0)
 
-	trunk_shake_intensity = 0.08
-	trunk_shake_timer = 0.25
+	trunk_shake_intensity = 0.09
+	trunk_shake_timer = 0.22
 
 	_update_progress_display()
 	_update_fall_direction_display()
 	_update_notch_display()
+
+	# Dynamic flying wood chips particle burst
+	if wood_chips and wood_chips.is_inside_tree():
+		wood_chips.restart()
+
+	# Tactile micro-shake on settler camera upon timber bite
+	if actor and actor.has_method("add_camera_trauma"):
+		actor.call("add_camera_trauma", 0.06)
 
 	if current_hits >= chop_hits_required:
 		fell_tree(actor)
 
 func fell_tree(_harvester: Node) -> void:
 	is_falling = true
+	fall_phase = FallPhase.CREAK
+	fall_creak_timer = 0.36
 	set_process(false)
 	set_physics_process(true)
 
@@ -602,7 +785,7 @@ func fell_tree(_harvester: Node) -> void:
 	if fall_rotation_axis.length_squared() < 0.01:
 		fall_rotation_axis = Vector3.RIGHT
 
-	fall_angle = 0.03
+	fall_angle = 0.015
 	fall_angular_velocity = 0.0
 
 func _on_hit_ground() -> void:

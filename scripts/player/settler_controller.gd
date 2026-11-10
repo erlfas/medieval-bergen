@@ -83,6 +83,14 @@ var current_cam_distance: float = 3.2
 var _smoothed_pivot_y: float = 0.0
 var _current_safe_dist: float = 3.2
 
+# Camera trauma / screen shake system (impacts, tree topples, ground slams)
+var camera_trauma: float = 0.0
+var _trauma_timer: float = 0.0
+
+## Adds procedural camera trauma/shake [0.0, 1.0]
+func add_camera_trauma(amount: float) -> void:
+	camera_trauma = clampf(camera_trauma + amount, 0.0, 1.0)
+
 # Stage 1 Kinematic jump buffering & coyote timers
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
@@ -123,6 +131,7 @@ func _enter_tree() -> void:
 
 func _ready() -> void:
 	add_to_group("settler")
+	add_to_group("player")
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	# CharacterBody3D floor snap and anti-snag slope configuration
@@ -981,6 +990,24 @@ func _update_camera(delta: float) -> void:
 		if interact_raycast:
 			interact_raycast.global_transform = camera.global_transform
 			interact_raycast.target_position = Vector3(0, 0, -(current_cam_distance + 5.5))
+
+	# Procedural camera trauma shake (non-linear quadratic falloff)
+	if camera_trauma > 0.001:
+		_trauma_timer += delta * 28.0
+		camera_trauma = maxf(0.0, camera_trauma - delta * 1.6)
+		var shake_factor := camera_trauma * camera_trauma
+		var shake_offset := Vector3(
+			sin(_trauma_timer * 1.1) * 0.05 * shake_factor,
+			cos(_trauma_timer * 1.6) * 0.07 * shake_factor,
+			sin(_trauma_timer * 2.1) * 0.03 * shake_factor
+		)
+		var shake_rot := Vector3(
+			cos(_trauma_timer * 1.4) * deg_to_rad(2.2) * shake_factor,
+			sin(_trauma_timer * 1.8) * deg_to_rad(1.8) * shake_factor,
+			cos(_trauma_timer * 2.3) * deg_to_rad(3.0) * shake_factor
+		)
+		camera.global_position += shake_offset
+		camera.global_basis = camera.global_basis * Basis.from_euler(shake_rot)
 
 ## Picks up a physical carryable log into arms
 func pick_up_log(log_node: Node) -> void:

@@ -1247,12 +1247,23 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 			var sprint_ratio := clampf((horiz_speed - 3.5) / 3.5, 0.0, 1.0)
 			target_pitch = deg_to_rad(2.0 + 6.0 * sprint_ratio)
 
-		torso_node.rotation.x = lerp_angle(torso_node.rotation.x, target_pitch, delta * 8.0)
-		torso_node.rotation.y = lerp_angle(torso_node.rotation.y, 0.0, delta * 8.0)
-		torso_node.rotation.z = lerp_angle(torso_node.rotation.z, target_roll, delta * 8.0)
-		head_node.rotation.x = lerp_angle(head_node.rotation.x, -target_pitch * 0.35, delta * 8.0)
-		head_node.rotation.y = lerp_angle(head_node.rotation.y, 0.0, delta * 8.0)
-		head_node.rotation.z = lerp_angle(head_node.rotation.z, -target_roll * 0.45, delta * 8.0)
+		if is_chopping and not is_carrying_log:
+			var p: float = clampf(chop_timer / PI, 0.0, 1.0)
+			var chop_torso := _get_chop_torso_rot(p)
+			var chop_head := _get_chop_head_rot(p)
+			torso_node.rotation.x = chop_torso.x
+			torso_node.rotation.y = chop_torso.y
+			torso_node.rotation.z = chop_torso.z
+			head_node.rotation.x = chop_head.x
+			head_node.rotation.y = chop_head.y
+			head_node.rotation.z = chop_head.z
+		else:
+			torso_node.rotation.x = lerp_angle(torso_node.rotation.x, target_pitch, delta * 8.0)
+			torso_node.rotation.y = lerp_angle(torso_node.rotation.y, 0.0, delta * 8.0)
+			torso_node.rotation.z = lerp_angle(torso_node.rotation.z, target_roll, delta * 8.0)
+			head_node.rotation.x = lerp_angle(head_node.rotation.x, -target_pitch * 0.35, delta * 8.0)
+			head_node.rotation.y = lerp_angle(head_node.rotation.y, 0.0, delta * 8.0)
+			head_node.rotation.z = lerp_angle(head_node.rotation.z, -target_roll * 0.45, delta * 8.0)
 
 		# Leg flare on landing impact squash
 		left_leg_pivot.rotation.z = landing_compression * 0.35
@@ -1261,7 +1272,12 @@ func update_animation(delta: float, horizontal_velocity: Vector3, is_grounded: b
 		var base_torso_y := 1.05 - landing_compression
 		var base_head_y := 1.52 - landing_compression * 0.75
 
-		if is_grounded and horiz_speed > 0.15:
+		if is_chopping and not is_carrying_log and is_grounded:
+			# Planted woodcutter stance: flexed knees, lowered center of gravity
+			left_leg_pivot.rotation.x = lerpf(left_leg_pivot.rotation.x, deg_to_rad(12.0), delta * 10.0)
+			right_leg_pivot.rotation.x = lerpf(right_leg_pivot.rotation.x, -deg_to_rad(14.0), delta * 10.0)
+			torso_node.position.y = base_torso_y - 0.035
+		elif is_grounded and horiz_speed > 0.15:
 			# Walking / Sprinting stride cycle synced to ground velocity
 			# Check forward vs backward direction
 			var forward_vec := -global_transform.basis.z
@@ -1337,11 +1353,107 @@ func _apply_log_carry_pose(cycle: float, breath: float = 0.0) -> void:
 	right_arm_pivot.rotation.y = deg_to_rad(-28)
 	right_arm_pivot.rotation.z = deg_to_rad(-22)
 
+# =========================================================================
+# Biomechanical Two-Handed Axe Kinematics (Windup, Cleave, Shudder, Return)
+# =========================================================================
+func _get_chop_torso_rot(p: float) -> Vector3:
+	if p < 0.35:
+		# Phase 1: Windup Anticipation - Torso coils back and right
+		var t := p / 0.35
+		var e := t * t * (3.0 - 2.0 * t)
+		return Vector3(-deg_to_rad(8.0) * e, deg_to_rad(22.0) * e, -deg_to_rad(6.0) * e)
+	elif p < 0.68:
+		# Phase 2: Power Cleave - Torso uncoils forward and downward
+		var t := (p - 0.35) / 0.33
+		var e := t * t
+		return Vector3(
+			lerpf(-deg_to_rad(8.0), deg_to_rad(24.0), e),
+			lerpf(deg_to_rad(22.0), -deg_to_rad(14.0), e),
+			lerpf(-deg_to_rad(6.0), deg_to_rad(8.0), e)
+		)
+	elif p < 0.78:
+		# Phase 3: Timber Impact Bite & Shudder
+		var t := (p - 0.68) / 0.10
+		var shudder := sin(t * PI * 6.0) * deg_to_rad(3.2) * (1.0 - t)
+		return Vector3(deg_to_rad(24.0) + shudder * 0.5, -deg_to_rad(14.0) + shudder * 0.3, deg_to_rad(8.0))
+	else:
+		# Phase 4: Follow-Through & Return
+		var t := (p - 0.78) / 0.22
+		var e := sin(t * PI * 0.5)
+		return Vector3(lerpf(deg_to_rad(24.0), 0.0, e), lerpf(-deg_to_rad(14.0), 0.0, e), lerpf(deg_to_rad(8.0), 0.0, e))
+
+func _get_chop_head_rot(p: float) -> Vector3:
+	if p < 0.35:
+		var t := p / 0.35
+		var e := t * t * (3.0 - 2.0 * t)
+		return Vector3(deg_to_rad(10.0) * e, -deg_to_rad(8.0) * e, 0.0)
+	elif p < 0.68:
+		var t := (p - 0.35) / 0.33
+		var e := t * t
+		return Vector3(lerpf(deg_to_rad(10.0), deg_to_rad(18.0), e), lerpf(-deg_to_rad(8.0), deg_to_rad(4.0), e), 0.0)
+	elif p < 0.78:
+		var t := (p - 0.68) / 0.10
+		var shudder := sin(t * PI * 6.0) * deg_to_rad(2.5) * (1.0 - t)
+		return Vector3(deg_to_rad(18.0) + shudder * 0.4, deg_to_rad(4.0), 0.0)
+	else:
+		var t := (p - 0.78) / 0.22
+		var e := sin(t * PI * 0.5)
+		return Vector3(lerpf(deg_to_rad(18.0), 0.0, e), lerpf(deg_to_rad(4.0), 0.0, e), 0.0)
+
+func _get_chop_right_arm_rot(p: float) -> Vector3:
+	if p < 0.35:
+		var t := p / 0.35
+		var e := t * t * (3.0 - 2.0 * t)
+		return Vector3(lerpf(deg_to_rad(8.0), deg_to_rad(-118.0), e), deg_to_rad(25.0) * e, -deg_to_rad(18.0) * e)
+	elif p < 0.68:
+		var t := (p - 0.35) / 0.33
+		var e := t * t
+		return Vector3(
+			lerpf(deg_to_rad(-118.0), -deg_to_rad(18.0), e),
+			lerpf(deg_to_rad(25.0), -deg_to_rad(12.0), e),
+			lerpf(-deg_to_rad(18.0), deg_to_rad(14.0), e)
+		)
+	elif p < 0.78:
+		var t := (p - 0.68) / 0.10
+		var shudder := sin(t * PI * 6.0) * deg_to_rad(3.5) * (1.0 - t)
+		return Vector3(-deg_to_rad(18.0) + shudder, -deg_to_rad(12.0) + shudder * 0.5, deg_to_rad(14.0))
+	else:
+		var t := (p - 0.78) / 0.22
+		var e := sin(t * PI * 0.5)
+		return Vector3(lerpf(-deg_to_rad(18.0), deg_to_rad(8.0), e), lerpf(-deg_to_rad(12.0), 0.0, e), lerpf(deg_to_rad(14.0), 0.0, e))
+
+func _get_chop_left_arm_rot(p: float) -> Vector3:
+	if p < 0.35:
+		# Left hand crosses chest to clasp lower haft
+		var t := p / 0.35
+		var e := t * t * (3.0 - 2.0 * t)
+		return Vector3(lerpf(deg_to_rad(8.0), deg_to_rad(-96.0), e), -deg_to_rad(28.0) * e, deg_to_rad(38.0) * e)
+	elif p < 0.68:
+		var t := (p - 0.35) / 0.33
+		var e := t * t
+		return Vector3(
+			lerpf(deg_to_rad(-96.0), -deg_to_rad(34.0), e),
+			lerpf(-deg_to_rad(28.0), -deg_to_rad(10.0), e),
+			lerpf(deg_to_rad(38.0), deg_to_rad(18.0), e)
+		)
+	elif p < 0.78:
+		var t := (p - 0.68) / 0.10
+		var shudder := sin(t * PI * 6.0) * deg_to_rad(3.2) * (1.0 - t)
+		return Vector3(-deg_to_rad(34.0) + shudder, -deg_to_rad(10.0) + shudder * 0.5, deg_to_rad(18.0))
+	else:
+		var t := (p - 0.78) / 0.22
+		var e := sin(t * PI * 0.5)
+		return Vector3(lerpf(-deg_to_rad(34.0), deg_to_rad(8.0), e), lerpf(-deg_to_rad(10.0), 0.0, e), lerpf(deg_to_rad(18.0), 0.0, e))
+
 func _apply_item_poses(arm_swing: float, delta: float, is_airborne: bool, breath: float = 0.0) -> void:
 	# =======================
 	# Left Arm Handling
 	# =======================
-	if is_aiming_bow and equipped_item == EquippedItem.BOW:
+	if is_chopping and not is_carrying_log:
+		var p: float = clampf(chop_timer / PI, 0.0, 1.0)
+		var left_rot := _get_chop_left_arm_rot(p)
+		left_arm_pivot.rotation = left_rot
+	elif is_aiming_bow and equipped_item == EquippedItem.BOW:
 		# Bow Aim Pose: Left arm extended forward pointing bow
 		left_arm_pivot.rotation.x = lerp_angle(left_arm_pivot.rotation.x, deg_to_rad(-82), delta * 14.0)
 		left_arm_pivot.rotation.y = lerp_angle(left_arm_pivot.rotation.y, deg_to_rad(18), delta * 14.0)
@@ -1390,11 +1502,10 @@ func _apply_item_poses(arm_swing: float, delta: float, is_airborne: bool, breath
 		right_arm_pivot.rotation.y = deg_to_rad(20) - slash * deg_to_rad(50)
 		right_arm_pivot.rotation.z = deg_to_rad(25) - slash * deg_to_rad(35)
 	elif is_chopping:
-		# Heavy axe chop
-		var chop := sin(chop_timer)
-		right_arm_pivot.rotation.x = -deg_to_rad(65) + chop * deg_to_rad(95)
-		right_arm_pivot.rotation.y = 0.0
-		right_arm_pivot.rotation.z = 0.0
+		# Heavy biomechanical axe chop
+		var p: float = clampf(chop_timer / PI, 0.0, 1.0)
+		var right_rot := _get_chop_right_arm_rot(p)
+		right_arm_pivot.rotation = right_rot
 	elif equipped_item == EquippedItem.FISHING_LINE:
 		# Handline jigging posture: hold arm forward with rhythmic gentle bobbing
 		var jig_bob := sin(Time.get_ticks_msec() * 0.005) * deg_to_rad(6.0)
