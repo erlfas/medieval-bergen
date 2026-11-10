@@ -94,7 +94,17 @@ func _ensure_interaction_ui() -> void:
 func _get_pos(n: Node3D) -> Vector3:
 	return n.global_position if n.is_inside_tree() else n.position
 
+func _has_visual_tree_mesh() -> bool:
+	if not model_pivot:
+		return false
+	for child in model_pivot.get_children():
+		if child is MeshInstance3D and child != notch_mesh:
+			return true
+	return false
+
 func _setup_model_pivot() -> void:
+	if model_pivot != null:
+		return
 	model_pivot = Node3D.new()
 	model_pivot.name = "ModelPivot"
 	add_child(model_pivot)
@@ -102,7 +112,7 @@ func _setup_model_pivot() -> void:
 	# Reparent existing visual meshes into model_pivot so whole tree can topple around origin
 	var meshes_to_move: Array[Node] = []
 	for child in get_children():
-		if child is MeshInstance3D and child != model_pivot:
+		if child is MeshInstance3D and child != model_pivot and child != notch_mesh:
 			meshes_to_move.append(child)
 		elif child is CollisionShape3D:
 			col_shape = child
@@ -111,10 +121,28 @@ func _setup_model_pivot() -> void:
 		m.reparent(model_pivot)
 
 	# If tree created standalone without procedural generator, construct default meshes
-	if model_pivot.get_child_count() == 0 and multimesh_instance == null:
+	if not _has_visual_tree_mesh() and multimesh_instance == null:
 		_build_default_meshes()
 
 func _build_default_meshes() -> void:
+	var veg_script = load("res://scripts/environment/vegetation_manager.gd")
+	if veg_script and veg_script.has_method("build_detailed_tree_mesh"):
+		var detailed_mesh: Mesh = veg_script.build_detailed_tree_mesh(tree_type)
+		if detailed_mesh:
+			var full_mi := MeshInstance3D.new()
+			full_mi.name = "TreeCompoundMesh"
+			full_mi.mesh = detailed_mesh
+			model_pivot.add_child(full_mi)
+			if not col_shape:
+				col_shape = CollisionShape3D.new()
+				var capsule := CapsuleShape3D.new()
+				capsule.radius = 0.4
+				capsule.height = 4.0
+				col_shape.shape = capsule
+				col_shape.position.y = 2.0
+				add_child(col_shape)
+			return
+
 	var trunk_mesh := CylinderMesh.new()
 	trunk_mesh.top_radius = 0.18
 	trunk_mesh.bottom_radius = 0.25
@@ -752,45 +780,92 @@ func fell_tree(_harvester: Node) -> void:
 	set_process(false)
 	set_physics_process(true)
 
-	# If attached to a MultiMesh instance, hide that instance in MultiMesh
-	if multimesh_instance and is_instance_valid(multimesh_instance) and multimesh_index >= 0:
-		var mm: MultiMesh = multimesh_instance.multimesh
-		if mm and multimesh_index < mm.instance_count:
-			mm.set_instance_transform(multimesh_index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -999, 0)))
+	_ensure_setup()
+	if model_pivot:
+		model_pivot.position = Vector3.ZERO
 
-	# Ensure we have a visual compound mesh in model_pivot to animate the toppling fall
-	if model_pivot and model_pivot.get_child_count() == 0:
-		_build_default_meshes()
-
-	# Hide tracker and ground indicator during falling animation
+	# Hide HUD tracker, trajectory arc, and notch during the falling animation
 	if progress_tracker:
 		progress_tracker.visible = false
 	if trajectory_indicator:
 		trajectory_indicator.visible = false
+	if notch_mesh:
+		notch_mesh.visible = false
 
-	# Disable collision shape so settler does not snag on trunk during topple
+	# Disable collision shape so settler is not bumped during topple
 	if col_shape:
 		col_shape.disabled = true
 	collision_layer = 0
 	collision_mask = 0
 
-	# Lock in final fall direction
+	# 1. Seamlessly transfer visual tree mesh into model_pivot so the tree NEVER disappears
+	_ensure_falling_visual_tree()
+
+	# 2. Lock in fall direction and local rotation axis
 	var horiz_dir := Vector3(fall_direction.x, 0.0, fall_direction.z).normalized()
 	if horiz_dir.length_squared() < 0.01:
 		horiz_dir = Vector3.FORWARD
 	fall_direction = horiz_dir
 
 	# Fall rotation axis is perpendicular to fall direction and UP
-	fall_rotation_axis = Vector3.UP.cross(fall_direction).normalized()
-	if fall_rotation_axis.length_squared() < 0.01:
-		fall_rotation_axis = Vector3.RIGHT
+	var world_axis := Vector3.UP.cross(fall_direction).normalized()
+	if world_axis.length_squared() < 0.01:
+		world_axis = Vector3.RIGHT
 
-	fall_angle = 0.015
+	if is_inside_tree():
+		fall_rotation_axis = (global_transform.basis.inverse() * world_axis).normalized()
+	else:
+		fall_rotation_axis = world_axis
+
+	fall_angle = 0.04
 	fall_angular_velocity = 0.0
+
+func _ensure_falling_visual_tree() -> void:
+	if not model_pivot:
+		_setup_model_pivot()
+
+	# If this tree was part of a MultiMesh batch, extract its exact mesh & instance basis
+	if multimesh_instance and is_instance_valid(multimesh_instance) and multimesh_index >= 0:
+		var mm: MultiMesh = multimesh_instance.multimesh
+		if mm and multimesh_index < mm.instance_count:
+			var orig_xf: Transform3D = mm.get_instance_transform(multimesh_index)
+			var tree_mesh: Mesh = mm.mesh
+			if tree_mesh:
+				var visual_inst := MeshInstance3D.new()
+				visual_inst.name = "TreeFullVisualMesh"
+				visual_inst.mesh = tree_mesh
+				# Preserve scale and individual rotation yaw from the MultiMesh instance
+				var inst_basis: Basis = orig_xf.basis
+				if abs(inst_basis.determinant()) < 0.001:
+					inst_basis = Basis()
+				visual_inst.transform = Transform3D(inst_basis, Vector3.ZERO)
+				model_pivot.add_child(visual_inst)
+			else:
+				_build_default_meshes()
+
+			# Now hide the instance in the MultiMesh by scaling to zero and moving below world
+			mm.set_instance_transform(multimesh_index, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -9999, 0)))
+			return
+
+	# If not MultiMesh, check if model_pivot already has a visual tree mesh
+	if _has_visual_tree_mesh():
+		return
+
+	# Check if self has a MeshInstance3D child (e.g. reparentable from Tier 1 generator)
+	for child in get_children():
+		if child is MeshInstance3D and child != model_pivot and child != notch_mesh:
+			child.reparent(model_pivot)
+			return
+
+	# If no visual mesh found, build default meshes
+	_build_default_meshes()
 
 func _on_hit_ground() -> void:
 	is_falling = false
 	is_felled = true
+
+	# Visual crash puff and camera impact feedback
+	_spawn_ground_impact_effect()
 
 	# Spawn physical FallenTreeStem with visual cut guides for bucking into 4m logs
 	_spawn_fallen_stem()
@@ -799,6 +874,49 @@ func _on_hit_ground() -> void:
 	_spawn_tree_stump()
 
 	queue_free()
+
+func _spawn_ground_impact_effect() -> void:
+	var parent := get_parent()
+	if not parent:
+		return
+
+	var impact_pos := global_position + fall_direction * 6.0
+	var ground_y := _sample_ground_height(impact_pos.x, impact_pos.z)
+	impact_pos.y = ground_y + 0.6
+
+	# Impact billboard label
+	var label := Label3D.new()
+	label.name = "TreeImpactFeedback"
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.font_size = 28
+	label.outline_size = 7
+	label.modulate = Color(1.0, 0.90, 0.35)
+	label.outline_modulate = Color(0.05, 0.04, 0.02, 0.95)
+	label.text = "💥 CRASH! (Treet Falt)\n[E / LMB: Kappe til 4m Tømmerstokker]"
+
+	parent.add_child(label)
+	label.global_position = impact_pos
+
+	var tween := label.create_tween()
+	if tween:
+		tween.tween_property(label, "global_position:y", impact_pos.y + 1.2, 1.2)
+		tween.parallel().tween_property(label, "modulate:a", 0.0, 1.2)
+		tween.tween_callback(label.queue_free)
+
+	# Camera impact shudder for nearby settlers within 22 meters
+	if is_inside_tree():
+		var settlers := get_tree().get_nodes_in_group("settler")
+		for s in settlers:
+			if s is Node3D and s.is_inside_tree():
+				var dist := (s as Node3D).global_position.distance_to(impact_pos)
+				if dist < 22.0:
+					var head_cam = s.get_node_or_null("Head/Camera3D")
+					if head_cam and head_cam is Camera3D:
+						var cam_tween := head_cam.create_tween()
+						if cam_tween:
+							cam_tween.tween_property(head_cam, "position:y", head_cam.position.y - 0.08, 0.06)
+							cam_tween.tween_property(head_cam, "position:y", head_cam.position.y, 0.12)
 
 func _spawn_fallen_stem() -> void:
 	var parent := get_parent()

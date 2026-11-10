@@ -146,10 +146,12 @@ func _init() -> void:
 
 	var mm_link_ok: bool = (first_tree.multimesh_instance == mm_inst and first_tree.multimesh_index == 0)
 	var felled_ok: bool = (first_tree.current_hits == 10 and bool(first_tree.is_falling))
+	var has_visual_mesh: bool = first_tree._has_visual_tree_mesh()
 	print("  - Forest tree linked to MultiMesh: %s, felled on 10th chop: %s" % [mm_link_ok, felled_ok])
+	print("  - Visual tree mesh preserved in model_pivot on fall: %s" % [has_visual_mesh])
 
-	if child_count == 2 and is_harvestable and mm_link_ok and felled_ok:
-		print("  ✓ PASS: Forest canopy tree colliders are fully interactive HarvestableTrees linked to MultiMesh")
+	if child_count == 2 and is_harvestable and mm_link_ok and felled_ok and has_visual_mesh:
+		print("  ✓ PASS: Forest canopy tree colliders are fully interactive HarvestableTrees linked to MultiMesh (seamless visual falling)")
 		passes += 1
 	else:
 		push_error("FAIL Test 4: Forest tree collider interactivity failed")
