@@ -303,6 +303,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# Primary Item Use / Attack / Bow Aim & Release / Slot Carried Log (Left Click)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
 		if is_carrying_log:
 			if event.pressed:
 				_try_slot_carried_log_into_construction_site()
@@ -753,21 +756,22 @@ func _update_focused_interactables() -> void:
 			elif col.is_in_group("harvestable_trees") or (col.has_method("chop") and col.has_method("set_settler_focus")):
 				hit_tree = col
 
-	# Proximity check for nearby trees within 3.8m ahead of settler
+	# Proximity check for nearby trees within 4.8m ahead of settler
 	if hit_tree == null and is_inside_tree():
 		var trees := get_tree().get_nodes_in_group("harvestable_trees")
-		var closest_d := 3.8
+		var closest_d := 4.8
 		var forward_h := -global_transform.basis.z
 		forward_h.y = 0.0
 		if forward_h.length_squared() > 0.01:
 			forward_h = forward_h.normalized()
 			for t in trees:
-				if t is Node3D and is_instance_valid(t):
+				if t is Node3D and is_instance_valid(t) and t.has_method("chop"):
 					var to_tree: Vector3 = t.global_position - global_position
+					var dy: float = absf(to_tree.y)
 					to_tree.y = 0.0
 					var d := to_tree.length()
-					if d < closest_d:
-						if d < 2.2 or forward_h.dot(to_tree.normalized()) > 0.15:
+					if dy < 3.5 and d < closest_d:
+						if d < 2.5 or forward_h.dot(to_tree.normalized()) > 0.05:
 							closest_d = d
 							hit_tree = t
 
@@ -1114,23 +1118,10 @@ func _perform_interaction() -> void:
 		return
 
 	# 4. Tree chopping with [E] when focused or looking at a tree
-	var tree_to_chop: Node = _focused_tree
-	if tree_to_chop == null and is_inside_tree():
-		var trees := get_tree().get_nodes_in_group("harvestable_trees")
-		var min_d := 3.8
-		for t in trees:
-			if t is Node3D and is_instance_valid(t) and t.has_method("chop"):
-				var d := global_position.distance_to(t.global_position)
-				if d < min_d:
-					min_d = d
-					tree_to_chop = t
-
+	var tree_to_chop: Node = _get_target_or_focused_tree()
 	if tree_to_chop and is_instance_valid(tree_to_chop) and tree_to_chop.has_method("chop"):
-		if global_position.distance_to(tree_to_chop.global_position) < 4.2:
-			tree_to_chop.chop(self)
-			if box_man_model:
-				box_man_model.trigger_chop()
-			return
+		_chop_tree(tree_to_chop)
+		return
 
 	# 5. Freshwater stream drinking & backpack reservoir refill
 	if terrain_generator and not is_swimming and terrain_generator.is_freshwater_stream(global_position):
@@ -1139,7 +1130,7 @@ func _perform_interaction() -> void:
 			equipment.refill_reservoir(100.0)
 		return
 
-	# 4. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
+	# 6. If holding Water Bottle / Drinking Horn (Slot 2), pressing [E] drinks from reservoir
 	if equipment and int(equipment.get("current_slot")) == 2:
 		equipment.drink_from_reservoir()
 
@@ -1166,21 +1157,33 @@ func _get_target_or_focused_tree() -> Node:
 	if interact_raycast and interact_raycast.is_colliding():
 		var col := interact_raycast.get_collider()
 		if col and (col.is_in_group("harvestable_trees") or col.has_method("chop")):
-			if global_position.distance_to(col.global_position) < 4.5:
+			var to_col: Vector3 = col.global_position - global_position
+			to_col.y = 0.0
+			if to_col.length() < 5.2:
 				return col
 	if _focused_tree and is_instance_valid(_focused_tree) and _focused_tree.has_method("chop"):
-		if global_position.distance_to(_focused_tree.global_position) < 4.2:
+		var to_f: Vector3 = _focused_tree.global_position - global_position
+		to_f.y = 0.0
+		if to_f.length() < 5.2:
 			return _focused_tree
 	if is_inside_tree():
 		var trees := get_tree().get_nodes_in_group("harvestable_trees")
 		var closest: Node = null
-		var min_d := 3.8
+		var min_d := 4.8
+		var forward_h := -global_transform.basis.z
+		forward_h.y = 0.0
+		if forward_h.length_squared() > 0.01:
+			forward_h = forward_h.normalized()
 		for t in trees:
 			if t is Node3D and is_instance_valid(t) and t.has_method("chop"):
-				var d := global_position.distance_to(t.global_position)
-				if d < min_d:
-					min_d = d
-					closest = t
+				var to_t: Vector3 = t.global_position - global_position
+				var dy: float = absf(to_t.y)
+				to_t.y = 0.0
+				var d := to_t.length()
+				if dy < 3.5 and d < min_d:
+					if d < 2.5 or (forward_h.length_squared() > 0.01 and forward_h.dot(to_t.normalized()) > 0.05):
+						min_d = d
+						closest = t
 		return closest
 	return null
 
@@ -1191,7 +1194,7 @@ func _chop_tree(target_tree: Node) -> void:
 		return
 	if equipment:
 		equipment.attack_cooldown = 0.40
-		if equipment.current_slot != EquipmentManager.Slot.AXE and equipment.current_slot != EquipmentManager.Slot.TORCH:
+		if equipment.current_slot != EquipmentManager.Slot.AXE:
 			equipment.select_slot(EquipmentManager.Slot.AXE)
 	if box_man_model:
 		box_man_model.trigger_chop()

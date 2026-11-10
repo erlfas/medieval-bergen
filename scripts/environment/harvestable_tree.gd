@@ -550,9 +550,9 @@ func chop(actor: Node) -> void:
 	current_hits += 1
 
 	if actor and actor.has_node("SurvivalStats"):
-		var stats: SurvivalStats = actor.get_node("SurvivalStats")
-		if stats.stamina > 0.0:
-			stats.consume_stamina(6.0)
+		var stats: Node = actor.get_node("SurvivalStats")
+		if stats and stats.get("stamina") != null and float(stats.get("stamina")) > 0.0:
+			stats.call("consume_stamina", 6.0)
 
 	trunk_shake_intensity = 0.08
 	trunk_shake_timer = 0.25
@@ -643,7 +643,7 @@ func _spawn_carryable_logs() -> void:
 
 	var log_script = load("res://scripts/environment/carryable_log.gd")
 	var distances := [2.0, 3.8, 5.6]
-	var log_type_val = (CarryableLog.LogType.SPRUCE if tree_type == TreeType.SPRUCE else CarryableLog.LogType.BIRCH)
+	var log_type_val = (0 if tree_type == TreeType.SPRUCE else 1)
 
 	for i in range(distances.size()):
 		var d: float = distances[i]

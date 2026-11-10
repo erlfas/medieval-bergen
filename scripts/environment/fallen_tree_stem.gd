@@ -283,7 +283,7 @@ func _spawn_carryable_log_at(world_pos: Vector3) -> void:
 		return
 
 	var log_script = load("res://scripts/environment/carryable_log.gd")
-	var log_type_val = (CarryableLog.LogType.SPRUCE if tree_type == TreeType.SPRUCE else CarryableLog.LogType.BIRCH)
+	var log_type_val = (0 if tree_type == TreeType.SPRUCE else 1)
 
 	var log_inst := RigidBody3D.new()
 	log_inst.name = "CarryableLog_4m_%d" % [Time.get_ticks_msec() + randi() % 999]
